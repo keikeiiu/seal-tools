@@ -40,6 +40,22 @@ impl Tool for ScriptedTool {
     }
 }
 
+/// CORE-F3: a tool that panics on its first decision. The worker must still report a finish, free
+/// the arbiter slot and let shutdown return.
+struct PanickingTool {
+    id: ToolId,
+}
+
+impl Tool for PanickingTool {
+    fn id(&self) -> ToolId {
+        self.id
+    }
+
+    fn decide(&mut self) -> Decision {
+        panic!("scripted worker panic");
+    }
+}
+
 #[derive(Default)]
 struct RecordingEffects {
     clicks: usize,
@@ -110,6 +126,8 @@ struct FakeRegistry {
     /// once (empty = no gate) and the shared decision log the tests assert on.
     port_tools: Mutex<Vec<ToolId>>,
     release_gates: Mutex<HashMap<ToolId, mpsc::Receiver<()>>>,
+    /// Tools whose worker panics on its first decide (CORE-F3).
+    panicking: Mutex<Vec<ToolId>>,
     decisions: Arc<Mutex<Vec<ToolId>>>,
 }
 
@@ -124,6 +142,7 @@ impl FakeRegistry {
             start_args: Mutex::new(None),
             port_tools: Mutex::new(Vec::new()),
             release_gates: Mutex::new(HashMap::new()),
+            panicking: Mutex::new(Vec::new()),
             decisions: Arc::new(Mutex::new(Vec::new())),
         })
     }
@@ -173,6 +192,11 @@ impl FakeRegistry {
             .lock()
             .expect("not poisoned")
             .insert(tool, gate);
+        Arc::clone(self)
+    }
+
+    fn with_panicking_tool(self: &Arc<Self>, tool: ToolId) -> Arc<Self> {
+        self.panicking.lock().expect("not poisoned").push(tool);
         Arc::clone(self)
     }
 
@@ -227,13 +251,23 @@ impl ToolRegistry for FakeRegistry {
             .lock()
             .expect("not poisoned")
             .contains(&tool);
+        let panics = {
+            let mut panicking = self.panicking.lock().expect("not poisoned");
+            panicking
+                .iter()
+                .position(|candidate| *candidate == tool)
+                .map(|position| panicking.remove(position))
+                .is_some()
+        };
         let release_gate = self
             .release_gates
             .lock()
             .expect("not poisoned")
             .remove(&tool);
         let decisions = Arc::clone(&self.decisions);
-        let tool = if is_port_tool {
+        let tool = if panics {
+            Box::new(PanickingTool { id: tool }) as Box<dyn Tool + Send>
+        } else if is_port_tool {
             Box::new(PortTool {
                 id: tool,
                 game,
@@ -1078,6 +1112,38 @@ fn start_arguments_reach_create_verbatim() {
         Some(args),
         "the validated run arguments are handed to `create` unchanged"
     );
+    supervisor.shutdown("test");
+}
+
+#[test]
+fn a_worker_panic_finishes_with_an_error_and_frees_the_slot() {
+    let registry = FakeRegistry::new().with_panicking_tool(ToolId::Tuner);
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::new(Logs::disabled()),
+    );
+
+    assert_eq!(
+        supervisor.start_tool(ToolId::Tuner, &Value::Null),
+        StartReply::Started
+    );
+    let seen = until_finished(&events);
+    let finished = seen.last().expect("the panicking run finished");
+    assert_eq!(finished.data["tool"], "tuner");
+    assert_eq!(finished.data["reason"], "error");
+    assert_eq!(
+        finished.data["message"], "internal error — see error.log",
+        "the run's exit is the internal-error finish, not a leaked slot"
+    );
+
+    // The arbiter slot really is free: the same tool starts again and completes normally.
+    assert_eq!(
+        supervisor.start_tool(ToolId::Tuner, &Value::Null),
+        StartReply::Started
+    );
+    until_finished(&events);
     supervisor.shutdown("test");
 }
 

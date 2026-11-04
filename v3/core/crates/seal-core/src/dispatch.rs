@@ -14,6 +14,7 @@
 //! `ToolId::ALL` (the ONE accept-and-dispatch list, `OPEN.md` 禮1 item 7) and translate the
 //! supervisor's typed answer into the protocol's `tool_busy`/`not_running`/`bad_request` and events.
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
@@ -512,17 +513,27 @@ pub(crate) fn frame_rgba(frame: &Value) -> Result<(usize, usize, Vec<u8>), Strin
         .map_err(|error| format!("the frame PNG could not be decoded: {error}"))?;
     Ok((width as usize, height as usize, rgba))
 }
-/// Answers one request. Never panics: a bad request is a refusal the client can show.
+/// Answers one request. Never panics: a bad request is a refusal the client can show. CORE-F3: a
+/// dispatcher panic is contained and answered with `internal`, instead of killing the core with a
+/// tool/COM port still open.
 #[allow(
     clippy::needless_pass_by_value,
     reason = "the protocol entry point owns the decoded request; the frame loop and every test call it with a constructed value"
 )]
 pub fn handle(state: &mut CoreState, request: Request) -> Response {
+    let id = request.id.clone();
+    match catch_unwind(AssertUnwindSafe(|| handle_inner(state, &request))) {
+        Ok(response) => response,
+        Err(_) => internal(&id, "internal error — see error.log"),
+    }
+}
+
+fn handle_inner(state: &mut CoreState, request: &Request) -> Response {
     // A mid-run pet write can bump the shared revision between requests; every boundary starts from
     // that value so `hello`, conflict checks and echoes never report a pre-write revision.
     state.rev = state.revision.load(Ordering::SeqCst);
     if request.cmd == "hello" {
-        return hello(state, &request);
+        return hello(state, request);
     }
 
     if !state.handshaken {
@@ -537,61 +548,61 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
             state.stopping = true;
             Response::ok(&request.id, json!({}))
         }
-        "config.validate" => config_validate(state, &request),
-        "config.apply" => config_apply(state, &request),
-        "config.reload" => config_reload(state, &request),
-        "ui.window" => ui_window(state, &request),
-        "window.find" => window_find(state, &request),
-        "window.measure" => window_measure(state, &request),
-        "capture" => capture_command(state, &request),
-        "ocr.scan" => ocr_scan(state, &request),
-        "keys.parse" => keys_parse(state, &request),
-        "keys.names" => keys_names(state, &request),
-        "attributes.get" => attributes_get(state, &request),
-        "logs.cleanup_captures" => logs_cleanup_captures(state, &request),
-        "calibration.save" => crate::calibration::save(state, &request),
-        "calibration.fetch" => crate::calibration::fetch(state, &request),
-        "calibration.fetch_all" => crate::calibration::fetch_all(state, &request),
-        "calibration.kinds" => crate::calibration::kinds(&request),
-        "calibration.check" => crate::calibration::check(state, &request),
+        "config.validate" => config_validate(state, request),
+        "config.apply" => config_apply(state, request),
+        "config.reload" => config_reload(state, request),
+        "ui.window" => ui_window(state, request),
+        "window.find" => window_find(state, request),
+        "window.measure" => window_measure(state, request),
+        "capture" => capture_command(state, request),
+        "ocr.scan" => ocr_scan(state, request),
+        "keys.parse" => keys_parse(state, request),
+        "keys.names" => keys_names(state, request),
+        "attributes.get" => attributes_get(state, request),
+        "logs.cleanup_captures" => logs_cleanup_captures(state, request),
+        "calibration.save" => crate::calibration::save(state, request),
+        "calibration.fetch" => crate::calibration::fetch(state, request),
+        "calibration.fetch_all" => crate::calibration::fetch_all(state, request),
+        "calibration.kinds" => crate::calibration::kinds(request),
+        "calibration.check" => crate::calibration::check(state, request),
         "calibration.tooltip.hover_capture" => {
-            crate::tooltip_session::hover_capture(state, &request)
+            crate::tooltip_session::hover_capture(state, request)
         }
-        "calibration.tooltip.save" => crate::tooltip_session::save(state, &request),
-        "calibration.tooltip.test" => crate::tooltip_session::test(state, &request),
-        "calibration.tuner.check" => crate::tuner_session::check(state, &request),
-        "calibration.tuner.save" => crate::tuner_session::save(state, &request),
-        "calibration.pet.preview" => crate::pet_calibration::preview(state, &request),
-        "calibration.pet.save" => crate::pet_calibration::save(state, &request),
-        "calibration.pet.test_read" => crate::pet_calibration::test_read(state, &request),
-        "calibration.gem.moves.save" => crate::gem_session::save(state, &request),
-        "calibration.gem.check_result" => crate::gem_session::check_result(state, &request),
-        "calibration.gem.save" => crate::gem_save::save(state, &request),
-        "calibration.gem.test_route" => crate::gem_routes_session::test_route(state, &request),
-        "calibration.gem.cycle" => crate::gem_routes_session::cycle(state, &request),
-        "calibration.buysell.preview" => crate::buysell_session::preview(state, &request),
-        "calibration.shop.test_scroll" => crate::buysell_session::test_scroll(state, &request),
+        "calibration.tooltip.save" => crate::tooltip_session::save(state, request),
+        "calibration.tooltip.test" => crate::tooltip_session::test(state, request),
+        "calibration.tuner.check" => crate::tuner_session::check(state, request),
+        "calibration.tuner.save" => crate::tuner_session::save(state, request),
+        "calibration.pet.preview" => crate::pet_calibration::preview(state, request),
+        "calibration.pet.save" => crate::pet_calibration::save(state, request),
+        "calibration.pet.test_read" => crate::pet_calibration::test_read(state, request),
+        "calibration.gem.moves.save" => crate::gem_session::save(state, request),
+        "calibration.gem.check_result" => crate::gem_session::check_result(state, request),
+        "calibration.gem.save" => crate::gem_save::save(state, request),
+        "calibration.gem.test_route" => crate::gem_routes_session::test_route(state, request),
+        "calibration.gem.cycle" => crate::gem_routes_session::cycle(state, request),
+        "calibration.buysell.preview" => crate::buysell_session::preview(state, request),
+        "calibration.shop.test_scroll" => crate::buysell_session::test_scroll(state, request),
         "buy_sell.preflight" => Response::ok(
             &request.id,
             crate::buysell_session::preflight(&state.config),
         ),
-        "pointer.place" => pointer_command(state, &request, false),
-        "pointer.click" => pointer_command(state, &request, true),
-        "board.probe" => board_probe(state, &request),
-        "board.details" => board_details(state, &request),
-        "board.test" => board_test(state, &request),
-        "pet.preflight" => pet_preflight(state, &request),
-        "pet.set_boarding" => pet_set_boarding(state, &request),
-        "pet.capture_icon" => pet_capture_icon(state, &request),
-        "pet.scan_food_page" => pet_scan_page(state, &request, false),
-        "pet.scan_queue_page" => pet_scan_page(state, &request, true),
-        "pet.apply_food_scan" => pet_apply_food_scan(state, &request),
-        "pet.scan_feeding_page" => pet_scan_feeding_page(state, &request),
-        "pet.scan_apply_queue" => pet_scan_apply_queue(state, &request),
-        "pet.test_read_panel" => pet_test_read_panel(state, &request),
-        "pet.select_page" => crate::pet_session::select_page(state, &request),
-        "tool.start" => tool_start(state, &request),
-        "tool.stop" => tool_stop(state, &request),
+        "pointer.place" => pointer_command(state, request, false),
+        "pointer.click" => pointer_command(state, request, true),
+        "board.probe" => board_probe(state, request),
+        "board.details" => board_details(state, request),
+        "board.test" => board_test(state, request),
+        "pet.preflight" => pet_preflight(state, request),
+        "pet.set_boarding" => pet_set_boarding(state, request),
+        "pet.capture_icon" => pet_capture_icon(state, request),
+        "pet.scan_food_page" => pet_scan_page(state, request, false),
+        "pet.scan_queue_page" => pet_scan_page(state, request, true),
+        "pet.apply_food_scan" => pet_apply_food_scan(state, request),
+        "pet.scan_feeding_page" => pet_scan_feeding_page(state, request),
+        "pet.scan_apply_queue" => pet_scan_apply_queue(state, request),
+        "pet.test_read_panel" => pet_test_read_panel(state, request),
+        "pet.select_page" => crate::pet_session::select_page(state, request),
+        "tool.start" => tool_start(state, request),
+        "tool.stop" => tool_stop(state, request),
         other => bad_request(
             &request.id,
             &format!("unknown command {other:?}"),
@@ -1166,6 +1177,7 @@ fn tool_stop(state: &mut CoreState, request: &Request) -> Response {
             &request.id,
             Error::new("not_running", "nothing is running", json!({})),
         ),
+        StopReply::Internal { line } => internal(&request.id, &line),
     }
 }
 

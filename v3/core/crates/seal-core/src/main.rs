@@ -20,6 +20,8 @@
 //! only then is the writer finished — the supervisor thread is the other `EventBus` holder, and the
 //! writer only stops when the last sender is gone.
 
+use std::backtrace::Backtrace;
+use std::panic;
 use std::sync::Arc;
 
 use seal_core::dispatch::{CoreState, handle};
@@ -75,6 +77,15 @@ fn main() {
     // The dispatcher queues `config.changed` events and the loop flushes them after each response, so
     // the wire order is answer-then-event and a shell never sees its own write as an external change.
     state.attach_events(bus.clone());
+    // CORE-F3: an unhandled panic must leave a durable reason, not only stderr. Chain to the default
+    // hook so the child stderr the shell captures still gets the panic too.
+    let panic_logs = Arc::clone(&state.logs);
+    let default_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        let backtrace = Backtrace::force_capture();
+        panic_logs.error_line(&format!("panic: {info}\n{backtrace}"));
+        default_hook(info);
+    }));
     // The registry reads the merged config through this cell; publishing before the supervisor
     // starts means the first Start already sees the config `hello` reported.
     state.publish_config();

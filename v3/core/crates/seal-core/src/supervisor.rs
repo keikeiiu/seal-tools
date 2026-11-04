@@ -36,8 +36,10 @@
 //! so the timeout cannot turn into a response on this protocol; that is reported rather than
 //! papered over.
 
+use std::any::Any;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
@@ -76,13 +78,17 @@ pub enum StartReply {
 }
 
 /// What `tool.stop` answers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StopReply {
     /// The token is cancelled and the phase is `stopping`; the `tool.finished` event follows.
     Stopping {
         tool: ToolId,
     },
     NotRunning,
+    /// The supervisor thread is gone — a core bug, not "nothing was running".
+    Internal {
+        line: String,
+    },
 }
 
 /// One stashed `request` reply: the tool waiting for the game, and the channel its worker blocks on.
@@ -199,9 +205,13 @@ impl Supervisor {
             .send(Incoming::Command(Command::Stop { tool, reply }))
             .is_err()
         {
-            return StopReply::NotRunning;
+            return StopReply::Internal {
+                line: "the tool supervisor is not running".to_owned(),
+            };
         }
-        answer.recv().unwrap_or(StopReply::NotRunning)
+        answer.recv().unwrap_or_else(|_| StopReply::Internal {
+            line: "the tool supervisor stopped while stopping".to_owned(),
+        })
     }
 
     /// The per-command input lease for a calibration pointer action
@@ -711,7 +721,8 @@ fn spawn_worker(
     workers.insert(tool, join);
 }
 
-/// One run. Sends `Opened` once the session exists, runs the loop, and sends `Done` as its last act.
+/// One run. Panics are contained here: the guard below always sends `Done`, so the supervisor still
+/// gets the worker's exit, frees the slot and lets shutdown finish. CORE-F3.
 #[allow(
     clippy::needless_pass_by_value,
     reason = "the worker thread's owned capture set cannot be borrowed across the spawn"
@@ -725,17 +736,49 @@ fn worker_loop(
     logs: Arc<Logs>,
 ) {
     let tool = handle.tool;
+    let mut done = DoneGuard::new(tool, supervisor.clone());
+    let outcome = catch_unwind(AssertUnwindSafe(|| {
+        worker_body(
+            handle,
+            registry,
+            supervisor,
+            port,
+            args,
+            Arc::clone(&logs),
+            &mut done,
+        );
+    }));
+    if let Err(payload) = outcome {
+        let message = panic_message(payload.as_ref());
+        logs.error_line(&format!("{tool} panicked: {message}"));
+        // `DoneGuard::drop` sends the error `Done` after this scope, even if the panic happened
+        // before the worker could send anything itself.
+    }
+}
+
+/// The body of one run; kept separate so [`worker_loop`] can wrap the whole thing (including the
+/// opening phase) in a catch-unwind. CORE-F3.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "the worker thread's owned capture set cannot be borrowed across the spawn"
+)]
+fn worker_body(
+    handle: RunHandle,
+    registry: Arc<dyn ToolRegistry>,
+    supervisor: Sender<Incoming>,
+    port: Arc<dyn GamePort>,
+    args: Value,
+    logs: Arc<Logs>,
+    done: &mut DoneGuard,
+) {
+    let tool = handle.tool;
     let session: Session = match registry.create(tool, port, &args) {
         Ok(session) => session,
         Err(line) => {
             // An opening failure is a real failure (v2 put those in `error.log`, not among the
             // player-correctable refusals), and the tool's own log has no run to describe yet.
             logs.error_line(&format!("{tool} failed to start: {line}"));
-            let _ = supervisor.send(Incoming::Worker(WorkerEvent::Done {
-                tool,
-                reason: StopReason::error(line),
-                summary: None,
-            }));
+            done.send_done(StopReason::error(line), None);
             return;
         }
     };
@@ -743,11 +786,7 @@ fn worker_loop(
     // A stop that arrived during the opening phase: the run never started, and the exit path still
     // reports it as cancelled (`OPEN.md` §1 item 1).
     if handle.token.is_cancelled() {
-        let _ = supervisor.send(Incoming::Worker(WorkerEvent::Done {
-            tool,
-            reason: StopReason::cancelled(STOPPED_MESSAGE),
-            summary: None,
-        }));
+        done.send_done(StopReason::cancelled(STOPPED_MESSAGE), None);
         return;
     }
 
@@ -771,11 +810,53 @@ fn worker_loop(
     logs.tool_finished(tool, &reason);
     // The tool is about to be dropped: its last facts must be captured while it still exists.
     let summary = logged.summary(&reason);
-    let _ = supervisor.send(Incoming::Worker(WorkerEvent::Done {
-        tool,
-        reason,
-        summary,
-    }));
+    done.send_done(reason, summary);
+}
+
+/// Sends exactly one `Done` for this worker. Normal exits call [`DoneGuard::send_done`]; if the
+/// worker panics, `Drop` sends the error finish instead — so a panic can never leak the arbiter slot.
+struct DoneGuard {
+    tool: ToolId,
+    supervisor: Sender<Incoming>,
+    sent: bool,
+}
+
+impl DoneGuard {
+    fn new(tool: ToolId, supervisor: Sender<Incoming>) -> Self {
+        Self {
+            tool,
+            supervisor,
+            sent: false,
+        }
+    }
+
+    fn send_done(&mut self, reason: StopReason, summary: Option<Value>) {
+        if self.sent {
+            return;
+        }
+        self.sent = true;
+        let _ = self.supervisor.send(Incoming::Worker(WorkerEvent::Done {
+            tool: self.tool,
+            reason,
+            summary,
+        }));
+    }
+}
+
+impl Drop for DoneGuard {
+    fn drop(&mut self) {
+        self.send_done(StopReason::error("internal error — see error.log"), None);
+    }
+}
+
+fn panic_message(payload: &(dyn Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_owned()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "unknown panic payload".to_owned()
+    }
 }
 
 /// Wraps one session tool so the worker's `<tool>.log` gets the tool's OWN status words: one line per
