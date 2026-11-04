@@ -1,9 +1,18 @@
 //! The request dispatcher behind the stdio loop: `PROTOCOL.md` §1 (handshake) and §4 (commands).
 
 use seal_core::dispatch::{CoreState, handle};
+use seal_core::logs::Logs;
+use seal_core::registry::{Session, ToolRegistry, Unavailable};
+use seal_core::supervisor::{StartReply, Supervisor};
+use seal_domain::decision::{Decision, Key, StopReason};
+use seal_domain::geometry::Point;
 use seal_proto::Request;
-use serde_json::json;
+use seal_tools::game::GamePort;
+use seal_tools::runner::{EffectError, Effects};
+use seal_tools::tool::ToolId;
+use serde_json::{Value, json};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, mpsc};
 
 fn state() -> CoreState {
     CoreState::new(PathBuf::from(r"C:\repo"))
@@ -591,6 +600,113 @@ fn board_test_move_without_dy_refuses_before_opening_the_port() {
 
     assert!(!response.ok, "a malformed move must not reach a board");
     assert_eq!(response.error.unwrap().code, "bad_request");
+}
+
+// ── CORE-F14: the board diagnostics take the input lease ───────────────────────────────────────
+
+/// A tool that blocks in its first decision, so a foreground run really holds the arbiter while the
+/// board command is issued. No hardware and no window.
+struct HeldTool {
+    release: Mutex<mpsc::Receiver<()>>,
+}
+
+impl seal_tools::runner::Tool for HeldTool {
+    fn id(&self) -> ToolId {
+        ToolId::Tuner
+    }
+
+    fn decide(&mut self) -> Decision {
+        let _ = self.release.lock().expect("not poisoned").recv();
+        Decision::stop(StopReason::done("released"))
+    }
+}
+
+struct NoEffects;
+
+impl Effects for NoEffects {
+    fn click(&mut self, _at: Point) -> Result<(), EffectError> {
+        Ok(())
+    }
+
+    fn key(&mut self, _key: Key) -> Result<(), EffectError> {
+        Ok(())
+    }
+}
+
+struct HeldRegistry {
+    release: Mutex<Option<mpsc::Receiver<()>>>,
+}
+
+impl ToolRegistry for HeldRegistry {
+    fn available(&self, _tool: ToolId) -> Result<(), Unavailable> {
+        Ok(())
+    }
+
+    fn create(
+        &self,
+        _tool: ToolId,
+        _game: Arc<dyn GamePort>,
+        _args: &Value,
+    ) -> Result<Session, String> {
+        let release = self
+            .release
+            .lock()
+            .expect("not poisoned")
+            .take()
+            .expect("one create");
+        Ok(Session {
+            tool: Box::new(HeldTool {
+                release: Mutex::new(release),
+            }),
+            effects: Box::new(NoEffects),
+        })
+    }
+}
+
+/// CORE-F14: `board.test` and `board.probe` open the port. While a run holds it that used to surface
+/// as a raw OS "access denied" under `board_unavailable`, which reads like a broken install. Both now
+/// answer the same `tool_busy` line a start gets, naming the holder.
+#[test]
+fn board_test_and_probe_report_tool_busy_while_a_run_holds_the_board() {
+    let (release, release_rx) = mpsc::channel();
+    let registry = Arc::new(HeldRegistry {
+        release: Mutex::new(Some(release_rx)),
+    });
+    let (bus, _events) = seal_core::events::event_channel();
+    let mut state = board_state("COM_DOES_NOT_EXIST_999");
+    state.attach_supervisor(Supervisor::start(registry, bus, Arc::new(Logs::disabled())));
+    assert_eq!(
+        state
+            .supervisor
+            .as_ref()
+            .expect("attached")
+            .start_tool(ToolId::Tuner, &Value::Null),
+        StartReply::Started
+    );
+
+    for (id, command, args) in [
+        (
+            "lease-test",
+            "board.test",
+            json!({"kind": "key", "key": "E"}),
+        ),
+        ("lease-probe", "board.probe", json!({})),
+    ] {
+        let response = handle(&mut state, Request::new(id, command, args));
+        let error = response
+            .error
+            .unwrap_or_else(|| panic!("{command} is refused while a run holds the board"));
+        assert_eq!(error.code, "tool_busy", "{command}");
+        assert_eq!(error.detail["command"], command);
+        assert!(
+            error.message.contains("\"tuner\""),
+            "{command}: {}",
+            error.message
+        );
+    }
+
+    let _ = release.send(());
+    state.shutdown_tools("test");
 }
 
 fn ocr_state_with_frame() -> CoreState {

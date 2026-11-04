@@ -12,6 +12,7 @@
 use std::io::Write;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 use seal_domain::decision::{StopKind, StopReason};
 use seal_proto::{Event, Response};
@@ -63,6 +64,9 @@ pub fn event_channel() -> (EventBus, Receiver<Event>) {
 pub struct EventWriter {
     outgoing: Sender<Outgoing>,
     join: Option<JoinHandle<()>>,
+    /// The writer thread's exit signal, so a shutdown with a stuck worker does not have to join a
+    /// thread that cannot stop (CORE-F8).
+    done: Receiver<()>,
 }
 
 impl EventWriter {
@@ -71,11 +75,16 @@ impl EventWriter {
     #[must_use]
     pub fn spawn(destination: Box<dyn Write + Send>) -> (Self, EventBus) {
         let (outgoing, receiver) = mpsc::channel();
-        let join = thread::spawn(move || write_loop(destination, receiver));
+        let (done_sender, done) = mpsc::channel();
+        let join = thread::spawn(move || {
+            write_loop(destination, receiver);
+            let _ = done_sender.send(());
+        });
         (
             Self {
                 outgoing: outgoing.clone(),
                 join: Some(join),
+                done,
             },
             EventBus::Outgoing(outgoing),
         )
@@ -96,6 +105,21 @@ impl EventWriter {
         if let Some(join) = self.join.take() {
             let _ = join.join();
         }
+    }
+
+    /// [`Self::finish`] with a deadline (CORE-F8). Returns `false` when a sender is still alive — in
+    /// the binary that means a worker outlived the supervisor's shutdown budget and is still holding
+    /// the registry, whose pet sink holds an `EventBus` clone. The writer thread is then left
+    /// detached and the caller exits the process with a non-zero status instead of hanging here,
+    /// which is the whole point of the shutdown deadline.
+    #[must_use]
+    pub fn finish_within(mut self, budget: Duration) -> bool {
+        drop(self.outgoing);
+        let finished = self.done.recv_timeout(budget).is_ok();
+        if finished && let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
+        finished
     }
 }
 

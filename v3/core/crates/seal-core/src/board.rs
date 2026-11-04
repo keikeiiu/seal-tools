@@ -245,10 +245,10 @@ fn command(args: &Value) -> Result<BoardCommand, BoardFailure> {
                         ))
                     })
             };
-            Ok(BoardCommand::Move {
-                dx: coordinate("dx")?,
-                dy: coordinate("dy")?,
-            })
+            // The grammar owns the frame range: a count the sketch would reject must not be sent
+            // (HW-F11).
+            BoardCommand::move_by(coordinate("dx")?, coordinate("dy")?)
+                .map_err(|error| BoardFailure::BadRequest(error.message().to_owned()))
         }
         "key" => {
             let Some(key) = args.get("key").and_then(Value::as_str) else {

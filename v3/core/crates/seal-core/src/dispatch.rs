@@ -48,6 +48,17 @@ const WINDOW_FIELDS: &[(&str, &str)] = &[
     ("pinned", "pinned"),
 ];
 
+/// What the cached OCR pipeline was built from (CORE-F7). [`seal_ocr::pipeline::OcrPipeline::load`]
+/// bakes in the active dictionary's `text_fixes` (the cleaner's tables) and `tuner.ocr.row_height`
+/// (the line bucketing), so both are part of its identity: a variant switch or a tuner calibration
+/// must reload the pipeline instead of serving the old dictionary until the core restarts.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OcrIdentity {
+    dictionary: String,
+    row_height: u32,
+    attributes: AttributesConfig,
+}
+
 /// The state one connection's dispatcher works on: the root it bound to, the config store that owns
 /// the files, the merged config as the shell sees it, and the session revision.
 ///
@@ -92,6 +103,11 @@ pub struct CoreState {
     /// The lazily-loaded OCR pipeline (`ocr.scan`): loading costs ~330 ms, so the first scan
     /// builds it and later scans reuse it. `None` until then, and in dispatcher tests.
     pub ocr: Option<seal_ocr::pipeline::OcrPipeline>,
+    /// The parts of the config the cached pipeline was BUILT FROM: the active dictionary (its
+    /// `text_fixes` feed the cleaner) and the row height. A config change that alters either must
+    /// rebuild the pipeline instead of serving the old dictionary until the core restarts
+    /// (CORE-F7).
+    pub ocr_build: Option<OcrIdentity>,
     /// The per-run FILE logs (`logs.rs`): opened at boot from the config root. Disabled in
     /// `new()` (the config-only dispatcher tests write no files); the binary uses `load()`.
     pub logs: std::sync::Arc<crate::logs::Logs>,
@@ -126,6 +142,7 @@ impl CoreState {
             attributes: AttributesConfig::default(),
             frames: win::FrameCache::default(),
             ocr: None,
+            ocr_build: None,
             logs: std::sync::Arc::new(crate::logs::Logs::disabled()),
             events: None,
             queued_events: Vec::new(),
@@ -162,6 +179,7 @@ impl CoreState {
             attributes,
             frames: win::FrameCache::default(),
             ocr: None,
+            ocr_build: None,
             logs,
             events: None,
             queued_events: Vec::new(),
@@ -283,14 +301,16 @@ impl CoreState {
         next
     }
 
-    /// Stops every run, waits for the workers and emits `core.stopping`, then joins the supervisor
-    /// thread. Called by the binary after the final response is queued and before the writer is
-    /// finished ??the supervisor is the other `EventBus` holder, and the writer only stops when the
-    /// last one is gone.
-    pub fn shutdown_tools(&mut self, reason: &str) {
-        if let Some(mut supervisor) = self.supervisor.take() {
-            supervisor.shutdown(reason);
-        }
+    /// Stops every run, waits for the workers (bounded by the supervisor's shutdown budget) and
+    /// emits `core.stopping`, then joins the supervisor thread. Called by the binary after the final
+    /// response is queued and before the writer is finished -- the supervisor is the other
+    /// `EventBus` holder, and the writer only stops when the last one is gone. The outcome tells
+    /// `main` whether a worker outlived the deadline (CORE-F8).
+    pub fn shutdown_tools(&mut self, reason: &str) -> crate::supervisor::ShutdownOutcome {
+        let Some(mut supervisor) = self.supervisor.take() else {
+            return crate::supervisor::ShutdownOutcome::Drained;
+        };
+        supervisor.shutdown(reason)
     }
 }
 
@@ -339,56 +359,55 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
         Ok(region) => region,
         Err(error) => return win_error_response(&request.id, error),
     };
-    let frame = if let Some(frame_id) = request.args.get("frame_id").and_then(Value::as_str) {
-        match state.frames.get(frame_id) {
-            Some(frame) => frame.clone(),
-            None => {
+    // CORE-F11: a cached frame is one multi-megabyte base64 string inside a `Value`; it is decoded
+    // from the borrow instead of being cloned per scan, and the optional capture PNG is decoded from
+    // the same borrow. A region capture is owned here anyway.
+    let save_captures = state
+        .config
+        .pointer("/tuner/save_captures")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let (width, height, rgba, frame_png) =
+        if let Some(frame_id) = request.args.get("frame_id").and_then(Value::as_str) {
+            let Some(frame) = state.frames.get(frame_id) else {
                 return bad_request(
                     &request.id,
                     &format!("unknown frame_id {frame_id:?}"),
                     json!({}),
                 );
-            }
-        }
-    } else if request.args.get("region").is_some() {
-        let title = match win::configured_title(&state.config) {
-            Ok(title) => title,
-            Err(error) => return win_error_response(&request.id, error),
+            };
+            let (width, height, rgba) = match frame_rgba(frame) {
+                Ok(image) => image,
+                Err(message) => return internal(&request.id, &message),
+            };
+            (width, height, rgba, png_of(frame, save_captures))
+        } else if request.args.get("region").is_some() {
+            let title = match win::configured_title(&state.config) {
+                Ok(title) => title,
+                Err(error) => return win_error_response(&request.id, error),
+            };
+            let frame = match win::capture(&title, region) {
+                Ok((frame, _display)) => frame,
+                Err(error) => return win_error_response(&request.id, error),
+            };
+            let (width, height, rgba) = match frame_rgba(&frame) {
+                Ok(image) => image,
+                Err(message) => return internal(&request.id, &message),
+            };
+            (width, height, rgba, png_of(&frame, save_captures))
+        } else {
+            return bad_request(
+                &request.id,
+                "ocr.scan needs a frame_id or a region",
+                json!({}),
+            );
         };
-        match win::capture(&title, region) {
-            Ok((frame, _display)) => frame,
-            Err(error) => return win_error_response(&request.id, error),
-        }
-    } else {
-        return bad_request(
-            &request.id,
-            "ocr.scan needs a frame_id or a region",
-            json!({}),
-        );
-    };
-    let (width, height, rgba) = match frame_rgba(&frame) {
-        Ok(image) => image,
-        Err(message) => return internal(&request.id, &message),
-    };
     let geometry = ocr_geometry(&state.config);
-    if state.ocr.is_none() {
-        match seal_ocr::pipeline::OcrPipeline::load_for_root(
-            &state.root,
-            &state.attributes,
-            geometry.row_height,
-        ) {
-            Ok(pipeline) => state.ocr = Some(pipeline),
-            Err(error) => {
-                return Response::err(
-                    &request.id,
-                    Error::new(
-                        "ocr_unavailable",
-                        "the OCR models are not available",
-                        json!({"reason": error.reason, "message": error.message}),
-                    ),
-                );
-            }
-        }
+    // CORE-F7: one loader for every scan path, so this scan also rebuilds the pipeline when the
+    // config changed its dictionary/row height (the duplicated inline load used to serve the old
+    // one forever).
+    if let Some(response) = ensure_ocr(state, &request.id) {
+        return response;
     }
     let Some(pipeline) = state.ocr.as_mut() else {
         return internal(&request.id, "the OCR pipeline is not loaded");
@@ -434,19 +453,6 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
     // v2 wrote one `ocr_log.jsonl` record per completed scan and an `ocr_errors.jsonl` record when
     // it stayed unconfirmed; a capture PNG is saved only while `tuner.save_captures` is on. The
     // scan's own PNG bytes are already in the frame, so a capture is a byte copy, not a re-encode.
-    let save_captures = state
-        .config
-        .pointer("/tuner/save_captures")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let frame_png = if save_captures {
-        frame
-            .get("data")
-            .and_then(Value::as_str)
-            .and_then(|data| base64::engine::general_purpose::STANDARD.decode(data).ok())
-    } else {
-        None
-    };
     let result = state
         .logs
         .record_scan(mode, &outcome, frame_png.as_deref(), save_captures);
@@ -535,6 +541,16 @@ pub(crate) fn frame_rgba(frame: &Value) -> Result<(usize, usize, Vec<u8>), Strin
     let (width, height, rgba) = seal_win::pure::decode_png(&bytes)
         .map_err(|error| format!("the frame PNG could not be decoded: {error}"))?;
     Ok((width as usize, height as usize, rgba))
+}
+
+/// The PNG bytes a scan records when `tuner.save_captures` is on, decoded out of the frame's base64
+/// once. CORE-F11: the frame itself stays borrowed, never cloned.
+fn png_of(frame: &Value, save_captures: bool) -> Option<Vec<u8>> {
+    if !save_captures {
+        return None;
+    }
+    let data = frame.get("data").and_then(Value::as_str)?;
+    base64::engine::general_purpose::STANDARD.decode(data).ok()
 }
 /// Answers one request. Never panics: a bad request is a refusal the client can show. CORE-F3: a
 /// dispatcher panic is contained and answered with `internal`, instead of killing the core with a
@@ -675,6 +691,22 @@ impl CoreState {
         if let Ok(mut shared) = self.shared_config.write() {
             *shared = self.config.clone();
         }
+    }
+
+    /// The OCR pipeline's identity under the CURRENT config (CORE-F7).
+    fn ocr_identity(&self) -> OcrIdentity {
+        OcrIdentity {
+            dictionary: self.dictionary.clone(),
+            row_height: ocr_geometry(&self.config).row_height,
+            attributes: self.attributes.clone(),
+        }
+    }
+
+    /// Whether the cached pipeline was built from a different dictionary/row height than the config
+    /// now names (CORE-F7). `false` only when a cache exists AND matches; `ensure_ocr` pairs this
+    /// with the pipeline being present.
+    fn ocr_is_stale(&self) -> bool {
+        self.ocr_build.as_ref() != Some(&self.ocr_identity())
     }
 }
 
@@ -829,7 +861,9 @@ fn config_apply(state: &mut CoreState, request: &Request) -> Response {
 
     Response::ok(
         &request.id,
-        json!({"rev": state.rev, "sections": echo_sections(&state.config.clone(), &sections)}),
+        // CORE-F11: `echo_sections` only reads the merged config, so the whole JSON tree is no
+        // longer cloned just to be read from.
+        json!({"rev": state.rev, "sections": echo_sections(&state.config, &sections)}),
     )
 }
 
@@ -1532,10 +1566,16 @@ fn pet_test_read_panel(state: &mut CoreState, request: &Request) -> Response {
 /// Load the shared OCR pipeline for the panel diagnostic, if it is not cached yet. Failing here is
 /// the existing `ocr_unavailable`; no hover or capture happens first. `Some(response)` means the
 /// diagnostic is over before it touched the game.
+///
+/// CORE-F7: the cache is also invalidated here. The pipeline bakes in the dictionary's `text_fixes`
+/// and `tuner.ocr.row_height`, so a variant switch (`config.apply`), a `config.reload` or a
+/// `calibration.tuner.save` must rebuild it. Reloading the ONNX sessions is the honest refresh —
+/// `seal-ocr` exposes no cheaper `reconfigure` today.
 pub(crate) fn ensure_ocr(state: &mut CoreState, id: &str) -> Option<Response> {
-    if state.ocr.is_some() {
+    if state.ocr.is_some() && !state.ocr_is_stale() {
         return None;
     }
+    let identity = state.ocr_identity();
     let geometry = ocr_geometry(&state.config);
     match seal_ocr::pipeline::OcrPipeline::load_for_root(
         &state.root,
@@ -1544,16 +1584,23 @@ pub(crate) fn ensure_ocr(state: &mut CoreState, id: &str) -> Option<Response> {
     ) {
         Ok(pipeline) => {
             state.ocr = Some(pipeline);
+            state.ocr_build = Some(identity);
             None
         }
-        Err(error) => Some(Response::err(
-            id,
-            Error::new(
-                "ocr_unavailable",
-                "the OCR models are not available",
-                json!({"reason": error.reason, "message": error.message}),
-            ),
-        )),
+        Err(error) => {
+            // The cache cannot be trusted any more: a stale pipeline would read with the dictionary
+            // the config no longer names, so it is dropped rather than used behind the refusal.
+            state.ocr = None;
+            state.ocr_build = None;
+            Some(Response::err(
+                id,
+                Error::new(
+                    "ocr_unavailable",
+                    "the OCR models are not available",
+                    json!({"reason": error.reason, "message": error.message}),
+                ),
+            ))
+        }
     }
 }
 
@@ -1599,8 +1646,10 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
         Ok(grid) => grid,
         Err(error) => return icon_error_response(&request.id, error),
     };
-    let config = state.config.clone();
-    let tooltip: seal_domain::config::TooltipConfig = config
+    // CORE-F11: this used to clone the WHOLE merged config just to keep it alive across the OCR
+    // pipeline borrow; every use below reads `state.config` directly and the borrows do not overlap.
+    let tooltip: seal_domain::config::TooltipConfig = state
+        .config
         .get("tooltip")
         .cloned()
         .and_then(|value| serde_json::from_value(value).ok())
@@ -1613,7 +1662,8 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
         );
     }
     let point = |path: &str, label: &str| -> Result<(i32, i32), Box<Response>> {
-        let values = config
+        let values = state
+            .config
             .pointer(path)
             .and_then(Value::as_array)
             .filter(|values| values.len() == 2)
@@ -1657,7 +1707,7 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
         Err(error) => return win_error_response(&request.id, error),
     };
     if let Err(error) = pointer::system_perform(
-        &config,
+        &state.config,
         seal_domain::geometry::Point::new(focus.0, focus.1),
         true,
     ) {
@@ -1665,7 +1715,7 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
     }
     std::thread::sleep(std::time::Duration::from_millis(400));
     if let Err(error) = pointer::system_perform(
-        &config,
+        &state.config,
         seal_domain::geometry::Point::new(tab.0, tab.1),
         true,
     ) {
@@ -1673,7 +1723,7 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
     }
     std::thread::sleep(std::time::Duration::from_millis(900));
     if let Err(error) = pointer::system_perform(
-        &config,
+        &state.config,
         seal_domain::geometry::Point::new(focus.0, focus.1),
         false,
     ) {
@@ -1690,7 +1740,7 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
     };
     let mut matched: std::collections::BTreeMap<usize, (String, f64)> =
         std::collections::BTreeMap::new();
-    for (label, icon) in crate::pet_scan::queue_entries(&config) {
+    for (label, icon) in crate::pet_scan::queue_entries(&state.config) {
         let Some(icon) = icon else { continue };
         for (cell, score) in crate::pet::score_all_scores(&page_image, &grid, &icon) {
             if score > seal_domain::tools::pet::MATCH_LIMIT {
@@ -1714,7 +1764,7 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
         let mut panel = None;
         let mut crop = None;
         if pointer::system_perform(
-            &config,
+            &state.config,
             seal_domain::geometry::Point::new(centre.x, centre.y),
             false,
         )
@@ -2093,7 +2143,36 @@ fn attributes_get(state: &CoreState, request: &Request) -> Response {
     )
 }
 
+/// The per-command input lease shared by the pointer actions, the captures and the board
+/// diagnostics: `Some(refusal)` while a foreground tool is running/stopping or the resident feeder
+/// holds the game. `None` when no supervisor is attached (a config-only state has no tools to
+/// collide with). The `tool_busy` line names the holder and `detail.command` names the refused
+/// command.
+fn input_lease_refusal(state: &CoreState, request: &Request) -> Option<Response> {
+    let supervisor = state.supervisor.as_ref()?;
+    match supervisor.input_lease() {
+        Ok(None) => None,
+        Ok(Some(line)) => Some(Response::err(
+            &request.id,
+            Error::new(
+                "tool_busy",
+                &line,
+                json!({"line": line, "command": request.cmd}),
+            ),
+        )),
+        Err(line) => Some(internal(&request.id, &line)),
+    }
+}
+
+/// `board.probe`: which port, which baud, which IDs, and the firmware level from `V` (silence = level
+/// 1). The board crate owns the choice and the open; this only maps its failure to the protocol.
 fn board_probe(state: &CoreState, request: &Request) -> Response {
+    // CORE-F14: the probe opens the port and sends `V`. While a run holds the board that fails with a
+    // raw OS "access denied" as `board_unavailable`, which reads like a broken install; the lease
+    // turns it into the same `tool_busy` line a start gets.
+    if let Some(refusal) = input_lease_refusal(state, request) {
+        return refusal;
+    }
     match board::probe(&state.config) {
         Ok(result) => {
             if let Some(level) = result.get("level").and_then(Value::as_u64)
@@ -2118,8 +2197,12 @@ fn board_details(state: &CoreState, request: &Request) -> Response {
 }
 
 /// `board.test`: send the calibrator's test command. A command is sent only after the port opens, so
-/// a failure means nothing reached a board.
+/// a failure means nothing reached a board. CORE-F14: the lease is checked FIRST, because opening the
+/// port behind a running tool is exactly the raw "access denied" this command used to report.
 fn board_test(state: &CoreState, request: &Request) -> Response {
+    if let Some(refusal) = input_lease_refusal(state, request) {
+        return refusal;
+    }
     match board::test(&state.config, &request.args) {
         Ok(result) => Response::ok(&request.id, result),
         Err(error) => board_error_response(&request.id, error),
@@ -2322,7 +2405,9 @@ fn config_error_path(error: &ConfigError) -> Option<&Path> {
         | ConfigError::Serialize { path, .. }
         | ConfigError::Write { path, .. }
         | ConfigError::SchemaTooNew { path, .. } => Some(path.as_path()),
-        ConfigError::SectionNotOwned(_) => None,
+        // Neither names a file this command was asked to touch: a section refusal has no path, and
+        // HW-F4's verify-before-retire message already carries the pointers and the backup.
+        ConfigError::SectionNotOwned(_) | ConfigError::MigrationMismatch { .. } => None,
     }
 }
 
@@ -2349,6 +2434,7 @@ fn internal(id: &str, message: &str) -> Response {
 mod tests {
     use std::sync::{Arc, Mutex, mpsc};
 
+    use seal_domain::config::TextFix;
     use seal_domain::decision::{Decision, Key, StopReason};
     use seal_domain::geometry::Point;
     use seal_tools::game::GamePort;
@@ -2752,5 +2838,50 @@ mod tests {
             crop_grade_area(&area, 100, 100, &rgba).expect("a valid crop inside the image");
         assert_eq!((width, height), (20, 20));
         assert_eq!(&pixels[0..4], &[200, 100, 50, 255]);
+    }
+
+    /// CORE-F7: the cached OCR pipeline bakes in the active dictionary's `text_fixes` (its cleaner)
+    /// and `tuner.ocr.row_height` (line bucketing). Every trigger the review names — a variant switch,
+    /// `config.reload`, `calibration.tuner.save` — changes one of those, so the cache must be
+    /// recognised as stale; before this nothing ever cleared it and the calibrator's test reads kept
+    /// the old dictionary until the core restarted.
+    #[test]
+    fn a_config_change_makes_the_cached_ocr_pipeline_stale() {
+        let mut state = CoreState::new(std::path::PathBuf::from(r"C:\repo"));
+        state.config = json!({"tuner": {"ocr": {"row_height": 10}}});
+        state.dictionary = "attributes.tw.yaml".to_owned();
+        state.ocr_build = Some(state.ocr_identity());
+        assert!(
+            !state.ocr_is_stale(),
+            "a cache built from this config is current"
+        );
+
+        // A variant switch changes the dictionary file and its text fixes.
+        state.dictionary = "attributes.us.yaml".to_owned();
+        assert!(
+            state.ocr_is_stale(),
+            "a variant switch must rebuild the pipeline"
+        );
+
+        state.ocr_build = Some(state.ocr_identity());
+        assert!(!state.ocr_is_stale());
+        // `calibration.tuner.save` derives and writes a new row height.
+        state.config["tuner"]["ocr"]["row_height"] = json!(14);
+        assert!(
+            state.ocr_is_stale(),
+            "a tuner calibration must rebuild the pipeline"
+        );
+
+        state.ocr_build = Some(state.ocr_identity());
+        assert!(!state.ocr_is_stale());
+        // `config.reload` can change only the cleanup table, with the same dictionary file name.
+        state.attributes.text_fixes.whole.push(TextFix {
+            from: "攻孽".to_owned(),
+            to: "攻擊".to_owned(),
+        });
+        assert!(
+            state.ocr_is_stale(),
+            "an edited text-fix table must rebuild the cleaner"
+        );
     }
 }

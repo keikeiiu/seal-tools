@@ -116,10 +116,10 @@ fn the_sanitized_v2_era_config_replays_through_the_tool_readers() {
     assert_eq!(gem.settings.resource_gems.len(), 3);
 
     // Spammer: the active preset and its priority/combos/startup are the configured ones.
-    let (configured, active, rotation) = spammer::rotation(&config);
-    assert!(configured);
-    assert_eq!(active, "run");
-    let rotation = rotation.expect("the active rotation resolves");
+    let read = spammer::rotation(&config);
+    assert!(read.presets_configured);
+    assert_eq!(read.active, "run");
+    let rotation = read.rotation.expect("the active rotation resolves");
     assert_eq!(rotation.priority, vec!["E".to_owned(), "Q".to_owned()]);
     assert_eq!(rotation.combos.len(), 1);
     assert_eq!(rotation.startup.step, 0.1);

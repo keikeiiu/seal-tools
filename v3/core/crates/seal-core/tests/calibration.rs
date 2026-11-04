@@ -1191,6 +1191,58 @@ fn save_stamps_measured_at_and_echoes_the_written_calibration_block() {
     );
 }
 
+/// CORE-F10: the reference gallery reads each artifact's dimensions from the PNG header instead of
+/// decoding the whole image, and only `calibration.fetch_all` carries it. The fixture below has a
+/// valid signature + IHDR and NO image data, so the old full decode returned `None` and the entry was
+/// silently absent; the header path still reports it.
+#[test]
+fn fetch_all_reads_gallery_dimensions_from_the_header_without_decoding() {
+    let (dir, mut state, _frame_id) = targeted_state();
+    let mut header = Vec::new();
+    header.extend_from_slice(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]);
+    header.extend_from_slice(&13u32.to_be_bytes()); // IHDR length
+    header.extend_from_slice(b"IHDR");
+    header.extend_from_slice(&640u32.to_be_bytes());
+    header.extend_from_slice(&360u32.to_be_bytes());
+    header.extend_from_slice(&[8, 6, 0, 0, 0]); // bit depth, colour, compression, filter, interlace
+    header.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]); // deliberately bogus: no CRC, no IDAT
+    std::fs::write(dir.path().join("config/calib_tuner.png"), &header).expect("the fixture writes");
+
+    let response = handle(
+        &mut state,
+        Request::new("open", "calibration.fetch_all", json!({})),
+    );
+    assert!(response.ok, "fetch_all failed: {:?}", response.error);
+    let result = response.result.expect("a result");
+    let gallery = result["gallery"].as_array().expect("the gallery array");
+    let tuner = gallery
+        .iter()
+        .find(|entry| entry["name"] == "tuner")
+        .expect("the header-only PNG is still a gallery entry");
+    assert_eq!(tuner["width"], 640);
+    assert_eq!(tuner["height"], 360);
+    assert_eq!(
+        tuner["png_base64"],
+        base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            std::fs::read(dir.path().join("config/calib_tuner.png")).expect("the fixture reads")
+        ),
+        "the bytes travel unchanged"
+    );
+
+    // The per-kind fetch no longer carries the gallery at all: the workspace opener reads it from
+    // `fetch_all`, and the ~35 fallback fetches must not repeat several megabytes each.
+    let fetched = handle(
+        &mut state,
+        Request::new("kind", "calibration.fetch", json!({"kind": "bag_grid"})),
+    );
+    assert!(fetched.ok, "{:?}", fetched.error);
+    assert!(
+        fetched.result.expect("a result").get("gallery").is_none(),
+        "calibration.fetch must not echo the gallery"
+    );
+}
+
 #[test]
 fn fetch_all_answers_every_mark_and_the_catalog_is_core_owned() {
     let (_dir, mut state, _frame_id) = targeted_state();

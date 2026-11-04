@@ -175,7 +175,11 @@ impl<T: Transport, C: Cursor, K: Clock> Effects for BoardEffects<T, C, K> {
     }
 
     fn move_by(&mut self, dx: i32, dy: i32) -> Result<(), EffectError> {
-        self.write(BoardCommand::move_by(dx, dy))
+        // Refused at the grammar when the frame is outside ±9999 (HW-F11): the sketch would reject
+        // it, and a silently ignored move is a mis-aimed click.
+        let command =
+            BoardCommand::move_by(dx, dy).map_err(|error| EffectError::new(error.message()))?;
+        self.write(command)
     }
 
     fn hold_left(&mut self) -> Result<(), EffectError> {

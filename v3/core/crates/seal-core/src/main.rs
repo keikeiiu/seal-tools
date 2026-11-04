@@ -16,19 +16,23 @@
 //! root discovery/config load below, so no machine-touching startup is reachable in that mode.
 //!
 //! Shutdown order is load-bearing (OPEN.md §1): the final response is queued FIRST, then the
-//! supervisor is shut down (it cancels runs, waits for the workers and emits `core.stopping`), and
-//! only then is the writer finished — the supervisor thread is the other `EventBus` holder, and the
-//! writer only stops when the last sender is gone.
+//! supervisor is shut down (it cancels runs, waits for the workers up to its deadline and emits
+//! `core.stopping`), and only then is the writer finished — the supervisor thread is the other
+//! `EventBus` holder, and the writer only stops when the last sender is gone. `CORE-F8`: a worker
+//! that outlives the supervisor's shutdown budget is logged to `error.log`, the writer is given a
+//! short bounded settle, and the process exits non-zero so a wedged run is reported instead of
+//! hanging onto the COM port.
 
 use std::backtrace::Backtrace;
 use std::panic;
 use std::sync::Arc;
+use std::time::Duration;
 
 use seal_core::dispatch::{CoreState, handle};
 use seal_core::events::EventWriter;
 use seal_core::registry::{ProductionRegistry, ToolRegistry};
 use seal_core::root::find_root;
-use seal_core::supervisor::Supervisor;
+use seal_core::supervisor::{ShutdownOutcome, Supervisor};
 use seal_proto::framing::decode_line;
 use seal_proto::{Error, Request, Response};
 use std::io::{BufRead, Read};
@@ -37,6 +41,12 @@ use std::path::PathBuf;
 /// One NDJSON line may be large because calibration frames are inline base64, but it must not be
 /// unbounded: a client bug must not grow the core's buffer without limit (CORE-F9).
 const MAX_LINE_BYTES: usize = 64 * 1024 * 1024;
+
+/// How long the writer gets to drain after the supervisor is gone (CORE-F8). A clean shutdown has no
+/// senders left and finishes in milliseconds; the budget only bounds the wedged case, where the
+/// writer is still waiting for an `EventBus` clone held by a stuck worker and the process must leave
+/// anyway.
+const WRITER_DRAIN_BUDGET: Duration = Duration::from_secs(2);
 
 #[allow(
     clippy::too_many_lines,
@@ -238,15 +248,25 @@ fn main() {
         }
     };
 
-    state.shutdown_tools(reason);
-    // `PROTOCOL.md` §1: shutdown flushes the logs. Every line is already durable (the logger opens,
-    // appends and closes per line), so this is the contract hook rather than a data-loss window.
+    let shutdown = state.shutdown_tools(reason);
+    // `PROTOCOL.md` §1: shutdown flushes the logs. Every line is already durable (the logger flushes
+    // each line), so this is the contract hook rather than a data-loss window.
     state.logs.flush();
     // The dispatcher's event sender must be gone before the writer can stop: it is the last sender
     // besides the supervisor, and leaving it attached would hang the process AFTER its final line.
     state.detach_pet_state_sink();
     state.detach_events();
-    writer.finish();
+    let writer_finished = writer.finish_within(WRITER_DRAIN_BUDGET);
+    if writer_finished && shutdown == ShutdownOutcome::Drained {
+        return;
+    }
+    // A worker outlived the shutdown budget (CORE-F8): the supervisor already wrote it to
+    // `error.log`. Exiting non-zero is the only honest signal left — the process must not stay alive
+    // holding the COM port, and the shell reports a non-zero exit as a crash rather than a clean
+    // stop. `process::exit` is deliberate: a stuck worker is still holding threads, and running the
+    // rest of the runtime's teardown would wait on exactly the thread this deadline exists to leave.
+    eprintln!("seal-core: shutdown did not finish cleanly — exiting non-zero");
+    std::process::exit(1);
 }
 
 /// `--replay <script>` (`PROTOCOL.md` §13). `None` means normal mode; `Some(Err(..))` means the flag
