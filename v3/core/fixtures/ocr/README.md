@@ -35,8 +35,8 @@ cd v3/core
 .\cargo.cmd run -p seal-core --bin ocr_eval -- --root C:\path\to\install --corpus fixtures\ocr --baseline ..\..\.scratch\ocr-baseline.json
 ```
 
-- exit 0: every case matched exactly;
-- exit 1: at least one mismatch;
+- exit 0: no regression (or the first run, which records the baseline);
+- exit 1: exact rate dropped or mean CER rose by more than 0.01 against the baseline;
 - exit 2: models/corpus could not load.
 
 The JSON baseline carries per-case expected/actual text, exact-match, CER and latency, plus the

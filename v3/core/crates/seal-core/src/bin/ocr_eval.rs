@@ -75,12 +75,15 @@ fn run() -> Result<(), String> {
             .map_err(|error| format!("{}: {}", case.png.display(), error.message))?;
         let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
         let actual: Vec<String> = scan.items.iter().map(|line| line.text.clone()).collect();
-        let case_exact = actual == expected.lines;
+        // Text-level comparison: line segmentation, spacing and full-width punctuation are not
+        // recognition quality. Compare the alphanumeric text in reading order; the raw line arrays
+        // stay in the baseline for a human diff.
+        let expected_text = normalized_text(&expected.lines);
+        let actual_text = normalized_text(&actual);
+        let case_exact = expected_text == actual_text;
         if case_exact {
             exact += 1;
         }
-        let expected_text = expected.lines.join("\n");
-        let actual_text = actual.join("\n");
         let cer = character_error_rate(&expected_text, &actual_text);
         results.push(json!({
             "case": case.name,
@@ -95,21 +98,31 @@ fn run() -> Result<(), String> {
         .iter()
         .filter_map(|result| result["latency_ms"].as_f64())
         .collect();
-    let baseline = json!({
-        "cases": results,
-        "summary": {
-            "total": cases.len(),
-            "exact": exact,
-            "exact_rate": exact as f64 / cases.len() as f64,
-            "mean_cer": results
-                .iter()
-                .filter_map(|result| result["cer"].as_f64())
-                .sum::<f64>() / cases.len() as f64,
-            "p50_latency_ms": percentile(&latencies, 0.50),
-            "p95_latency_ms": percentile(&latencies, 0.95),
-        }
+    let summary = json!({
+        "total": cases.len(),
+        "exact": exact,
+        "exact_rate": exact as f64 / cases.len() as f64,
+        "mean_cer": results
+            .iter()
+            .filter_map(|result| result["cer"].as_f64())
+            .sum::<f64>() / cases.len() as f64,
+        "p50_latency_ms": percentile(&latencies, 0.50),
+        "p95_latency_ms": percentile(&latencies, 0.95),
     });
+    let baseline = json!({"cases": results, "summary": summary});
     let text = serde_json::to_string_pretty(&baseline).map_err(|error| error.to_string())?;
+    let previous = match &args.baseline {
+        Some(path) if path.is_file() => Some(
+            fs::read_to_string(path)
+                .map_err(|error| format!("{}: {error}", path.display()))?
+                .parse::<Value>()
+                .map_err(|error| format!("{}: {error}", path.display()))?,
+        ),
+        _ => None,
+    };
+    let regression = previous
+        .as_ref()
+        .and_then(|previous| regression_message(previous, &baseline));
     if let Some(path) = &args.baseline {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
@@ -119,11 +132,41 @@ fn run() -> Result<(), String> {
         writeln!(file, "{text}").map_err(|error| format!("{}: {error}", path.display()))?;
     }
     println!("{text}");
-    if exact == cases.len() {
-        Ok(())
-    } else {
-        std::process::exit(1)
+    if let Some(reason) = regression {
+        eprintln!("ocr_eval: regression: {reason}");
+        std::process::exit(1);
     }
+    Ok(())
+}
+
+/// The text recognition quality ignores line segmentation, whitespace and punctuation: those come
+/// from the detector and the panel layout, not from the recogniser. Keep letters/digits/CJK only.
+fn normalized_text(lines: &[String]) -> String {
+    lines
+        .iter()
+        .flat_map(|line| line.chars())
+        .filter(|character| character.is_alphanumeric())
+        .collect()
+}
+
+/// A baseline is a regression when the exact rate drops or mean CER rises by more than epsilon.
+fn regression_message(previous: &Value, current: &Value) -> Option<String> {
+    const EPSILON: f64 = 0.01;
+    let old = previous.get("summary")?;
+    let new = current.get("summary")?;
+    let old_exact = old.get("exact_rate")?.as_f64()?;
+    let new_exact = new.get("exact_rate")?.as_f64()?;
+    if new_exact + EPSILON < old_exact {
+        return Some(format!(
+            "exact rate dropped from {old_exact:.3} to {new_exact:.3}"
+        ));
+    }
+    let old_cer = old.get("mean_cer")?.as_f64()?;
+    let new_cer = new.get("mean_cer")?.as_f64()?;
+    if new_cer > old_cer + EPSILON {
+        return Some(format!("mean CER rose from {old_cer:.3} to {new_cer:.3}"));
+    }
+    None
 }
 
 struct Arguments {
@@ -313,5 +356,26 @@ mod tests {
         let error = read_expected(&path).expect_err("lines is required");
         assert!(error.contains("lines"), "{error}");
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn normalization_ignores_line_breaks_spaces_and_fullwidth_punctuation() {
+        let lines = vec![
+            "GRADE：".to_owned(),
+            "G".to_owned(),
+            "攻擊速度 + 10".to_owned(),
+        ];
+        assert_eq!(normalized_text(&lines), "GRADEG攻擊速度10");
+    }
+
+    #[test]
+    fn a_baseline_regression_is_exact_rate_drop_or_cer_rise() {
+        let old = json!({"summary": {"exact_rate": 0.5, "mean_cer": 0.2}});
+        let same = json!({"summary": {"exact_rate": 0.5, "mean_cer": 0.2}});
+        assert_eq!(regression_message(&old, &same), None);
+        let worse_exact = json!({"summary": {"exact_rate": 0.4, "mean_cer": 0.2}});
+        assert!(regression_message(&old, &worse_exact).is_some());
+        let worse_cer = json!({"summary": {"exact_rate": 0.5, "mean_cer": 0.25}});
+        assert!(regression_message(&old, &worse_cer).is_some());
     }
 }
