@@ -193,7 +193,7 @@ a design or a status row yet.
 - **Multi-language shell — English + Chinese (CH-ZH).** The shell is English-only today (~456
   hard-coded `Text(` strings, SHELL-F13), and core/domain player-facing lines are English too.
   Needed before a plan:
-  - whether `CH-ZH` means Traditional (matching the existing `zh-TW` docs), Simplified, or both;
+  - **Decided 2026-11-05: `CH-ZH` means Traditional Chinese (`zh-TW`/`zh-Hant`, matching the existing `zh-TW` docs).** Simplified Chinese is not in scope unless the player asks later.
   - translated copy or a terminology glossary for tabs, cards, calibration, error lines and the
     crash view;
   - a decision on whether core/domain refusal sentences are translated by the core or mapped by the
