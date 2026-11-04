@@ -1265,6 +1265,10 @@ pub struct PetTool<S: PetSource> {
     /// A zero-minute schedule with nothing acted on waits [`MIN_NO_ACTION_WAIT_MINUTES`] instead of
     /// reopening immediately. PET-F6.
     acted_this_pass: bool,
+    /// The long wait the runner was just asked to take, in minutes. The next `decide` subtracts it
+    /// from every row's `next_minutes` before the fresh look, so the row that was scheduled for that
+    /// wake is genuinely DUE — even when its slot/feeders are unreadable on this pass. PET-F2.
+    pending_wait_minutes: Option<f64>,
     message: String,
     /// Mid-run state persistence (A1). Tests/decision-only tools get a no-op sink.
     state_sink: Option<Arc<dyn PetStateSink>>,
@@ -1301,6 +1305,7 @@ impl<S: PetSource> PetTool<S> {
             food_used,
             start_override_pending,
             acted_this_pass: false,
+            pending_wait_minutes: None,
             message,
             state_sink: None,
             log_notes: Vec::new(),
@@ -1444,6 +1449,11 @@ impl<S: PetSource> PetTool<S> {
         let mut unread = false;
         for index in self.active_rows() {
             let row = self.plan.rows[index].clone();
+            // PET-F2: the wait we just took is the row's own timer. `next_minutes` is relative to the
+            // previous look, so this is the schedule's "now >= due_at" test.
+            let timer_due = self.state[index]
+                .next_minutes
+                .is_some_and(|minutes| minutes <= 0.0);
             match self.source.slot_state(&row) {
                 Ok(slot) => match slot.empty {
                     Some(true) => {
@@ -1469,9 +1479,7 @@ impl<S: PetSource> PetTool<S> {
                                 ..seal_config::PetRunStatePatch::default()
                             });
                         }
-                        let was_due = self.state[index]
-                            .next_minutes
-                            .is_some_and(|minutes| minutes <= 0.0);
+                        let was_due = timer_due;
                         let reading = self.read_boarding_row(index);
                         if reading.next_minutes <= 0.0 {
                             self.state[index].next_minutes = Some(0.0);
@@ -1490,7 +1498,20 @@ impl<S: PetSource> PetTool<S> {
                     }
                     None => {
                         unread = true;
-                        self.schedule_unread_row(index, row.stacks);
+                        if timer_due {
+                            // The timer says this row is due even though its slot could not be read.
+                            // Act on the ticked belief: no veto is possible without a fresh occupied
+                            // read, so it must be a reload, not another full cycle of silence.
+                            self.state[index].next_minutes = Some(0.0);
+                            let name = self.plan.rows[index].name.clone();
+                            self.note(format!(
+                                "row {name}: timer due, slot still unread — reloading rather than \
+                                 carrying the configured cycle"
+                            ));
+                            due.push(index);
+                        } else {
+                            self.schedule_unread_row(index, row.stacks);
+                        }
                     }
                 },
                 Err(line) => {
@@ -1611,6 +1632,20 @@ impl<S: PetSource> PetTool<S> {
             .filter(|state| state.next_minutes.is_some())
             .filter_map(|state| state.next_minutes)
             .fold(f64::INFINITY, f64::min)
+    }
+
+    /// Apply the long wait the runner was just asked to take. `next_minutes` is relative to the
+    /// previous look, so this is what makes "the timer fired" observable to [`Self::look`] even when
+    /// the row's slot and feeders are unreadable on the next pass. PET-F2.
+    fn advance_after_wait(&mut self) {
+        let Some(minutes) = self.pending_wait_minutes.take() else {
+            return;
+        };
+        for state in &mut self.state {
+            if let Some(next) = state.next_minutes {
+                state.next_minutes = Some((next - minutes).max(0.0));
+            }
+        }
     }
 
     fn next_label(minutes: f64) -> String {
@@ -2155,6 +2190,9 @@ impl<S: PetSource> PetTool<S> {
                         ));
                     } else {
                         let seconds = minutes * 60.0;
+                        // The runner is about to sleep this long; the next decide is the timer wake,
+                        // so subtract it from every row before the fresh look (PET-F2).
+                        self.pending_wait_minutes = Some(minutes);
                         let label = Self::next_label(minutes);
                         self.message = self.card().schedule_line(&label);
                         self.phase = Phase::Open;
@@ -2201,6 +2239,7 @@ impl<S: PetSource + Send> Tool for PetTool<S> {
     }
 
     fn decide(&mut self) -> Decision {
+        self.advance_after_wait();
         let decision = self.decide_once();
         if decision.is_terminal() {
             // A terminal decision ends the run; no claim may outlive it.
@@ -3309,6 +3348,59 @@ mod loop_tests {
             waits.get(1).is_some_and(|seconds| *seconds > 60.0),
             "the start override is one-shot; the second pass waits the configured cycle: {waits:?}"
         );
+    }
+
+    /// PET-F2: the scheduled wait IS the row timer. A row whose slot/feeders stay unreadable must be
+    /// reloaded when its own wait expires, not rescheduled for another full cycle forever.
+    #[test]
+    fn an_unreadable_row_reloads_when_its_scheduled_timer_fires() {
+        let mut config = config(1, false, true, false);
+        config["pet"]["reload_on_start"] = serde_json::json!(false);
+        let plan = plan_of(&config);
+        let unknown = SlotState {
+            difference: None,
+            empty: None,
+        };
+        let source = FakeSource::new(vec![unknown]);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        // The first pass schedules the configured cycle and hands the runner its long wait.
+        let mut saw_long_wait = false;
+        for _ in 0..500 {
+            match tool.decide() {
+                Decision::Wait(seconds) if seconds >= 60.0 => {
+                    saw_long_wait = true;
+                    break;
+                }
+                Decision::Wait(_) => {}
+                terminal => assert!(!terminal.is_terminal(), "unexpected stop: {terminal:?}"),
+            }
+        }
+        assert!(saw_long_wait, "the first pass must schedule a wait");
+
+        // The next decide is the timer wake. The synthetic clock subtracts the wait it requested;
+        // the slot is still unknown, but the row is due, so this pass must act instead of scheduling
+        // the same cycle again.
+        let mut acted = false;
+        for _ in 0..200 {
+            let decision = tool.decide();
+            assert!(!decision.is_terminal(), "unexpected stop: {decision:?}");
+            if matches!(decision, Decision::Wait(seconds) if seconds >= 60.0) {
+                break;
+            }
+            if !matches!(decision, Decision::Wait(_)) {
+                acted = true;
+            }
+            let notes = tool.drain_log_notes();
+            if notes
+                .iter()
+                .any(|note| note.contains("timer due, slot still unread"))
+            {
+                acted = true;
+                break;
+            }
+        }
+        assert!(acted, "the timer-due unreadable row must be acted on");
     }
 
     #[test]
