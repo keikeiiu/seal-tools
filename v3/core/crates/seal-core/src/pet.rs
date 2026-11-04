@@ -899,6 +899,9 @@ const CLICK_WAIT: f64 = 0.35;
 const PAGE_WAIT: f64 = 0.9;
 const DRAG_GRAB_WAIT: f64 = 0.35;
 const START_WAIT: f64 = 2.0;
+/// v2's `EndWait` (PET-F10): the end toggle was observed to need longer than a normal action for the
+/// pet to reappear in the bag, so the post-press wait is `max(EndWait, action_wait)`.
+const END_WAIT: f64 = 2.5;
 const RETRY_MINUTES: f64 = 5.0;
 
 /// The floor between two opens when the pass acted on NOTHING (PET-F6). An unreadable row falls back
@@ -1467,6 +1470,11 @@ impl<S: PetSource> PetTool<S> {
         f64::from(self.plan.action_wait_ms.max(200)) / 1000.0
     }
 
+    /// PET-F10: v2's `Math.Max(EndWait, ActionWait)` around the end toggle.
+    fn end_toggle_wait(&self) -> f64 {
+        END_WAIT.max(self.action_wait())
+    }
+
     fn schedule_settings(&self) -> PetScheduleSettings {
         PetScheduleSettings {
             items_per_minute: self.plan.items_per_minute.max(1),
@@ -1830,7 +1838,14 @@ impl<S: PetSource> PetTool<S> {
                     self.message = reload_step_message(&row_name, ReloadStep::EndingBoarding);
                     if let Some(toggle) = row.toggle_label.as_deref().and_then(toggle_point) {
                         self.click(toggle);
-                        self.wait(self.action_wait());
+                        self.wait(self.end_toggle_wait());
+                        // v2 persisted this right after the press, before the slot read; the fold
+                        // runs much later, so a crash mid-visit kept boarding=true on disk.
+                        self.state[index].boarding = false;
+                        self.persist_state(&seal_config::PetRunStatePatch {
+                            boarding_running: vec![(index, false)],
+                            ..seal_config::PetRunStatePatch::default()
+                        });
                     }
                     visit.stage = Stage::VerifyEmpty;
                 } else {
@@ -3603,6 +3618,34 @@ mod loop_tests {
         assert!(
             notes.iter().any(|note| note.contains("failed 1/3")),
             "the fold's strike sentence reaches the file log: {notes:?}"
+        );
+    }
+
+    #[test]
+    fn the_end_toggle_wait_is_at_least_v2s_end_wait() {
+        let base = config(1, false, true, false);
+        let plan = plan_of(&base);
+        let tool = PetTool::new(
+            plan,
+            FakeSource::new(vec![empty()]),
+            Arc::new(seal_tools::game::AllowAll),
+        );
+        assert!(
+            (tool.end_toggle_wait() - END_WAIT).abs() < 1e-9,
+            "the default 1.2 s action wait is raised to END_WAIT"
+        );
+
+        let mut config = config(1, false, true, false);
+        config["pet"]["action_wait_ms"] = serde_json::json!(3000);
+        let plan = plan_of(&config);
+        let tool = PetTool::new(
+            plan,
+            FakeSource::new(vec![empty()]),
+            Arc::new(seal_tools::game::AllowAll),
+        );
+        assert!(
+            (tool.end_toggle_wait() - 3.0).abs() < 1e-9,
+            "a longer configured action wait still wins"
         );
     }
 
