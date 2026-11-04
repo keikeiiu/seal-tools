@@ -275,9 +275,12 @@ impl CoreState {
     /// One revision for a write this dispatcher performed; also publishes it to the shared counter so
     /// a later worker write cannot move the session backwards.
     pub(crate) fn bump_revision(&mut self) -> u64 {
-        self.rev += 1;
-        self.revision.store(self.rev, Ordering::SeqCst);
-        self.rev
+        // A worker's mid-run write can bump the shared counter while a command is running. fetch_add
+        // gives this write a unique revision instead of overwriting the worker's value with rev+1
+        // (CORE-F4).
+        let next = self.revision.fetch_add(1, Ordering::SeqCst) + 1;
+        self.rev = next;
+        next
     }
 
     /// Stops every run, waits for the workers and emits `core.stopping`, then joins the supervisor
@@ -529,9 +532,18 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
 }
 
 fn handle_inner(state: &mut CoreState, request: &Request) -> Response {
-    // A mid-run pet write can bump the shared revision between requests; every boundary starts from
-    // that value so `hello`, conflict checks and echoes never report a pre-write revision.
-    state.rev = state.revision.load(Ordering::SeqCst);
+    // A mid-run pet write can bump the shared revision between requests. If it did, the dispatcher's
+    // copy is stale: refresh it from the shared mirror BEFORE the command can read or republish it.
+    // This is the CORE-F4 fix; it also makes `board.details` (a read-only command) harmless after a
+    // worker persisted `food_slots_used`.
+    let shared_rev = state.revision.load(Ordering::SeqCst);
+    if shared_rev > state.rev {
+        if let Ok(shared) = state.shared_config.read() {
+            state.config = shared.clone();
+        }
+        state.rev = shared_rev;
+    }
+    let rev_before = state.rev;
     if request.cmd == "hello" {
         return hello(state, request);
     }
@@ -618,7 +630,11 @@ fn handle_inner(state: &mut CoreState, request: &Request) -> Response {
             .logs
             .error_line(&format!("{}: {}", request.cmd, error.message));
     }
-    state.publish_config();
+    // Publish only when THIS command changed the config. A read-only command must not write the
+    // dispatcher's old copy over a mid-run worker write (CORE-F4).
+    if state.rev != rev_before {
+        state.publish_config();
+    }
     response
 }
 
@@ -2643,5 +2659,41 @@ mod tests {
             "no capture/evidence file was written before the icon check"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// CORE-F4: a worker's mid-run config write must survive the next read-only command. The
+    /// dispatcher used to republish its stale copy after every command and overwrite the mirror.
+    #[test]
+    fn a_read_only_command_does_not_republish_over_a_worker_config_write() {
+        let mut state = CoreState::new(std::path::PathBuf::from(r"C:\repo"));
+        let _ = handle(
+            &mut state,
+            Request::new("1", "hello", json!({"protocol": 1, "client": "0.1.0"})),
+        );
+        let worker_config = json!({"pet": {"food_slots_used": 5}});
+        *state.shared_config.write().expect("not poisoned") = worker_config.clone();
+        state.revision.fetch_add(1, Ordering::SeqCst);
+
+        let _ = handle(&mut state, Request::new("2", "board.details", json!({})));
+
+        assert_eq!(
+            state.config["pet"]["food_slots_used"], 5,
+            "the dispatcher refreshed its config from the worker mirror"
+        );
+        assert_eq!(
+            *state.shared_config.read().expect("not poisoned"),
+            worker_config,
+            "a read-only command must not republish the old dispatcher copy"
+        );
+    }
+
+    #[test]
+    fn bump_revision_uses_the_shared_counter_not_the_local_snapshot() {
+        let mut state = CoreState::new(std::path::PathBuf::from(r"C:\repo"));
+        state.rev = 3;
+        state.revision.store(9, Ordering::SeqCst);
+        assert_eq!(state.bump_revision(), 10);
+        assert_eq!(state.rev, 10);
+        assert_eq!(state.revision.load(Ordering::SeqCst), 10);
     }
 }
