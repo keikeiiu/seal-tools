@@ -667,8 +667,16 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
             json!({}),
         );
     };
-    let frame_width = frame.get("width").and_then(Value::as_u64).unwrap_or(0) as i32;
-    let frame_height = frame.get("height").and_then(Value::as_u64).unwrap_or(0) as i32;
+    let frame_width = frame
+        .meta()
+        .get("width")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as i32;
+    let frame_height = frame
+        .meta()
+        .get("height")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as i32;
 
     let (mark, rect) = match def.shape {
         Shape::Rect => {
@@ -746,25 +754,12 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
                 json!({"kind": kind_name}),
             );
         };
-        let Some(encoded) = frame.get("data").and_then(Value::as_str) else {
-            return fail(
-                &request.id,
-                "the frame carries no PNG data to crop",
-                json!({"frame_id": frame_id}),
-            );
-        };
-        let png = match base64::engine::general_purpose::STANDARD.decode(encoded) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                return fail(
-                    &request.id,
-                    format!("the frame's PNG data is not base64: {error}"),
-                    json!({"frame_id": frame_id}),
-                );
-            }
-        };
-        let (width, height, rgba) = match seal_win::pure::decode_png(&png) {
-            Ok(pixels) => pixels,
+        let (width, height, rgba) = match frame.rgba() {
+            Ok((width, height, rgba)) => (
+                u32::try_from(width).unwrap_or(u32::MAX),
+                u32::try_from(height).unwrap_or(u32::MAX),
+                rgba,
+            ),
             Err(error) => {
                 return fail(
                     &request.id,
@@ -773,8 +768,7 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
                 );
             }
         };
-        let (crop_w, crop_h, cropped) = match seal_win::pure::crop_rgba(width, height, &rgba, rect)
-        {
+        let (crop_w, crop_h, cropped) = match seal_win::pure::crop_rgba(width, height, rgba, rect) {
             Ok(crop) => crop,
             Err(error) => {
                 return fail(

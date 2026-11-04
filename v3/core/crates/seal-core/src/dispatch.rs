@@ -376,11 +376,12 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
                     json!({}),
                 );
             };
-            let (width, height, rgba) = match frame_rgba(frame) {
-                Ok(image) => image,
+            let (width, height, rgba) = match frame.rgba() {
+                Ok((width, height, rgba)) => (width, height, rgba.to_vec()),
                 Err(message) => return internal(&request.id, &message),
             };
-            (width, height, rgba, png_of(frame, save_captures))
+            let frame_png = save_captures.then(|| frame.png().to_vec());
+            (width, height, rgba, frame_png)
         } else if request.args.get("region").is_some() {
             let title = match win::configured_title(&state.config) {
                 Ok(title) => title,
@@ -2270,7 +2271,7 @@ fn capture_command(state: &mut CoreState, request: &Request) -> Response {
         Err(error) => return win_error_response(&request.id, error),
     };
     let frame_id = state.frames.insert(frame);
-    let Some(frame) = state.frames.get(&frame_id).cloned() else {
+    let Some(frame) = state.frames.get_value(&frame_id) else {
         return internal(&request.id, "the captured frame left the frame cache");
     };
     Response::ok(&request.id, json!({"frame": frame, "display": display}))

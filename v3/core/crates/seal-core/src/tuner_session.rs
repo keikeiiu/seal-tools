@@ -325,7 +325,7 @@ pub fn check(state: &mut CoreState, request: &Request) -> Response {
 /// The hide/show around the capture is the shell's contract (as for `capture`).
 fn cached_or_live_frame(state: &CoreState, id: &str, args: &Value) -> Result<Value, Box<Response>> {
     if let Some(frame_id) = args.get("frame_id").and_then(Value::as_str) {
-        return state.frames.get(frame_id).cloned().ok_or_else(|| {
+        return state.frames.get_value(frame_id).ok_or_else(|| {
             Box::new(fail(
                 id,
                 format!("unknown frame_id {frame_id:?} — capture the window again"),

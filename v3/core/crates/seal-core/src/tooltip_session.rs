@@ -222,7 +222,7 @@ pub fn hover_capture(state: &mut CoreState, request: &Request) -> Response {
         Err(error) => return win_error_response(&request.id, error),
     };
     let frame_id = state.frames.insert(frame);
-    let Some(frame) = state.frames.get(&frame_id).cloned() else {
+    let Some(frame) = state.frames.get_value(&frame_id) else {
         return Response::err(
             &request.id,
             Error::new(

@@ -5,6 +5,8 @@
 //! because the protocol retains the last four frames by `frame_id` (§8) so `calibration.save` can
 //! reference the frame the calibrator just took instead of re-sending megabytes.
 
+use std::collections::VecDeque;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
@@ -256,37 +258,116 @@ pub fn parse_region(args: &Value) -> Result<Option<Rect>, CommandError> {
     Ok(Some(rect))
 }
 
+/// One cached capture: the frame metadata without the multi-megabyte base64 payload, the decoded PNG
+/// bytes, and the RGBA decoding computed at most once (CORE-F11). The base64 string exists only when
+/// a protocol response needs it.
+#[derive(Debug)]
+pub struct CachedFrame {
+    meta: Value,
+    png: Vec<u8>,
+    rgba: OnceLock<(usize, usize, Vec<u8>)>,
+}
+
+impl CachedFrame {
+    fn from_value(mut frame: Value) -> Self {
+        let png = frame
+            .get("data")
+            .and_then(Value::as_str)
+            .and_then(|data| base64::engine::general_purpose::STANDARD.decode(data).ok())
+            .unwrap_or_default();
+        if let Some(object) = frame.as_object_mut() {
+            object.remove("data");
+        }
+        Self {
+            meta: frame,
+            png,
+            rgba: OnceLock::new(),
+        }
+    }
+
+    /// The protocol frame shape; `data` is re-encoded only here.
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        let mut value = self.meta.clone();
+        if let Some(object) = value.as_object_mut() {
+            object.insert(
+                "data".to_owned(),
+                Value::String(base64::engine::general_purpose::STANDARD.encode(&self.png)),
+            );
+        }
+        value
+    }
+
+    /// The decoded RGBA image, decoded at most once per cached frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns the PNG error sentence if the cached payload is not a decodable image.
+    pub fn rgba(&self) -> Result<(usize, usize, &[u8]), String> {
+        if let Some(decoded) = self.rgba.get() {
+            return Ok((decoded.0, decoded.1, &decoded.2));
+        }
+        let (width, height, rgba) = seal_win::pure::decode_png(&self.png)
+            .map_err(|error| format!("the frame PNG could not be decoded: {error}"))?;
+        let width = usize::try_from(width).unwrap_or(usize::MAX);
+        let height = usize::try_from(height).unwrap_or(usize::MAX);
+        let _ = self.rgba.set((width, height, rgba));
+        let decoded = self.rgba.get().ok_or("the frame decode vanished")?;
+        Ok((decoded.0, decoded.1, &decoded.2))
+    }
+
+    /// The metadata object (`width`, `height`, `origin`, `format`, `frame_id`).
+    #[must_use]
+    pub fn meta(&self) -> &Value {
+        &self.meta
+    }
+
+    /// The PNG bytes as captured.
+    #[must_use]
+    pub fn png(&self) -> &[u8] {
+        &self.png
+    }
+}
+
 /// The last four frames, newest last, keyed by an id the core invents (`PROTOCOL.md` §8). A fifth
 /// frame pushes the oldest out; `calibration.save` referencing an evicted id answers `bad_request`.
 #[derive(Debug, Default)]
 pub struct FrameCache {
-    entries: Vec<(String, Value)>,
+    entries: VecDeque<(String, CachedFrame)>,
     next: u64,
 }
 
 impl FrameCache {
     pub const CAPACITY: usize = 4;
 
-    /// Store a frame, assign its `frame_id`, and return the id.
+    /// Store a frame, assign its `frame_id`, and return the id. The base64 payload is decoded here
+    /// once, so later scans reuse the bytes/RGBA instead of decoding per command (CORE-F11).
     pub fn insert(&mut self, mut frame: Value) -> String {
         self.next += 1;
         let id = format!("f{}", self.next);
         if let Some(object) = frame.as_object_mut() {
             object.insert("frame_id".to_owned(), Value::String(id.clone()));
         }
-        self.entries.push((id.clone(), frame));
+        self.entries
+            .push_back((id.clone(), CachedFrame::from_value(frame)));
         while self.entries.len() > Self::CAPACITY {
-            self.entries.remove(0);
+            self.entries.pop_front();
         }
         id
     }
 
     #[must_use]
-    pub fn get(&self, id: &str) -> Option<&Value> {
+    pub fn get(&self, id: &str) -> Option<&CachedFrame> {
         self.entries
             .iter()
             .find(|(entry_id, _)| entry_id == id)
             .map(|(_, frame)| frame)
+    }
+
+    /// The protocol-shaped frame; this is the ONLY path that base64-encodes the PNG again.
+    #[must_use]
+    pub fn get_value(&self, id: &str) -> Option<Value> {
+        self.get(id).map(CachedFrame::to_value)
     }
 
     #[must_use]
@@ -344,7 +425,37 @@ mod tests {
         assert!(cache.get("f1").is_none(), "the oldest was evicted");
         assert!(cache.get("f2").is_none(), "the oldest was evicted");
         let newest = cache.get("f6").expect("the newest is kept");
-        assert_eq!(newest["frame_id"], "f6");
+        assert_eq!(newest.to_value()["frame_id"], "f6");
+    }
+
+    #[test]
+    fn a_cached_frame_decodes_its_png_once_and_re_encodes_only_for_the_protocol() {
+        let bgra = [
+            10_u8, 20, 30, 255, 40, 50, 60, 255, 70, 80, 90, 255, 100, 110, 120, 255,
+        ];
+        let png = seal_win::pure::encode_png(2, 2, &bgra).expect("a synthetic PNG encodes");
+        let data = base64::engine::general_purpose::STANDARD.encode(&png);
+        let mut cache = FrameCache::default();
+        let id = cache.insert(json!({
+            "format": "png",
+            "width": 2,
+            "height": 2,
+            "origin": {"x": 0, "y": 0},
+            "data": data,
+        }));
+
+        let frame = cache.get(&id).expect("cached");
+        let (width, height, rgba) = frame.rgba().expect("the PNG decodes");
+        assert_eq!((width, height), (2, 2));
+        assert_eq!(&rgba[0..4], &[30, 20, 10, 255], "RGBA, not BGRA");
+        let again = frame.rgba().expect("the cached decode is reused");
+        assert_eq!(again.2, rgba, "the same RGBA is returned");
+        assert_eq!(frame.png(), png.as_slice());
+        assert_eq!(frame.to_value()["data"], data, "the protocol gets base64");
+        assert!(
+            frame.meta().get("data").is_none(),
+            "the cache does not retain the base64 payload"
+        );
     }
 
     // ── the bounded foreground wait ─────────────────────────────────────────────────────────
