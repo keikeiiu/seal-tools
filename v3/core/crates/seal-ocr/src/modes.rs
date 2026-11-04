@@ -293,11 +293,28 @@ pub fn read_grade(items: &[RecognizedLine], geometry: &OcrGeometry) -> Option<St
     if band.is_empty() {
         band = items.iter().collect();
     }
-    let text: String = band
-        .iter()
-        .map(|item| item.text.as_str())
-        .collect::<String>()
-        .to_uppercase();
+    // OCR-F5: v2 built the grade line with `BuildLines`, which orders a row left to right. The
+    // pipeline now sorts `items` too, but sorting the band here keeps `read_grade` correct for any
+    // caller (and for a `Scan` assembled by hand), and makes the read deterministic.
+    band.sort_by(|a, b| {
+        item_x(a)
+            .partial_cmp(&item_x(b))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    // v2's grade-candidate filters (`OcrEngine.cs:280-288`): confidence > 0.1, the "300" artifact,
+    // duplicates collapsed. v2's `length > 1` gate ran on whole built lines; here items are words, so
+    // a one-character item is normal (a tight `grade_area` holds just the letter) and the gate's
+    // equivalent is the empty-line check below.
+    let mut seen: Vec<&str> = Vec::new();
+    let mut line = String::new();
+    for item in band {
+        if item.confidence <= 0.1 || item.text == "300" || seen.contains(&item.text.as_str()) {
+            continue;
+        }
+        seen.push(&item.text);
+        line.push_str(&item.text);
+    }
+    let text = line.to_uppercase();
     if text.is_empty() {
         return None;
     }
@@ -477,6 +494,41 @@ mod tests {
         assert_eq!(feeder_count(&lines), Some(3));
         assert_eq!(feeder_count(&[line("no digits", 0.9)]), None);
         assert_eq!(feeder_count(&[]), None);
+    }
+
+    #[test]
+    fn the_grade_line_is_concatenated_left_to_right() {
+        // The detector emits items in raster order, and a row can start with the letter: " DG" at
+        // x=50 must not be concatenated BEFORE "GRADE" at x=0, or the line reads "DGGRADE:" and the
+        // post-separator text is empty (OCR-F5).
+        let items = vec![
+            item(" DG", 0.9, 50.0, 0.0),
+            item(":", 0.9, 40.0, 0.0),
+            item("GRADE", 0.9, 0.0, 0.0),
+        ];
+        assert_eq!(
+            read_grade(&items, &OcrGeometry::default()),
+            Some("DG".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_grade_line_applies_v2s_confidence_and_artifact_filters() {
+        // v2 dropped grade candidates with conf <= 0.1 or text "300" (OcrEngine.cs:280-288). Here the
+        // only grade token sits below the confidence floor, so the read must fall through to the
+        // colour fallback rather than read "DG" out of the noisy band.
+        let items = vec![
+            item("GRADE:", 0.95, 0.0, 0.0),
+            item("300", 0.95, 45.0, 0.0),
+            item("DG", 0.05, 55.0, 0.0),
+        ];
+        assert_eq!(read_grade(&items, &OcrGeometry::default()), None);
+
+        let confident = vec![item("GRADE:", 0.95, 0.0, 0.0), item("DG", 0.95, 55.0, 0.0)];
+        assert_eq!(
+            read_grade(&confident, &OcrGeometry::default()),
+            Some("DG".to_owned())
+        );
     }
 
     #[test]

@@ -1,8 +1,8 @@
-//! The detector session stub and the named post-processing spike.
+//! The detector session and the named post-processing spike.
 //!
-//! Only the session and its shapes live here. The detector's post-processing is the OpenCV-shaped
-//! work identified in `v3/docs/records/OCR-RESEARCH.md` §5 and is deliberately NOT ported yet; the
-//! spike list below is the contract for that work.
+//! Only the session and its shapes live here; the post-processing is [`crate::detgeom`]`/`
+//! [`crate::detmask`]. The session is shared per model file (OCR-F9): three sources build pipelines
+//! over the same models directory and must load one copy, not three.
 //!
 //! # The spike list (what the port must implement, and the pure-Rust question)
 //!
@@ -29,15 +29,13 @@
 //! spike's job to settle; nothing here should be read as "port it with `OpenCV`".
 
 use std::path::Path;
+use std::sync::Arc;
 
-use ort::session::Session;
-
-use crate::model::{ModelIo, OcrError, tensor_len};
+use crate::model::{ModelIo, OcrError, SharedSession, shared_session, tensor_len};
 
 /// The detector session: enough to load the model and record its shapes.
 pub struct DetModel {
-    session: Session,
-    io: ModelIo,
+    shared: Arc<SharedSession>,
 }
 
 impl DetModel {
@@ -45,18 +43,20 @@ impl DetModel {
     ///
     /// Returns [`OcrError`] when the model file is not readable or the runtime rejects the session.
     pub fn load(path: &Path, threads: usize) -> Result<Self, OcrError> {
-        let (session, io) = crate::model::open_session(path, threads)?;
-        Ok(Self { session, io })
+        Ok(Self {
+            shared: shared_session(path, threads)?,
+        })
     }
 
     #[must_use]
     pub fn io(&self) -> &ModelIo {
-        &self.io
+        &self.shared.io
     }
 
-    /// The session is exposed for the post-processing spike; it is not run here.
-    pub fn session(&mut self) -> &mut Session {
-        &mut self.session
+    /// Whether both detectors use the same loaded session (OCR-F9; the pipeline's sharing check).
+    #[must_use]
+    pub(crate) fn shares_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.shared, &other.shared)
     }
 
     /// One detector inference: row-major f32 `[N, C, H, W]` in, output shape + row-major f32 out.
@@ -84,13 +84,14 @@ impl DetModel {
         let tensor = ort::value::Tensor::from_array((shape.to_vec(), data.to_vec()))
             .map_err(|error| OcrError::Ort(error.to_string()))?;
         let input_name = self
+            .shared
             .io
             .inputs
             .first()
             .map(|input| input.name.clone())
             .ok_or_else(|| OcrError::Ort("the det model declares no inputs".to_owned()))?;
-        let outputs = self
-            .session
+        let mut session = self.shared.lock();
+        let outputs = session
             .run(ort::inputs![input_name => tensor])
             .map_err(|error| OcrError::Ort(error.to_string()))?;
         let (output_shape, values) = outputs[0]

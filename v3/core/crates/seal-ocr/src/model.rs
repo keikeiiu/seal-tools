@@ -15,11 +15,11 @@
 //! The preprocessing (resize/normalise) and the detector post-processing are NOT here: they are the
 //! named spike in [`crate::det`].
 
+use std::collections::HashMap;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Instant;
-
-use std::sync::OnceLock;
 
 use ort::environment::Environment;
 use ort::session::Session;
@@ -128,7 +128,53 @@ fn environment() -> Result<&'static Environment, OcrError> {
         })
 }
 
-pub(crate) fn open_session(path: &Path, threads: usize) -> Result<(Session, ModelIo), OcrError> {
+/// One loaded ONNX session, shared by every pipeline over the same file (OCR-F9): the core builds a
+/// pipeline for the dispatcher, one for the tuner source and one for the pet source, and each used to
+/// load its own ~25 MB copy of the model set plus ORT arenas. The session needs `&mut` to run, hence
+/// the mutex; one copy also keeps three concurrent readers from oversubscribing the CPU.
+pub(crate) struct SharedSession {
+    session: Mutex<Session>,
+    pub(crate) io: ModelIo,
+}
+
+impl SharedSession {
+    pub(crate) fn lock(&self) -> MutexGuard<'_, Session> {
+        self.session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+/// The cache key: the model file (canonicalized when possible, so `./models/x` and `models/x` are one
+/// entry) and the pinned thread counts, which are part of the session's identity.
+type SessionKey = (PathBuf, usize);
+
+static SESSIONS: OnceLock<Mutex<HashMap<SessionKey, Arc<SharedSession>>>> = OnceLock::new();
+
+/// The one loader: the file is opened on the first call and every later call for the same path and
+/// thread counts returns the already-loaded session (OCR-F9).
+pub(crate) fn shared_session(path: &Path, threads: usize) -> Result<Arc<SharedSession>, OcrError> {
+    let key = (
+        path.canonicalize().unwrap_or_else(|_| path.to_path_buf()),
+        threads,
+    );
+    let cache = SESSIONS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut cache = cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(existing) = cache.get(&key) {
+        return Ok(Arc::clone(existing));
+    }
+    let (session, io) = open_session(path, threads)?;
+    let shared = Arc::new(SharedSession {
+        session: Mutex::new(session),
+        io,
+    });
+    cache.insert(key, Arc::clone(&shared));
+    Ok(shared)
+}
+
+fn open_session(path: &Path, threads: usize) -> Result<(Session, ModelIo), OcrError> {
     if !path.is_file() {
         return Err(OcrError::Io(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -144,15 +190,14 @@ pub(crate) fn open_session(path: &Path, threads: usize) -> Result<(Session, Mode
     Ok((session, io))
 }
 
-/// The recogniser: one session, its dictionary, and the CTC decode.
+/// The recogniser: the shared session, its dictionary, and the CTC decode.
 ///
 /// The dictionary is the model's `character` metadata, exactly as the C# library reads it — this is
 /// the single most important fact the spike pins, because a file-based dictionary was the plan's
 /// wrong assumption.
 pub struct RecModel {
-    session: Session,
+    shared: Arc<SharedSession>,
     input_name: String,
-    io: ModelIo,
     dictionary: Vec<String>,
     class_list: Vec<String>,
 }
@@ -184,8 +229,11 @@ impl RecModel {
     /// runtime rejects the session, and [`OcrError::MissingDictionary`] when the model carries no
     /// `character` metadata.
     pub fn load(path: &Path, threads: usize) -> Result<Self, OcrError> {
-        let (session, io) = open_session(path, threads)?;
+        let shared = shared_session(path, threads)?;
         let dictionary: Vec<String> = {
+            // The session is shared with the detector and other recognisers, so the metadata read
+            // takes the same lock inference does; it is a one-off cost at load.
+            let session = shared.lock();
             let metadata = session.metadata().map_err(ort_error)?;
             let characters = metadata
                 .custom("character")
@@ -196,28 +244,35 @@ impl RecModel {
                 .collect::<Vec<String>>()
         };
         let class_list = class_list(&dictionary);
-        let input_name = io
+        let input_name = shared
+            .io
             .inputs
             .first()
             .map(|input| input.name.clone())
             .ok_or_else(|| OcrError::Ort("the rec model declares no inputs".to_owned()))?;
         Ok(Self {
-            session,
+            shared,
             input_name,
-            io,
             dictionary,
             class_list,
         })
     }
 
+    /// Whether both recognisers use the same loaded session (OCR-F9; the pipeline's sharing check).
+    #[must_use]
+    pub(crate) fn shares_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.shared, &other.shared)
+    }
+
     #[must_use]
     pub fn io(&self) -> &ModelIo {
-        &self.io
+        &self.shared.io
     }
 
     #[must_use]
     pub fn custom_metadata_keys(&self) -> Vec<String> {
-        self.session
+        let session = self.shared.lock();
+        session
             .metadata()
             .map(|metadata| metadata.custom_keys().unwrap_or_default())
             .unwrap_or_default()
@@ -266,8 +321,8 @@ impl RecModel {
         let tensor = Tensor::from_array((shape.to_vec(), data.to_vec())).map_err(ort_error)?;
         let input_name = self.input_name.clone();
         let started = Instant::now();
-        let outputs = self
-            .session
+        let mut session = self.shared.lock();
+        let outputs = session
             .run(ort::inputs![input_name => tensor])
             .map_err(ort_error)?;
         let elapsed_ms = started.elapsed().as_millis();

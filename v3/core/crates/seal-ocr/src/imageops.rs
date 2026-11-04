@@ -268,6 +268,99 @@ pub fn resize_linear(source: &Rgb, new_width: usize, new_height: usize) -> Rgb {
     output
 }
 
+/// Cubic resize (`OpenCV` `INTER_CUBIC`, Catmull-Rom `a = -0.75`): the kernel [`perspective_crop`]
+/// already uses for the warp, applied to a plain resample.
+///
+/// v2 upscaled the feeder count crop with `InterpolationFlags.Cubic` for its 3×/9×/24× ladder; the
+/// nearest-neighbour copy v3 used handed the recogniser blocky glyphs it was never trained on
+/// (OCR-F12).
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "the resize maps the capture's pixel grid; `pixel_replicate` clamps the sample into the source before the integer cast, and the dimensions are exactly representable in f64"
+)]
+pub fn resize_cubic(source: &Rgb, new_width: usize, new_height: usize) -> Rgb {
+    if new_width == 0 || new_height == 0 {
+        return Rgb::new(0, 0, Vec::new());
+    }
+    let scale_x = source.width as f64 / new_width as f64;
+    let scale_y = source.height as f64 / new_height as f64;
+    let mut output = Rgb::new(
+        new_width,
+        new_height,
+        vec![128u8; new_width * new_height * 3],
+    );
+    for y in 0..new_height {
+        let source_y = (y as f64 + 0.5) * scale_y - 0.5;
+        let base_y = source_y.floor() as i32;
+        let fy = source_y - f64::from(base_y);
+        for x in 0..new_width {
+            let source_x = (x as f64 + 0.5) * scale_x - 0.5;
+            let base_x = source_x.floor() as i32;
+            let fx = source_x - f64::from(base_x);
+            let mut channels = [0.0f64; 3];
+            for row in -1..=2 {
+                let weight_y = cubic_kernel(f64::from(row) - fy);
+                for col in -1..=2 {
+                    let weight_x = cubic_kernel(f64::from(col) - fx);
+                    let weight = weight_x * weight_y;
+                    if weight == 0.0 {
+                        continue;
+                    }
+                    let (r, g, b) = source.pixel_replicate(base_x + col, base_y + row);
+                    channels[0] += weight * f64::from(r);
+                    channels[1] += weight * f64::from(g);
+                    channels[2] += weight * f64::from(b);
+                }
+            }
+            output.set_pixel(
+                x,
+                y,
+                (
+                    quantise_channel(channels[0]),
+                    quantise_channel(channels[1]),
+                    quantise_channel(channels[2]),
+                ),
+            );
+        }
+    }
+    output
+}
+
+/// Cubic upscale of one RGBA8 crop, for a capture ladder: the replacement for the nearest-neighbour
+/// `upscale_rgba` the count read still uses (OCR-F12). Alpha is dropped (the pipeline reads RGB and
+/// the captures are opaque); the returned buffer is opaque RGBA so a caller can hand it to
+/// [`crate::pipeline::OcrPipeline::scan_rgba`] unchanged.
+#[must_use]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the upscale factor is a small ladder step (3/9/24); its product with a capture dimension stays far inside usize"
+)]
+pub fn upscale_rgba_cubic(
+    width: usize,
+    height: usize,
+    rgba: &[u8],
+    factor: u32,
+) -> (usize, usize, Vec<u8>) {
+    let factor = factor.max(1) as usize;
+    if width == 0 || height == 0 || rgba.len() < width * height * 4 {
+        return (width * factor, height * factor, Vec::new());
+    }
+    let mut pixels = Vec::with_capacity(width * height * 3);
+    for pixel in rgba.as_chunks::<4>().0 {
+        pixels.extend_from_slice(&pixel[..3]);
+    }
+    let source = Rgb::new(width, height, pixels);
+    let scaled = resize_cubic(&source, width * factor, height * factor);
+    let mut out = Vec::with_capacity(scaled.width * scaled.height * 4);
+    for pixel in scaled.pixels.as_chunks::<3>().0 {
+        out.extend_from_slice(pixel);
+        out.push(255);
+    }
+    (scaled.width, scaled.height, out)
+}
+
 /// One recogniser input tensor: CHW f32 in `[-1, 1]`, height 48, width from the C# batch rule.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecInput {

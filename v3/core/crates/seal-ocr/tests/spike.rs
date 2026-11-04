@@ -229,6 +229,53 @@ fn one_inference_is_deterministic_and_reports_the_models_class_count() {
 // ── det model: shapes only; the OpenCV-shaped post-processing is the named spike ─────────────
 
 #[test]
+fn pipelines_over_one_models_directory_share_the_loaded_sessions() {
+    let Some(dir) = models_dir() else {
+        return;
+    };
+    let attributes = seal_domain::config::AttributesConfig::default();
+
+    let first = seal_ocr::pipeline::OcrPipeline::load(&dir, &attributes, 10)
+        .expect("the first pipeline loads");
+    let second = seal_ocr::pipeline::OcrPipeline::load(&dir, &attributes, 10)
+        .expect("the second pipeline loads");
+
+    assert!(
+        first.shares_models_with(&second),
+        "the dispatcher, the tuner and the pet each build a pipeline; a second one over the same \
+         models must reuse the loaded sessions instead of loading another ~25 MB copy (OCR-F9)"
+    );
+}
+
+#[test]
+fn a_fixed_layout_line_read_skips_detection_and_still_decodes() {
+    let Some(dir) = models_dir() else {
+        return;
+    };
+    let attributes = seal_domain::config::AttributesConfig::default();
+    let mut pipeline =
+        seal_ocr::pipeline::OcrPipeline::load(&dir, &attributes, 10).expect("the pipeline loads");
+
+    // A blank strip: no text, but the det-free path must run the recogniser and return at most one
+    // item (OCR-F14) rather than a detection over the whole crop.
+    let blank = vec![128u8; 120 * 40 * 4];
+    let scan = pipeline
+        .read_line_rgba(120, 40, &blank)
+        .expect("the det-free line read runs");
+    assert!(
+        scan.items.len() <= 1,
+        "one region is at most one line: {:?}",
+        scan.items
+    );
+
+    // A short buffer is `bad_image`, not a panic in `Rgb::new`.
+    let error = pipeline
+        .read_line_rgba(120, 40, &blank[..100])
+        .expect_err("a short buffer is refused");
+    assert_eq!(error.reason, "bad_image");
+}
+
+#[test]
 fn the_det_model_loads_and_reports_its_shapes() {
     let Some(dir) = models_dir() else {
         return;
