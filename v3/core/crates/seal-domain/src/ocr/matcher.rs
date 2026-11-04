@@ -128,8 +128,13 @@ impl AttrMatcher {
                         // one character in common means nothing.
                         let needle = normalize(variant);
                         let haystack = normalize(&combined);
-                        if utf16_len(&needle) >= 2 && all_chars_in(&needle, &haystack) {
-                            utf16_len(&needle) as f64 * 0.8
+                        if utf16_len(&needle) >= 2 {
+                            let containment = if all_chars_in(&needle, &haystack) {
+                                utf16_len(&needle) as f64 * 0.8
+                            } else {
+                                0.0
+                            };
+                            containment.max(edit_fallback_score(&needle, &haystack))
                         } else {
                             0.0
                         }
@@ -412,6 +417,65 @@ fn all_chars_in(needles: &str, haystack: &str) -> bool {
     needles
         .chars()
         .all(|character| haystack.contains(character))
+}
+
+/// OCR-F15's model-free half: a substitution/confusable error keeps the character multiset from
+/// lining up, so `all_chars_in` rejects a line one wrong character away from the dictionary variant.
+/// Score the best short window of the normalised line by edit distance instead. The edit budget is
+/// one per four variant characters (minimum one) and the window must be close in length, so a stray
+/// character in a long line cannot become a match.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "a dictionary variant's UTF-16 length is small; the score is a percentage of it"
+)]
+fn edit_fallback_score(needle: &str, haystack: &str) -> f64 {
+    let needle_chars: Vec<char> = needle.chars().collect();
+    let hay_chars: Vec<char> = haystack.chars().collect();
+    let length = needle_chars.len();
+    if length < 2 || hay_chars.len() < length.saturating_sub(1) {
+        return 0.0;
+    }
+    let budget = (length / 4).max(1);
+    let shortest = length.saturating_sub(budget).max(1);
+    let longest = (length + budget).min(hay_chars.len());
+    let mut best = usize::MAX;
+    for window_len in shortest..=longest {
+        for start in 0..=hay_chars.len() - window_len {
+            best = best.min(edit_distance(
+                &needle_chars,
+                &hay_chars[start..start + window_len],
+            ));
+            if best == 0 {
+                break;
+            }
+        }
+    }
+    if best > budget {
+        return 0.0;
+    }
+    // Below the exact substring score (length) but above the "no evidence" threshold (1.0): one
+    // wrong character in a four-character name still names the attribute.
+    let loss = best as f64 / length as f64 * 0.5;
+    length as f64 * (1.0 - loss)
+}
+
+fn edit_distance(expected: &[char], actual: &[char]) -> usize {
+    let mut previous: Vec<usize> = (0..=actual.len()).collect();
+    let mut current = vec![0; actual.len() + 1];
+    for (row, expected_char) in expected.iter().enumerate() {
+        current[0] = row + 1;
+        for (column, actual_char) in actual.iter().enumerate() {
+            current[column + 1] = if expected_char == actual_char {
+                previous[column]
+            } else {
+                1 + previous[column]
+                    .min(previous[column + 1])
+                    .min(current[column])
+            };
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+    previous[actual.len()]
 }
 
 /// C# `string.Length`, which is UTF-16 code units — the unit the dictionary's scores were tuned in.
