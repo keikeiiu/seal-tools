@@ -49,16 +49,20 @@ HW-F12 (Windows.Graphics.Capture/DXGI), and real code signing (needs an external
 Later in the same round: **SHELL-F5** (`ce09009`) scoped event/log rebuilds to the widgets that
 render them (cards/mini/dock self-listen; logs drawer/status/connecting view own their listener) and
 **TOOL-F10** (`1aa9ce7`) gave long calibration sequences a real held lease — the supervisor refuses
-starts, game requests and other pointer actions while the 21-step gem cycle owns the game.
+starts, game requests and other pointer actions while the 21-step gem cycle owns the game. The OCR
+regression runner landed as `ocr_eval` with the `fixtures/ocr` schema (`6397fe2`, OCR-F11); the
+model-free half of OCR-F15 (`23efff6`) matches one-character substitutions by bounded edit-distance
+windows; HW-F7's FW_VERSION 3 is now pinned in the v2 sketch test too (`e968b10`).
 
-**Known gaps in this batch:** OCR-F11's recorded-crop corpus and OCR-F15's CTC/logit scorer still need
-real captures/model logits; CORE-F11 only removed the dispatch-side clones; HW-F7's firmware change is
-not accompanied by a FW_VERSION bump, v2 pin update or reflash (hardware verification required);
-SHELL-F15's README rewrite stays at publish per CUTOVER.
+**Known gaps in this batch:** the OCR-F11 corpus has the runner/schema but no recorded real-game
+cases yet, and OCR-F15's full CTC/logit scorer still needs retained model logits; CORE-F11 only
+removed the dispatch-side clones (the FrameCache/SharedConfig Arc redesign remains); HW-F7's firmware
+still needs a real-board reflash/verification; SHELL-F15's README rewrite stays at publish per
+CUTOVER.
 
-Verification: Rust fmt/clippy/rustdoc clean; `cargo test --workspace --offline` **94 suites, 1,344
-passed, 0 failed, 6 ignored**. Shell analyze clean and **369/369** tests. The launcher was rebuilt and
-restarted on the new binaries.
+Verification: Rust fmt/clippy/rustdoc clean; `cargo test --workspace --offline` **95 suites, 1,351
+passed, 0 failed, 6 ignored**. Shell analyze clean and **371/371** tests. The v2 firmware sketch test
+is 4/4. The launcher was rebuilt and restarted on the new binaries.
 
 ## 2026-11-05 (41) — the remaining Claude-review Phase 0 fixes
 
