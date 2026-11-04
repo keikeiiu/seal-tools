@@ -56,9 +56,10 @@ class ShellModel extends ChangeNotifier {
     this.windowSaveDebounce = const Duration(milliseconds: 600),
   }) : host = host ?? const MethodChannelHostActions() {
     connection.addListener(_onSubmodelChanged);
-    tools.addListener(_onSubmodelChanged);
+    // Config writes are infrequent and several chrome surfaces read the mirror; run/status events
+    // (tools) must NOT notify the root (SHELL-F5). Logs have no model listener at all.
     config.addListener(_onSubmodelChanged);
-    logs.addListener(_onSubmodelChanged);
+    tools.addListener(_onRunAffectingChanged);
   }
 
   /// How a connection is created: the shell's `main.dart` supplies the process spawner, tests a
@@ -2159,15 +2160,28 @@ class ShellModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Tools/config can change the mini/dock transition, but a status event must not rebuild the
+  /// whole shell (SHELL-F5). Notify only when the mode flags actually changed.
+  void _onRunAffectingChanged() {
+    if (_disposed) {
+      return;
+    }
+    final mini = _miniActive;
+    final dock = _dockActive;
+    _syncMiniMode();
+    if (mini != _miniActive || dock != _dockActive) {
+      notifyListeners();
+    }
+  }
+
   @override
   void dispose() {
     _disposed = true;
     _windowSaveTimer?.cancel();
     unawaited(_windowMoveSubscription?.cancel());
     connection.removeListener(_onSubmodelChanged);
-    tools.removeListener(_onSubmodelChanged);
+    tools.removeListener(_onRunAffectingChanged);
     config.removeListener(_onSubmodelChanged);
-    logs.removeListener(_onSubmodelChanged);
     unawaited(_eventSubscription?.cancel());
     unawaited(_logSubscription?.cancel());
     _setupRequest.dispose();

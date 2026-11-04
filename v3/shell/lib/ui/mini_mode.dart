@@ -49,12 +49,34 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
   @override
   void initState() {
     super.initState();
+    widget.model.tools.addListener(_onToolModelChanged);
+    widget.model.config.addListener(_onConfigModelChanged);
     _ticker = Timer.periodic(const Duration(seconds: 1), _onTick);
+  }
+
+  /// SHELL-F5: mini/dock content renders tool/config facts directly, so it listens to those two
+  /// sub-models instead of the whole shell rebuilding on every event.
+  void _onToolModelChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _onConfigModelChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
   void didUpdateWidget(MiniRunningCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.model, widget.model)) {
+      oldWidget.model.tools.removeListener(_onToolModelChanged);
+      oldWidget.model.config.removeListener(_onConfigModelChanged);
+      widget.model.tools.addListener(_onToolModelChanged);
+      widget.model.config.addListener(_onConfigModelChanged);
+    }
     final tool = widget.model.miniTool;
     final countdown = tool == null
         ? null
@@ -84,6 +106,8 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
 
   @override
   void dispose() {
+    widget.model.tools.removeListener(_onToolModelChanged);
+    widget.model.config.removeListener(_onConfigModelChanged);
     _ticker?.cancel();
     super.dispose();
   }

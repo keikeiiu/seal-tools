@@ -85,15 +85,26 @@ class _QuickDockState extends State<QuickDock> {
     super.initState();
     _pinName = TextEditingController();
     widget.model.addListener(_onDockModelChanged);
+    widget.model.tools.addListener(_onSubmodelRefresh);
+    widget.model.config.addListener(_onSubmodelRefresh);
     _armAutoCollapse();
   }
 
   @override
   void dispose() {
     widget.model.removeListener(_onDockModelChanged);
+    widget.model.tools.removeListener(_onSubmodelRefresh);
+    widget.model.config.removeListener(_onSubmodelRefresh);
     _autoCollapse?.cancel();
     _pinName.dispose();
     super.dispose();
+  }
+
+  /// SHELL-F5: dock tiles render tool snapshots and config presets directly.
+  void _onSubmodelRefresh() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _onDockModelChanged() {
