@@ -184,3 +184,30 @@ clear the whole disabled Calibrate panel — `calibration.pet.save` (+ preview/t
 
 The UI-only leftovers are not on this list: copy-as-YAML (clipboard), narrow-width aside stacking, the
 Calibrate header alignment and the 1280/960 render sweep are finished in the shell (`spec/UI.md`).
+
+## 7. Awaiting player-provided data (parked 2026-11-05)
+
+Two larger plans are deliberately deferred until the player supplies the source material. Neither has
+a design or a status row yet.
+
+- **Multi-language shell — English + Chinese (CH-ZH).** The shell is English-only today (~456
+  hard-coded `Text(` strings, SHELL-F13), and core/domain player-facing lines are English too.
+  Needed before a plan:
+  - whether `CH-ZH` means Traditional (matching the existing `zh-TW` docs), Simplified, or both;
+  - translated copy or a terminology glossary for tabs, cards, calibration, error lines and the
+    crash view;
+  - a decision on whether core/domain refusal sentences are translated by the core or mapped by the
+    shell (the protocol carries English today);
+  - locale persistence (config vs shell preference) and how the bilingual guides pair with it.
+  Flutter localization infrastructure is not started; this was previously excluded as a
+  library addition until the translation source exists.
+- **US-client metadata.** `v3/config/attributes.us.yaml` ships empty on purpose, so a US install
+  reads every attribute as “no attribute”. Needed before a plan:
+  - the US client's attribute names, OCR variants and per-level stat names;
+  - sample US captures per read path (tuner panel, feeder count, ETA/time line, queue/tooltip) for
+    the OCR corpus;
+  - the US window title/variant metadata and any client-specific calibration differences;
+  - whether the US client needs its own `defaults`/guide wording beyond the dictionary.
+  The existing variant plumbing (`game.variants`, `attributes.us.yaml`, per-variant dictionary load)
+  is ready; only the data and parity checks are missing.
+
