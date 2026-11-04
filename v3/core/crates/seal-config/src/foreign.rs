@@ -28,8 +28,9 @@ pub fn foreign_blocks(text: &str) -> String {
     }
 
     // Normalised like v2 does before splitting, so a CRLF hand-edit is carried through as plain
-    // lines rather than smuggling a stray `\r` into an otherwise LF file.
-    let normalised = text.replace("\r\n", "\n");
+    // lines rather than smuggling a stray `\r` into an otherwise LF file. A UTF-8 BOM is not YAML
+    // content and would otherwise hide the first key (HW-F14).
+    let normalised = text.trim_start_matches('\u{feff}').replace("\r\n", "\n");
     let lines: Vec<&str> = normalised.split('\n').collect();
     let mut kept: Vec<String> = Vec::new();
     let mut i = 0;
@@ -81,12 +82,24 @@ pub fn foreign_blocks(text: &str) -> String {
     }
 }
 
-/// True when the line opens a top-level block: column zero, not a comment, and a bare `name:` —
-/// which is how the writer emits every block it owns. `key` is the text before the first colon.
+/// True when the line opens a top-level block: column zero, not a comment, and a key followed by
+/// `:`. A bare key may contain `-`/`.` (HW-F14: `my-notes:` is a legal key and must not be dropped);
+/// a quoted key may contain anything, including spaces. `key` is returned without its quotes.
 fn try_top_level_key(line: &str) -> Option<&str> {
+    let line = line.strip_prefix('\u{feff}').unwrap_or(line);
     let first = line.chars().next()?;
     if first == '#' || first.is_whitespace() {
         return None;
+    }
+    if first == '"' || first == '\'' {
+        let quote = first;
+        let rest = &line[first.len_utf8()..];
+        let close = rest.find(quote)?;
+        let after = &rest[close + quote.len_utf8()..];
+        return after
+            .trim_start()
+            .starts_with(':')
+            .then_some(&rest[..close]);
     }
 
     let colon = line.find(':')?;
@@ -95,7 +108,10 @@ fn try_top_level_key(line: &str) -> Option<&str> {
     }
 
     let key = &line[..colon];
-    if key.chars().all(|c| c.is_alphanumeric() || c == '_') {
+    if key
+        .chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.'))
+    {
         Some(key)
     } else {
         None
