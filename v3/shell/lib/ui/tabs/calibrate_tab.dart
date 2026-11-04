@@ -56,6 +56,10 @@ const double _workspaceBreakpoint = 980;
 /// The canvas viewport's height; fit mode contains the frame inside (available width, this).
 const double _canvasHeight = 420;
 
+/// The mark workspace's fixed pane height: the canvas does not move while the target tree or the
+/// inspector scrolls, so drawing and editing the selected mark happen in one view.
+const double _workspacePaneHeight = 620;
+
 class CalibrateTab extends StatefulWidget {
   const CalibrateTab({
     super.key,
@@ -830,28 +834,63 @@ class _CalibrateTabState extends State<CalibrateTab>
                 children: [_buildTargetTree()],
               );
               final canvas = _buildCanvasPanel(theme, capture);
-              final right = Column(
+              final rightNarrow = Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _buildMarkEditor(theme),
                   ReferenceGalleryPanel(stored: _stored, gallery: _gallery),
                 ],
               );
+              final rightWide = Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      key: const ValueKey('calibrate-inspector-scroll'),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildMarkEditor(theme, showActions: false),
+                          ReferenceGalleryPanel(
+                            stored: _stored,
+                            gallery: _gallery,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: ShellSpace.xs),
+                  SurfacePanel(
+                    padding: const EdgeInsets.all(ShellSpace.sm),
+                    child: _buildMarkActionBar(theme),
+                  ),
+                ],
+              );
               if (!wide) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [left, canvas, right],
+                  children: [left, canvas, rightNarrow],
                 );
               }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(width: _captureColumnWidth, child: left),
-                  const SizedBox(width: ShellSpace.lg),
-                  Expanded(child: canvas),
-                  const SizedBox(width: ShellSpace.lg),
-                  SizedBox(width: _editorColumnWidth, child: right),
-                ],
+              return SizedBox(
+                key: const ValueKey('calibrate-workspace-panes'),
+                height: _workspacePaneHeight,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: _captureColumnWidth,
+                      child: SingleChildScrollView(
+                        key: const ValueKey('calibrate-targets-scroll'),
+                        child: left,
+                      ),
+                    ),
+                    const SizedBox(width: ShellSpace.lg),
+                    Expanded(child: canvas),
+                    const SizedBox(width: ShellSpace.lg),
+                    SizedBox(width: _editorColumnWidth, child: rightWide),
+                  ],
+                ),
               );
             },
           ),
@@ -1255,11 +1294,10 @@ class _CalibrateTabState extends State<CalibrateTab>
     );
   }
 
-  Widget _buildMarkEditor(ThemeData theme) {
+  Widget _buildMarkEditor(ThemeData theme, {bool showActions = true}) {
     final kind = _selected;
     final stored = _stored[_currentStoredKey];
     final storedError = _storedErrors[_currentStoredKey];
-    final save = _save;
     final capture = _activeCapture;
     final evictionRisk =
         capture != null &&
@@ -1413,82 +1451,9 @@ class _CalibrateTabState extends State<CalibrateTab>
             const SizedBox(height: ShellSpace.md),
             _buildArtifactPreview(theme, stored),
           ],
-          const SizedBox(height: ShellSpace.md),
-          Row(
-            children: [
-              OutlinedButton(
-                key: const ValueKey('calibrate-revert'),
-                onPressed: _draftTouched ? _revertDraft : null,
-                child: const Text('Revert'),
-              ),
-              const SizedBox(width: ShellSpace.sm),
-              Expanded(
-                child: FilledButton(
-                  key: const ValueKey('calibrate-save'),
-                  onPressed: _canSave ? _saveMark : null,
-                  child: _saving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Save mark'),
-                ),
-              ),
-            ],
-          ),
-          if (save != null) ...[
-            const SizedBox(height: ShellSpace.sm),
-            ActionResultLine(
-              key: const ValueKey('calibrate-save-result'),
-              label: 'Save',
-              line: save.ok
-                  ? 'saved ${save.value!.kind} at rev ${save.value!.rev} · '
-                        'mark [${save.value!.mark.label}]'
-                  : save.errorLine,
-              isError: !save.ok,
-            ),
-            if (save.ok) ...[
-              if (save.value!.pitchLine != null)
-                ActionResultLine(
-                  key: const ValueKey('calibrate-pitch'),
-                  label: 'Derived',
-                  line: save.value!.pitchLine,
-                ),
-              if (save.value!.artifact != null)
-                ActionResultLine(
-                  key: const ValueKey('calibrate-artifact'),
-                  label: 'Artifact',
-                  line:
-                      '${save.value!.artifact!.file} · '
-                      '${save.value!.artifact!.width}×'
-                      '${save.value!.artifact!.height} px · '
-                      '${save.value!.artifact!.path ?? ''}',
-                ),
-            ],
-            if (!save.ok &&
-                (save.errorLine ?? '').contains('unknown frame_id')) ...[
-              Text(
-                'Capture again to get a live frame id. This screen never re-captures '
-                'automatically.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-              ),
-              const SizedBox(height: ShellSpace.xs),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  key: const ValueKey('calibrate-capture-again'),
-                  onPressed: _capturing ? null : _captureFrame,
-                  icon: const Icon(
-                    Icons.photo_camera_outlined,
-                    size: ShellSize.iconSm,
-                  ),
-                  label: const Text('Capture again'),
-                ),
-              ),
-            ],
+          if (showActions) ...[
+            const SizedBox(height: ShellSpace.md),
+            _buildMarkActionBar(theme),
           ],
           const Divider(height: ShellSpace.xl),
           _buildStoredMarkSection(theme, stored, storedError),
@@ -1529,6 +1494,94 @@ class _CalibrateTabState extends State<CalibrateTab>
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
+      ],
+    );
+  }
+
+  /// Revert + Save and their result lines. In the fixed inspector this row is pinned below the
+  /// scrolling fields, so Save stays visible while the canvas is fixed. The narrow layout keeps
+  /// the same block inside the mark panel.
+  Widget _buildMarkActionBar(ThemeData theme) {
+    final save = _save;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            OutlinedButton(
+              key: const ValueKey('calibrate-revert'),
+              onPressed: _draftTouched ? _revertDraft : null,
+              child: const Text('Revert'),
+            ),
+            const SizedBox(width: ShellSpace.sm),
+            Expanded(
+              child: FilledButton(
+                key: const ValueKey('calibrate-save'),
+                onPressed: _canSave ? _saveMark : null,
+                child: _saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save mark'),
+              ),
+            ),
+          ],
+        ),
+        if (save != null) ...[
+          const SizedBox(height: ShellSpace.sm),
+          ActionResultLine(
+            key: const ValueKey('calibrate-save-result'),
+            label: 'Save',
+            line: save.ok
+                ? 'saved ${save.value!.kind} at rev ${save.value!.rev} · '
+                      'mark [${save.value!.mark.label}]'
+                : save.errorLine,
+            isError: !save.ok,
+          ),
+          if (save.ok) ...[
+            if (save.value!.pitchLine != null)
+              ActionResultLine(
+                key: const ValueKey('calibrate-pitch'),
+                label: 'Derived',
+                line: save.value!.pitchLine,
+              ),
+            if (save.value!.artifact != null)
+              ActionResultLine(
+                key: const ValueKey('calibrate-artifact'),
+                label: 'Artifact',
+                line:
+                    '${save.value!.artifact!.file} · '
+                    '${save.value!.artifact!.width}×'
+                    '${save.value!.artifact!.height} px · '
+                    '${save.value!.artifact!.path ?? ''}',
+              ),
+          ],
+          if (!save.ok &&
+              (save.errorLine ?? '').contains('unknown frame_id')) ...[
+            Text(
+              'Capture again to get a live frame id. This screen never re-captures '
+              'automatically.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+            const SizedBox(height: ShellSpace.xs),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                key: const ValueKey('calibrate-capture-again'),
+                onPressed: _capturing ? null : _captureFrame,
+                icon: const Icon(
+                  Icons.photo_camera_outlined,
+                  size: ShellSize.iconSm,
+                ),
+                label: const Text('Capture again'),
+              ),
+            ),
+          ],
+        ],
       ],
     );
   }

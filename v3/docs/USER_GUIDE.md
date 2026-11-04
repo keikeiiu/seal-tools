@@ -553,9 +553,11 @@ the core's stored mark / derived values / artifact below. A **tool tab row** pic
 calibrating: **Buy / Sell**, **Gem Composer**, **Pet Feeder**, **Magic Tuner**, **Tooltip**. The first
 three scope Targets and the editor to that tool, and each remembers the frame you captured for it —
 switching tabs restores that tool's capture instead of showing another tool's frame; the capture shelf
-sits directly above the workspace. **Magic Tuner** and **Tooltip** open their one-capture session
-directly in the workspace instead of a panel below the stored table. The tab's caption repeats the
-capture behaviour: the shell hides itself for the grab, waits one frame, and reopens.
+sits directly above the workspace. The canvas stays fixed while the target list and inspector scroll
+independently, and Revert/Save stay pinned under the inspector. **Magic Tuner** and **Tooltip** open
+their one-capture session directly in the workspace instead of a panel below the stored table. The
+tab's caption repeats the capture behaviour: the shell hides itself for the grab, waits one frame, and
+reopens.
 
 ---
 

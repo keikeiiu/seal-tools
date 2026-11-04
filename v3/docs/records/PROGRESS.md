@@ -19,6 +19,25 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-04 (38) — the mark workspace becomes a fixed canvas with independently scrolling sides
+
+The demo's central promise is that the game frame and the fields editing it never scroll away from
+each other. The mark workspace now has that shape at wide widths.
+
+- **Fixed 620 px pane:** target tree, canvas and inspector share one fixed-height row. The left tree and
+  the right inspector each scroll inside their own column; the canvas stays put.
+- **Pinned actions:** Revert/Save and their result lines were extracted into a separate action bar under
+  the scrolling inspector, so Save is always visible without scrolling the fields away from the frame.
+  Narrow windows keep the stacked layout with the actions inside the mark panel.
+- **Tests:** a new test checks the 620 px pane, scrolls the inspector and asserts the frame's top-left
+  does not move and the inner scroll position advanced. Save taps now ensure the button is visible first,
+  matching the new scrollable inspector.
+- **Docs:** UI spec and both user guides describe the fixed canvas, independent scrolling, and pinned
+  actions.
+
+Verification: `flutter analyze --fatal-infos` clean, `dart format` clean, `flutter test --no-pub`
+**352/352**, Windows debug build green.
+
 ## 2026-11-04 (37) — each mark tool keeps its own live capture; the shelf moves above the workspace
 
 Continuing the capture-once slice: the tool tab now owns its frame, not just its target list.

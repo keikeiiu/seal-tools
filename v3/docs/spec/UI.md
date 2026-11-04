@@ -303,6 +303,11 @@ of its own adopts the newest live shelf frame so it never starts blank while a c
 - **Canvas:** fit / 1:1 / zoom ± / pan, zoom % and "1 display px = N physical px"; the selected mark is
   drawn with its label. The typed x/y/(w/h) fields stay authoritative and the mapping function is
   unchanged and single.
+- **Fixed mark workspace:** at wide widths the target tree, canvas and inspector sit in one 620 px pane.
+  The target tree and the inspector scroll inside their own columns; the canvas does not move while the
+  inspector scrolls, so drawing and editing the selected mark happen in one view. Revert/Save are pinned
+  below the scrolling inspector, and the gallery/stored-mark details scroll with the fields. Narrow
+  windows keep the stacked layout.
 - **Editor:** surface + target pickers, shape-aware fields, the result-gem-area empty verdict, stored
   crop preview, Revert + Save (Save is the only filled action and enables only with a live frame/target/
   verdict); save refusals render verbatim, including "capture again" for an unknown frame id.

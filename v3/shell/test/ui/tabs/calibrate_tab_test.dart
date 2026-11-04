@@ -252,6 +252,15 @@ Future<void> _selectTool(WidgetTester tester, String tool) async {
   await tester.pumpAndSettle();
 }
 
+/// The inspector is its own fixed-height scroll pane now, so Save may sit below the fold even though
+/// the canvas is fixed. Bring it into view first, exactly as a player would.
+Future<void> _tapSave(WidgetTester tester) async {
+  final save = find.byKey(const ValueKey('calibrate-save'));
+  await tester.ensureVisible(save);
+  await tester.pump();
+  await tester.tap(save);
+}
+
 Map<String, dynamic> _saveArgs(AppHarness harness) =>
     (harness.lastSentWithCmd('calibration.save')!['args']
         as Map<String, dynamic>);
@@ -287,6 +296,57 @@ void main() {
       contains('scale 1.5 · monitor DPI 144'),
     );
   });
+
+  testWidgets(
+    'the mark workspace fixes the canvas while the inspector scrolls',
+    (tester) async {
+      await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'capture' => {'result': _captureAnswer()},
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+      await _flush(tester);
+      await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+      await _flush(tester);
+
+      final panes = find.byKey(const ValueKey('calibrate-workspace-panes'));
+      await tester.ensureVisible(panes);
+      await tester.pump();
+      expect(tester.getSize(panes).height, 620);
+
+      final frameBefore = tester.getTopLeft(
+        find.byKey(const ValueKey('calibrate-frame')),
+      );
+      final inspector = find.byKey(
+        const ValueKey('calibrate-inspector-scroll'),
+      );
+      await tester.drag(inspector, const Offset(0, -240));
+      await tester.pump();
+      final frameAfter = tester.getTopLeft(
+        find.byKey(const ValueKey('calibrate-frame')),
+      );
+      expect(
+        frameAfter,
+        frameBefore,
+        reason: 'the canvas is fixed; only the inspector pane moved',
+      );
+      final scrollable = tester.state<ScrollableState>(
+        find.descendant(of: inspector, matching: find.byType(Scrollable)).first,
+      );
+      expect(
+        scrollable.position.pixels,
+        greaterThan(0),
+        reason: 'the inspector scrolled inside its fixed pane',
+      );
+    },
+  );
 
   testWidgets('a mark tool keeps its own capture when the tabs switch', (
     tester,
@@ -391,7 +451,7 @@ void main() {
       await tester.enterText(_field('calibrate-y'), '20');
       await tester.enterText(_field('calibrate-w'), '240');
       await tester.enterText(_field('calibrate-h'), '240');
-      await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+      await _tapSave(tester);
       await _flush(tester);
 
       final args = _saveArgs(harness);
@@ -444,7 +504,7 @@ void main() {
     await _selectKind(tester, 'scroll_point');
     await tester.enterText(_field('calibrate-x'), '7');
     await tester.enterText(_field('calibrate-y'), '8');
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     final args = _saveArgs(harness);
@@ -485,7 +545,7 @@ void main() {
     await tester.enterText(_field('calibrate-y'), '22');
     await tester.enterText(_field('calibrate-w'), '33');
     await tester.enterText(_field('calibrate-h'), '44');
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     expect(_resultText(tester, 'calibrate-save-result'), contains(line));
@@ -524,7 +584,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
     await _flush(tester);
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     expect(
@@ -684,7 +744,7 @@ void main() {
     expect(int.parse(hText), greaterThan(0));
 
     // The typed fields are authoritative: Save sends what they contain.
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
     expect(_saveArgs(harness)['region'], {
       'x': int.parse(xText),
@@ -764,7 +824,7 @@ void main() {
     await tester.dragFrom(area.center, const Offset(120, 80));
     await _flush(tester);
     await tester.enterText(_field('calibrate-w'), '55');
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     expect((_saveArgs(harness)['region'] as Map<String, dynamic>)['w'], 55);
@@ -904,7 +964,7 @@ void main() {
     await _selectKind(tester, 'max_button');
     await tester.enterText(_field('calibrate-x'), '10');
     await tester.enterText(_field('calibrate-y'), '20');
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     final args = _saveArgs(harness);
@@ -976,7 +1036,7 @@ void main() {
         isNotNull,
       );
 
-      await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+      await _tapSave(tester);
       await _flush(tester);
 
       final args = _saveArgs(harness);
@@ -1024,7 +1084,7 @@ void main() {
       await tester.enterText(_field('calibrate-h'), '30');
       await tester.tap(find.byKey(const ValueKey('calibrate-empty-no')));
       await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+      await _tapSave(tester);
       await _flush(tester);
 
       final args = _saveArgs(harness);
@@ -1172,7 +1232,7 @@ void main() {
     expect(find.byKey(const ValueKey('calibrate-target')), findsNothing);
     await tester.enterText(_field('calibrate-x'), '4');
     await tester.enterText(_field('calibrate-y'), '5');
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     final args = _saveArgs(harness);
@@ -1240,7 +1300,7 @@ void main() {
     await _selectTarget(tester, 'DG');
     await tester.enterText(_field('calibrate-x'), '30');
     await tester.enterText(_field('calibrate-y'), '40');
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     final args = _saveArgs(harness);
@@ -1302,7 +1362,7 @@ void main() {
     await tester.enterText(_field('calibrate-y'), '20');
     await tester.enterText(_field('calibrate-w'), '100');
     await tester.enterText(_field('calibrate-h'), '60');
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     final args = _saveArgs(harness);
@@ -1708,7 +1768,7 @@ void main() {
       await _selectKind(tester, 'max_button');
       await tester.enterText(_field('calibrate-x'), '10');
       await tester.enterText(_field('calibrate-y'), '20');
-      await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+      await _tapSave(tester);
       await _flush(tester);
 
       final args = _saveArgs(harness);
@@ -1764,7 +1824,7 @@ void main() {
               (message['args'] as Map<String, dynamic>)['kind'] == 'max_button',
         )
         .length;
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     expect(
