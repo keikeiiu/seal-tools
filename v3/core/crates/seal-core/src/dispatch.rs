@@ -406,13 +406,12 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
             .cloned()
             .and_then(|block| serde_json::from_value(block).ok())
             .unwrap_or_default();
-        geometry.grade_area.and_then(|area| {
-            let width = area.x2.saturating_sub(area.x1).max(1) as u32;
-            let height = area.y2.saturating_sub(area.y1).max(1) as u32;
-            let rect =
-                seal_domain::geometry::Rect::new(area.x1, area.y1, width as i32, height as i32);
-            seal_win::pure::crop_rgba(width, height, &rgba, rect)
-                .ok()
+        geometry.grade_area.as_ref().and_then(|area| {
+            // `crop_rgba` takes the IMAGE dimensions; the area's own width/height are the crop's
+            // size, not the buffer stride. Passing the area size as the image size made every
+            // grade area not starting at (0,0) crop out of bounds and silently disable the colour
+            // fallback (CORE-F5).
+            crop_grade_area(area, width, height, &rgba)
                 .map(|(w, h, pixels)| (colors, w as usize, h as usize, pixels))
         })
     } else {
@@ -478,6 +477,27 @@ pub fn ocr_geometry(config: &Value) -> seal_ocr::modes::OcrGeometry {
         remaining_y: band("remaining_y"),
         row_height,
     }
+}
+
+/// Crop the tuner's grade box out of a captured image. The IMAGE's width/height size the source
+/// buffer; the area supplies only the crop rectangle. CORE-F5.
+fn crop_grade_area(
+    area: &seal_ocr::modes::GradeArea,
+    image_width: usize,
+    image_height: usize,
+    rgba: &[u8],
+) -> Option<(u32, u32, Vec<u8>)> {
+    let image_width = u32::try_from(image_width).ok()?;
+    let image_height = u32::try_from(image_height).ok()?;
+    let region_width = area.x2.saturating_sub(area.x1).max(1) as u32;
+    let region_height = area.y2.saturating_sub(area.y1).max(1) as u32;
+    let rect = seal_domain::geometry::Rect::new(
+        area.x1,
+        area.y1,
+        region_width as i32,
+        region_height as i32,
+    );
+    seal_win::pure::crop_rgba(image_width, image_height, rgba, rect).ok()
 }
 
 /// The v2 `tuner.ocr.grade_area` box, in the same region-relative space as `region` and the bands.
@@ -2695,5 +2715,32 @@ mod tests {
         assert_eq!(state.bump_revision(), 10);
         assert_eq!(state.rev, 10);
         assert_eq!(state.revision.load(Ordering::SeqCst), 10);
+    }
+
+    /// CORE-F5: the grade crop must use the captured IMAGE size, not the area's own width/height.
+    /// With the old shadowed values an area at (50,50) was cropped out of a 20×20 "image" and the
+    /// colour fallback silently never ran.
+    #[test]
+    fn the_grade_colour_crop_uses_the_image_dimensions() {
+        let mut rgba = vec![0u8; 100 * 100 * 4];
+        for y in 50..70 {
+            for x in 50..70 {
+                let offset = (y * 100 + x) * 4;
+                rgba[offset] = 200;
+                rgba[offset + 1] = 100;
+                rgba[offset + 2] = 50;
+                rgba[offset + 3] = 255;
+            }
+        }
+        let area = seal_ocr::modes::GradeArea {
+            x1: 50,
+            y1: 50,
+            x2: 70,
+            y2: 70,
+        };
+        let (width, height, pixels) =
+            crop_grade_area(&area, 100, 100, &rgba).expect("a valid crop inside the image");
+        assert_eq!((width, height), (20, 20));
+        assert_eq!(&pixels[0..4], &[200, 100, 50, 255]);
     }
 }
