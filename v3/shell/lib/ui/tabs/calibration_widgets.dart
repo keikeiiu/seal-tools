@@ -183,7 +183,8 @@ class _CalibrationFramePictureState extends State<CalibrationFramePicture> {
     if (provided != null) {
       return provided;
     }
-    if (!identical(widget.frame, _decodedSource) || widget.decode != _decodedWith) {
+    if (!identical(widget.frame, _decodedSource) ||
+        widget.decode != _decodedWith) {
       _decodedSource = widget.frame;
       _decodedWith = widget.decode;
       _decodedBytes = widget.decode(widget.frame.data);
