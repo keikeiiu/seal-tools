@@ -52,15 +52,16 @@ render them (cards/mini/dock self-listen; logs drawer/status/connecting view own
 starts, game requests and other pointer actions while the 21-step gem cycle owns the game. The OCR
 regression runner landed as `ocr_eval` with the `fixtures/ocr` schema (`6397fe2`, OCR-F11); the
 model-free half of OCR-F15 (`23efff6`) matches one-character substitutions by bounded edit-distance
-windows; HW-F7's FW_VERSION 3 is now pinned in the v2 sketch test too (`e968b10`).
+windows; HW-F7's FW_VERSION 3 is now pinned in the v2 sketch test too (`e968b10`). CORE-F11's frame
+layer landed in `aedf627`: FrameCache keeps raw PNG bytes plus a once-decoded RGBA image instead of
+base64 `Value`s, so scans/crops no longer re-decode and base64 is re-encoded only for a response.
 
 **Known gaps in this batch:** the OCR-F11 corpus has the runner/schema but no recorded real-game
-cases yet, and OCR-F15's full CTC/logit scorer still needs retained model logits; CORE-F11 only
-removed the dispatch-side clones (the FrameCache/SharedConfig Arc redesign remains); HW-F7's firmware
-still needs a real-board reflash/verification; SHELL-F15's README rewrite stays at publish per
-CUTOVER.
+cases yet, and OCR-F15's full CTC/logit scorer still needs retained model logits; CORE-F11's config
+sharing (an `Arc<Value>` mirror) is still not done — only the frame layer; HW-F7's firmware still
+needs a real-board reflash/verification; SHELL-F15's README rewrite stays at publish per CUTOVER.
 
-Verification: Rust fmt/clippy/rustdoc clean; `cargo test --workspace --offline` **95 suites, 1,351
+Verification: Rust fmt/clippy/rustdoc clean; `cargo test --workspace --offline` **95 suites, 1,352
 passed, 0 failed, 6 ignored**. Shell analyze clean and **371/371** tests. The v2 firmware sketch test
 is 4/4. The launcher was rebuilt and restarted on the new binaries.
 
