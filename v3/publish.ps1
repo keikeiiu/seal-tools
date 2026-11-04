@@ -1,9 +1,17 @@
 # Seal Tools v3.0 publish pipeline (CUTOVER.md item 1 / the packaging work item).
 #
 #   .\v3\publish.ps1 -Verify    (default) check every release input, print what WOULD be staged
-#   .\v3\publish.ps1 -Stage     build core + shell, stage dist\SealTools-v3.0\
-#   .\v3\publish.ps1 -Release   -Stage + allow-list audit + the two zips + SHA-256
+#   .\v3\publish.ps1 -Stage     gates + build core + shell, stage dist\SealTools-vX.Y.Z\
+#   .\v3\publish.ps1 -Release   -Stage + allow-list audit + the two zips + checksums
 #   .\v3\publish.ps1 -Selftest  run the packaging guards without a release build (task-58)
+#
+# -Stage/-Release refuse a dirty git worktree unless -AllowDirty is passed, run the Rust tests and the
+# shell quality gate first, and build with --locked. The stage carries build-info.json (commit,
+# toolchains, payload hashes) and dist\SHA256SUMS.txt covers both zips. Code signing is NOT performed:
+# it needs an external code-signing certificate, so the script prints the exact TODO instead.
+#
+# The release name (vX.Y.Z) is DERIVED from v3\shell\pubspec.yaml (SHELL-F10); passing -Version is
+# only an assertion that must equal the derived name, never an override.
 #
 # -Release refuses until -AcceptDirectMLRedistribution is passed: DirectML.dll is redistributed
 # under Microsoft's terms, still an explicit release input (see v3/docs/records/OCR-RESEARCH.md and
@@ -18,6 +26,9 @@
 #   * The audit runs on the STAGE and then again on the actual ZIP entries (single top folder, no
 #     absolute/traversal paths, exact entry set, deny rules); hidden/system and reparse-point items
 #     are refused; the firmware zip is audited against its intended file set.
+#   * -Stage/-Release refuse a dirty worktree (unless -AllowDirty), run the Rust and shell gates,
+#     build with --locked, write build-info.json into the stage and dist\SHA256SUMS.txt beside the
+#     zips. Signing is a documented TODO: it needs an external code-signing certificate.
 #   * -Selftest exercises these guards with temp directories, a temp zip and no build.
 
 [CmdletBinding()]
@@ -27,8 +38,15 @@ param(
     [switch]$Release,
     [switch]$Selftest,
     [switch]$AcceptDirectMLRedistribution,
+    # SHELL-F9: -Stage/-Release refuse a dirty worktree, run the Rust and shell gates, and build with
+    # --locked. -AllowDirty is the explicit escape for a local packaging experiment, never for a
+    # release; it does not skip the gates.
+    [switch]$AllowDirty,
     [string]$ModelsDir = "",
-    [string]$Version = "v3.0"
+    [string]$FlutterRoot = $(if ($env:FLUTTER_ROOT) { $env:FLUTTER_ROOT } else { 'C:\src\flutter' }),
+    # Derived from v3/shell/pubspec.yaml (SHELL-F10). Passing an explicit value is allowed only when
+    # it names the same version; a mismatch is refused before any path is built.
+    [string]$Version = ""
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,8 +66,13 @@ $FirmwareSketch = Join-Path $Repo 'arduino\seal_mouse'
 $FirmwareIno = Join-Path $FirmwareSketch 'seal_mouse.ino'
 $PetData = Join-Path $DocsDir 'pet-data.csv'
 $DistDir = Join-Path $Repo 'dist'
+# One product version, three files that must agree with it (SHELL-F10): pubspec is canonical, the
+# generated Dart constant feeds the app bar, and the Cargo workspace version is what `hello` reports.
+$PubspecPath = Join-Path $ShellDir 'pubspec.yaml'
+$VersionDartPath = Join-Path $ShellDir 'lib\app\version.dart'
+$CoreManifestPath = Join-Path $CoreDir 'Cargo.toml'
 
-$VersionPattern = '^v\d+\.\d+(\.\d+)?$'
+$VersionPattern = '^v\d+\.\d+\.\d+$'
 $ModelNames = @(
     'ch_PP-OCRv4_det_infer.onnx',
     'ch_PP-OCRv4_rec_infer.onnx',
@@ -78,8 +101,183 @@ function Test-VersionValue([string]$value) {
     return $null
 }
 
-function Test-DistChild([string]$path, [string]$label) {
-    $full = [IO.Path]::GetFullPath($path)
+# SHELL-F10 — one product version. pubspec.yaml is canonical; these readers exist so the guards are
+# testable without touching the real files (the selftest feeds them synthetic text).
+function Read-PubspecProductVersion([string]$text) {
+    $match = [regex]::Match($text, '(?m)^version:\s*(\d+\.\d+\.\d+)\+\d+\s*$')
+    if (-not $match.Success) { return $null }
+    return $match.Groups[1].Value
+}
+
+function Read-CargoWorkspaceVersion([string]$text) {
+    $match = [regex]::Match($text, '(?ms)^\[workspace\.package\].*?^version\s*=\s*"(\d+\.\d+\.\d+)"')
+    if (-not $match.Success) { return $null }
+    return $match.Groups[1].Value
+}
+
+function Read-DartProductVersion([string]$text) {
+    $match = [regex]::Match($text, "productVersion\s*=\s*'(\d+\.\d+\.\d+)'")
+    if (-not $match.Success) { return $null }
+    return $match.Groups[1].Value
+}
+
+function Resolve-PublishVersion([string]$requested, [string]$product, [string]$cargo, [string]$dart) {
+    if (-not $product) {
+        return @{ Error = "v3\shell\pubspec.yaml has no 'version: X.Y.Z+N' line; no path was built." }
+    }
+    if ($cargo -ne $product) {
+        return @{ Error = "Version mismatch: v3\core\Cargo.toml [workspace.package] says '$cargo' but pubspec.yaml says '$product'. Set both to one product version." }
+    }
+    if ($dart -ne $product) {
+        return @{ Error = "Version mismatch: lib\app\version.dart says '$dart' but pubspec.yaml says '$product'. Run: dart run tool/gen_version.dart from v3\shell." }
+    }
+    $derived = "v$product"
+    if ($requested -ne '' -and $requested -ne $derived) {
+        return @{ Error = "Version mismatch: -Version '$requested' disagrees with pubspec.yaml's '$product' (expected '$derived')." }
+    }
+    return @{ Error = $null; Version = $derived; Product = $product }
+}
+
+function Get-PublishVersion([string]$requested) {
+    foreach ($path in @($PubspecPath, $CoreManifestPath, $VersionDartPath)) {
+        if (-not (Test-Path -LiteralPath $path)) {
+            return @{ Error = "product version source missing: $path" }
+        }
+    }
+    return Resolve-PublishVersion $requested `
+        (Read-PubspecProductVersion (Get-Content -Raw -LiteralPath $PubspecPath)) `
+        (Read-CargoWorkspaceVersion (Get-Content -Raw -LiteralPath $CoreManifestPath)) `
+        (Read-DartProductVersion (Get-Content -Raw -LiteralPath $VersionDartPath))
+}
+
+# SHELL-F9 — release gates and provenance. These helpers are pure where possible so -Selftest can
+# exercise the refusal rules without a git worktree, a build or a certificate.
+function Test-DirtyTreeAllowed([string]$statusText, [bool]$allowDirty) {
+    if ($allowDirty) { return $null }
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($line in ($statusText -split "`n")) {
+        $trimmed = $line.TrimEnd()
+        if ($trimmed -ne '') { $lines.Add($trimmed) }
+    }
+    if ($lines.Count -eq 0) { return $null }
+    $sample = ($lines | Select-Object -First 10) -join "`n    "
+    return "the worktree has $($lines.Count) uncommitted path(s); commit the release inputs or pass -AllowDirty.`n    $sample"
+}
+
+function Invoke-ReleaseGates {
+    Write-Host '[gates] cargo test --workspace --locked --offline...'
+    Push-Location $CoreDir
+    try {
+        & cargo test --workspace --locked --offline
+        if ($LASTEXITCODE -ne 0) { Fail 'cargo test --workspace failed; refusing to package an untested core.' }
+    } finally {
+        Pop-Location
+    }
+    Write-Host '[gates] shell quality gate (tool\check.ps1)...'
+    $check = Join-Path $ShellDir 'tool\check.ps1'
+    if (-not (Test-Path -LiteralPath $check)) { Fail "shell quality gate missing: $check" }
+    try {
+        & $check
+    } catch {
+        Fail "the shell quality gate failed: $($_.Exception.Message)"
+    }
+    if ($LASTEXITCODE -ne 0) { Fail 'the shell quality gate failed (see the log above).' }
+    Write-Host '[gates] PASS'
+}
+
+function Get-ToolchainInfo {
+    $info = @{ rustc = 'unknown'; cargo = 'unknown'; flutter = 'unknown'; dart = 'unknown' }
+    try {
+        $value = ((& rustc --version 2>&1 | Out-String).Trim())
+        if ($value -ne '') { $info.rustc = ($value -split "`n")[0].Trim() }
+    } catch { }
+    try {
+        $value = ((& cargo --version 2>&1 | Out-String).Trim())
+        if ($value -ne '') { $info.cargo = ($value -split "`n")[0].Trim() }
+    } catch { }
+    try {
+        $flutter = Join-Path $FlutterRoot 'bin\flutter.bat'
+        if (-not (Test-Path -LiteralPath $flutter)) { $flutter = 'flutter' }
+        $value = ((& $flutter --version 2>&1 | Out-String).Trim())
+        if ($value -ne '') { $info.flutter = ($value -split "`n")[0].Trim() }
+    } catch { }
+    try {
+        $dart = Join-Path $FlutterRoot 'bin\cache\dart-sdk\bin\dart.exe'
+        if (-not (Test-Path -LiteralPath $dart)) { $dart = 'dart' }
+        $value = ((& $dart --version 2>&1 | Out-String).Trim())
+        if ($value -ne '') { $info.dart = ($value -split "`n")[0].Trim() }
+    } catch { }
+    return $info
+}
+
+function Get-PayloadManifest([string]$stageDir, [string]$excludeRelative) {
+    $paths = New-Object System.Collections.Generic.List[string]
+    foreach ($relative in @(Get-StageRelativeFiles $stageDir)) {
+        if ($excludeRelative -ne '' -and $relative -eq $excludeRelative) { continue }
+        $paths.Add($relative)
+    }
+    $ordered = $paths.ToArray()
+    [Array]::Sort($ordered, [StringComparer]::Ordinal)
+    $entries = New-Object System.Collections.Generic.List[object]
+    foreach ($relative in $ordered) {
+        $file = Join-Path $stageDir $relative.Replace('/', '\')
+        $entries.Add([pscustomobject]@{
+            path = $relative
+            bytes = (Get-Item -LiteralPath $file).Length
+            sha256 = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+        })
+    }
+    return $entries.ToArray()
+}
+
+function New-BuildInfo([string]$ProductVersion, [string]$Release, [string]$Commit, [string]$Branch, [bool]$Dirty, [string]$BuiltAtUtc, [hashtable]$Toolchain, [object[]]$Payload) {
+    $info = [ordered]@{
+        product_version = $ProductVersion
+        release = $Release
+        git_commit = $Commit
+        git_branch = $Branch
+        git_dirty = $Dirty
+        built_at_utc = $BuiltAtUtc
+        toolchain = [ordered]@{
+            rustc = [string]$Toolchain['rustc']
+            cargo = [string]$Toolchain['cargo']
+            flutter = [string]$Toolchain['flutter']
+            dart = [string]$Toolchain['dart']
+        }
+        payload = @($Payload)
+    }
+    return ($info | ConvertTo-Json -Depth 8)
+}
+
+function Write-BuildInfoFile([string]$stageDir, [string]$productVersion, [string]$release, [string]$commit, [string]$branch, [bool]$dirty) {
+    $payload = @(Get-PayloadManifest $stageDir 'build-info.json')
+    $json = New-BuildInfo -ProductVersion $productVersion -Release $release -Commit $commit -Branch $branch -Dirty $dirty -BuiltAtUtc ([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')) -Toolchain (Get-ToolchainInfo) -Payload $payload
+    [IO.File]::WriteAllText((Join-Path $stageDir 'build-info.json'), $json + "`n", (New-Object Text.UTF8Encoding $false))
+}
+
+function Write-ChecksumFile([string]$path, [string[]]$files) {
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($file in $files) {
+        if (-not (Test-Path -LiteralPath $file)) { Fail "cannot checksum a missing file: $file" }
+        $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+        $lines.Add("$hash  $(Split-Path -Leaf $file)")
+    }
+    [IO.File]::WriteAllLines($path, $lines.ToArray(), (New-Object Text.UTF8Encoding $false))
+}
+
+function Write-SigningTodo {
+    Write-Host ''
+    Write-Host 'Signing: NOT PERFORMED (SHELL-F9).' -ForegroundColor Yellow
+    Write-Host '  The payload is unsigned. SmartScreen and antivirus heuristics will flag a tool that'
+    Write-Host '  synthesises input and drives a COM device, and players cannot verify provenance beyond'
+    Write-Host '  the SHA-256 file. Authenticode signing needs an external code-signing certificate that'
+    Write-Host '  this repository does not carry. Before zipping, sign the staged binaries with:'
+    Write-Host '    signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f <cert.pfx> /p <password> <file>'
+    Write-Host '  for SealTools.exe and seal-core.exe, then re-run the release so the checksums describe'
+    Write-Host '  the signed files.'
+}
+
+function Test-DistChild([string]$path, [string]$label) {    $full = [IO.Path]::GetFullPath($path)
     $parent = [IO.Path]::GetDirectoryName($full)
     $dist = [IO.Path]::GetFullPath($DistDir)
     if (-not [string]::Equals($parent.TrimEnd('\'), $dist.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
@@ -212,7 +410,8 @@ function Test-AllowedStageRelative([string]$relative) {
         'seal-core.exe',
         'DirectML.dll',
         'flutter_windows.dll',
-        'native_assets.json'
+        'native_assets.json',
+        'build-info.json'
     )
     $allowedConfig = @(
         'config/README.md',
@@ -240,7 +439,7 @@ function Get-StageAuditProblems([string]$stageDir) {
         $problems.Add($safetyProblem)
     }
 
-    $required = @('SealTools.exe', 'seal-core.exe', 'DirectML.dll')
+    $required = @('SealTools.exe', 'seal-core.exe', 'DirectML.dll', 'build-info.json')
     foreach ($runtime in $FlutterRuntimeFiles) { $required += $runtime.Replace('\', '/') }
     $required += @(
         'models/ch_PP-OCRv4_det_infer.onnx',
@@ -423,6 +622,7 @@ function Write-Environment([string]$mode) {
     Write-Host '=============================================================='
     Write-Host "  Seal Tools v3 - v3 publish ($mode)"
     Write-Host '=============================================================='
+    Write-Host "product: $ProductVersion (release $Version)"
     Write-Host "repo:   $Repo"
     $branch = & git -C $Repo rev-parse --abbrev-ref HEAD 2>$null
     $commit = & git -C $Repo rev-parse --short HEAD 2>$null
@@ -576,25 +776,49 @@ function Invoke-Stage {
         $problems | ForEach-Object { Write-Host "  - $_" }
         Fail 'Nothing staged. Fix the inputs above (or run -Verify for the full picture).'
     }
-    foreach ($tool in @('cargo', 'flutter')) {
-        if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
-            Fail "$tool is not on PATH; -Stage needs it to build the payload."
-        }
+    if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+        Fail 'cargo is not on PATH; -Stage needs it to build the payload.'
+    }
+    $flutter = Join-Path $FlutterRoot 'bin\flutter.bat'
+    if (-not (Test-Path -LiteralPath $flutter)) {
+        Fail "Flutter not found at '$flutter'. Set FLUTTER_ROOT or pass -FlutterRoot."
     }
 
-    Write-Host '[1/4] Building seal-core (release)...'
+    # SHELL-F9: a package is built from a committed tree, then gated, then built with the lockfile.
+    # The status is captured once so build-info.json can record whether this was a dirty package.
+    $statusText = ((& git -C $Repo status --porcelain 2>$null) -join "`n")
+    if ($LASTEXITCODE -ne 0) {
+        Fail "cannot read git status in $Repo; -Stage refuses to package an unidentifiable tree."
+    }
+    $worktreeDirty = -not [string]::IsNullOrWhiteSpace($statusText)
+    $dirtyProblem = Test-DirtyTreeAllowed $statusText $AllowDirty.IsPresent
+    if ($dirtyProblem) { Fail "$dirtyProblem`nA release must be built from a committed tree; commit the inputs or pass -AllowDirty." }
+
+    Invoke-ReleaseGates
+
+    Write-Host '[1/4] Building seal-core (release, --locked)...'
     Push-Location $CoreDir
     try {
-        & cargo build --release -p seal-core
-        if ($LASTEXITCODE -ne 0) { Fail 'cargo build --release -p seal-core failed (see the log above).' }
+        & cargo build --release --locked -p seal-core
+        if ($LASTEXITCODE -ne 0) { Fail 'cargo build --release --locked -p seal-core failed (see the log above).' }
     } finally {
         Pop-Location
     }
 
-    Write-Host '[2/4] Building the Flutter Windows release bundle...'
+    # SHELL-F11: the notices that ship in the zip must name every crate this build links. The cargo
+    # build above has populated the source cache, so the audit can read each crate's own licence text.
+    Write-Host '[notices] Checking the generated Rust-crate attribution...'
+    & (Join-Path $V3 'tool\gen-third-party-notices.ps1') -Check
+    if ($LASTEXITCODE -ne 0) {
+        Fail 'The Rust-crate notices are stale; run v3\tool\gen-third-party-notices.ps1 and commit the result.'
+    }
+
+    Write-Host '[2/4] Building the Flutter Windows release bundle (lockfile enforced)...'
     Push-Location $ShellDir
     try {
-        & flutter build windows --release
+        & $flutter pub get --offline --enforce-lockfile
+        if ($LASTEXITCODE -ne 0) { Fail 'flutter pub get --enforce-lockfile failed; pubspec.lock is stale (see the log above).' }
+        & $flutter build windows --release --no-pub
         if ($LASTEXITCODE -ne 0) { Fail 'flutter build windows --release failed (see the log above).' }
     } finally {
         Pop-Location
@@ -698,6 +922,12 @@ function Invoke-Stage {
         }
     }
 
+    $commit = ((& git -C $Repo rev-parse HEAD 2>$null) | Out-String).Trim()
+    $branch = ((& git -C $Repo rev-parse --abbrev-ref HEAD 2>$null) | Out-String).Trim()
+    if ($commit -eq '') { $commit = 'unknown'; $branch = 'unknown' }
+    Write-BuildInfoFile $StageDir $ProductVersion $Version $commit $branch $worktreeDirty
+    Write-Host "[stage] build-info.json records $commit on $branch (dirty: $worktreeDirty)."
+
     Write-Host '[4/4] Stage complete.'
     Write-Host ''
     Write-StageSummary
@@ -730,17 +960,74 @@ function Invoke-Selftest {
     New-Item -ItemType Directory -Path $temp -Force | Out-Null
     try {
         Write-Host 'Version schema:'
-        $badVersions = @('', 'v3', '3.0', 'v3.0.0.0', '..', '*', '\..\..\v3\config', 'v3.0\..\..\v3\config', 'v3.0;')
+        $badVersions = @('', 'v3', '3.0.0', 'v3.0', 'v3.0.0.0', '..', '*', '\..\..\v3\config', 'v3.0\..\..\v3\config', 'v3.0;')
         foreach ($candidate in $badVersions) {
             $errorLine = Test-VersionValue $candidate
             Assert-Selftest ([bool]$errorLine) "refuses Version '$candidate'"
         }
-        Assert-Selftest ($null -eq (Test-VersionValue 'v3.0')) 'accepts Version v3.0'
-        $validPaths = Get-ReleasePaths 'v3.0'
-        Assert-Selftest (-not $validPaths.Error) 'v3.0 release paths resolve'
+        Assert-Selftest ($null -eq (Test-VersionValue 'v3.0.8')) 'accepts Version v3.0.8'
+        $validPaths = Get-ReleasePaths 'v3.0.8'
+        Assert-Selftest (-not $validPaths.Error) 'v3.0.8 release paths resolve'
         $traversal = Join-Path $DistDir 'SealTools-\..\..\v3\config'
         Assert-Selftest ([bool](Test-DistChild $traversal 'stage directory')) 'refuses a stage path outside dist (traversal proof)'
         Assert-Selftest ([bool](Test-DistChild (Join-Path $DistDir 'SealTools-v3.0\..\..\v3\config') 'stage directory')) 'refuses a normalized stage path outside dist'
+
+        Write-Host ''
+        Write-Host 'Product version (one source of truth):'
+        Assert-Selftest ((Read-PubspecProductVersion "version: 3.0.8+1") -eq '3.0.8') 'reads the product version from pubspec'
+        Assert-Selftest ($null -eq (Read-PubspecProductVersion "version: 3.0")) 'refuses a pubspec version without a build number'
+        Assert-Selftest ((Read-CargoWorkspaceVersion "[workspace.package]`nversion = `"3.0.8`"") -eq '3.0.8') 'reads the Cargo workspace version'
+        Assert-Selftest ((Read-DartProductVersion "const String productVersion = '3.0.8';") -eq '3.0.8') 'reads the generated Dart product version'
+        $agreed = Resolve-PublishVersion '' '3.0.8' '3.0.8' '3.0.8'
+        Assert-Selftest ((-not $agreed.Error) -and ($agreed.Version -eq 'v3.0.8')) 'derives v3.0.8 from an agreeing set'
+        $wrongRequest = Resolve-PublishVersion 'v3.0' '3.0.8' '3.0.8' '3.0.8'
+        Assert-Selftest ([bool]$wrongRequest.Error) 'refuses -Version v3.0 against pubspec 3.0.8'
+        $wrongCargo = Resolve-PublishVersion '' '3.0.8' '0.1.0' '3.0.8'
+        Assert-Selftest ([bool]$wrongCargo.Error) 'refuses a Cargo version that disagrees with pubspec'
+        $wrongDart = Resolve-PublishVersion '' '3.0.8' '3.0.8' '0.1.0'
+        Assert-Selftest ([bool]$wrongDart.Error) 'refuses a stale generated version.dart'
+        $checkoutVersion = Get-PublishVersion ''
+        Assert-Selftest (-not $checkoutVersion.Error) 'this checkout has one product version (pubspec, Cargo.toml, version.dart)'
+        if ($checkoutVersion.Error) { Write-Host "  version: $($checkoutVersion.Error)" }
+
+        Write-Host ''
+        Write-Host 'Third-party notices generator (SHELL-F11):'
+        & (Join-Path $V3 'tool\gen-third-party-notices.ps1') -SelfTest
+        Assert-Selftest ($LASTEXITCODE -eq 0) 'notices generator selftest passes'
+
+        Write-Host ''
+        Write-Host 'Release gates (SHELL-F9):'
+        Assert-Selftest ($null -eq (Test-DirtyTreeAllowed '' $false)) 'accepts a clean worktree'
+        Assert-Selftest ([bool](Test-DirtyTreeAllowed " M v3/publish.ps1" $false)) 'refuses a dirty worktree'
+        Assert-Selftest ([bool](Test-DirtyTreeAllowed "?? untracked.txt" $false)) 'counts an untracked file as dirty'
+        Assert-Selftest ($null -eq (Test-DirtyTreeAllowed " M v3/publish.ps1" $true)) 'allows -AllowDirty'
+        $buildStage = Join-Path $temp 'build-info-stage'
+        New-Item -ItemType Directory -Path $buildStage -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $buildStage 'b.txt') -Value 'bee' -Encoding ASCII
+        Set-Content -LiteralPath (Join-Path $buildStage 'a.txt') -Value 'aye' -Encoding ASCII
+        $manifest = @(Get-PayloadManifest $buildStage 'build-info.json')
+        Assert-Selftest ($manifest.Count -eq 2) 'payload manifest lists the staged files'
+        Assert-Selftest (($manifest[0].path -eq 'a.txt') -and ($manifest[1].path -eq 'b.txt')) 'payload manifest sorts paths deterministically'
+        Assert-Selftest ([bool]($manifest[0].sha256 -match '^[0-9a-f]{64}$')) 'payload manifest hashes each file'
+        $toolchain = @{ rustc = 'rustc 1.99.1'; cargo = 'cargo 1.99.1'; flutter = 'Flutter 3.47.8'; dart = 'Dart 3.13.7' }
+        $buildInfo = New-BuildInfo -ProductVersion '3.0.8' -Release 'v3.0.8' -Commit 'deadbeef' -Branch 'main' -Dirty $false -BuiltAtUtc '2026-01-01T00:00:00Z' -Toolchain $toolchain -Payload $manifest
+        $parsed = $buildInfo | ConvertFrom-Json
+        Assert-Selftest (($parsed.product_version -eq '3.0.8') -and ($parsed.release -eq 'v3.0.8')) 'build-info records the product and release names'
+        Assert-Selftest (($parsed.git_commit -eq 'deadbeef') -and ($parsed.toolchain.rustc -eq 'rustc 1.99.1')) 'build-info records the commit and toolchains'
+        Assert-Selftest (@($parsed.payload).Count -eq 2) 'build-info carries the payload list'
+        $sameInfo = New-BuildInfo -ProductVersion '3.0.8' -Release 'v3.0.8' -Commit 'deadbeef' -Branch 'main' -Dirty $false -BuiltAtUtc '2026-01-01T00:00:00Z' -Toolchain $toolchain -Payload $manifest
+        Assert-Selftest ($buildInfo -eq $sameInfo) 'build-info is deterministic for fixed inputs'
+        $zipA = Join-Path $temp 'SealTools-v3.0.8.zip'
+        $zipB = Join-Path $temp 'SealTools-v3.0.8-firmware.zip'
+        Set-Content -LiteralPath $zipA -Value 'app payload' -Encoding ASCII
+        Set-Content -LiteralPath $zipB -Value 'sketch' -Encoding ASCII
+        $sums = Join-Path $temp 'SHA256SUMS.txt'
+        Write-ChecksumFile $sums @($zipA, $zipB)
+        Assert-Selftest (Test-Path -LiteralPath $sums) 'writes dist\SHA256SUMS.txt'
+        $sumLines = @(Get-Content -LiteralPath $sums)
+        Assert-Selftest ($sumLines.Count -eq 2) 'checksum file has one line per asset'
+        Assert-Selftest ($sumLines[0] -match '^[0-9a-f]{64}  SealTools-v3\.0\.8\.zip$') 'checksum file uses sha256sum naming and lowercase hex'
+        Assert-Selftest ($sumLines[0].Split(' ')[0] -eq (Get-FileHash -LiteralPath $zipA -Algorithm SHA256).Hash.ToLowerInvariant()) 'checksum matches the asset bytes'
 
         Write-Host ''
         Write-Host 'Forbidden files (global deny):'
@@ -797,7 +1084,7 @@ function Invoke-Selftest {
         Write-Host ''
         Write-Host 'Stage audit:'
         $auditStage = Join-Path $temp 'stage-audit'
-        $requiredFiles = @('SealTools.exe', 'seal-core.exe', 'DirectML.dll')
+        $requiredFiles = @('SealTools.exe', 'seal-core.exe', 'DirectML.dll', 'build-info.json')
         foreach ($runtime in $FlutterRuntimeFiles) { $requiredFiles += $runtime.Replace('\', '/') }
         $requiredFiles += @(
             'models/ch_PP-OCRv4_det_infer.onnx',
@@ -865,7 +1152,7 @@ function Invoke-Selftest {
         Write-Host "[!] Selftest failed: $($script:SelftestFailures) check(s) failed."
         exit 1
     }
-    Write-Host 'Selftest passed: version schema, denial rules, hidden/reparse, post-zip and firmware guards.'
+    Write-Host 'Selftest passed: version agreement, dirty-tree/gates, payload manifest, checksums, denial rules, hidden/reparse, post-zip and firmware guards.'
     exit 0
 }
 
@@ -883,6 +1170,17 @@ if ($ModeCount -gt 1) {
     exit 1
 }
 
+if ($Selftest) {
+    Invoke-Selftest
+}
+
+# SHELL-F10: the release name comes from pubspec, not from a second hand-edited default.
+$resolvedVersion = Get-PublishVersion $Version
+if ($resolvedVersion.Error) { Fail $resolvedVersion.Error }
+$Version = $resolvedVersion.Version
+$ProductVersion = $resolvedVersion.Product
+Write-Host "product version: $ProductVersion (pubspec.yaml; release name $Version)"
+
 $releasePaths = Get-ReleasePaths $Version
 if ($releasePaths.Error) { Fail $releasePaths.Error }
 $StageDir = $releasePaths.Stage
@@ -893,10 +1191,6 @@ if ($ModelsDir -eq "") {
     $ModelsDir = Join-Path $V3 'models'
 } elseif (-not [System.IO.Path]::IsPathRooted($ModelsDir)) {
     $ModelsDir = Join-Path $Repo $ModelsDir
-}
-
-if ($Selftest) {
-    Invoke-Selftest
 }
 
 $mode = 'verify'
@@ -935,6 +1229,7 @@ if ($Verify) {
     Write-Host "Planned payload -> $StageDir\ (one top folder):"
     Write-Host '  SealTools.exe + data/ (app.so, icudtl.dat, flutter_assets/) + flutter_windows.dll'
     Write-Host '  native_assets.json (the Flutter native-asset manifest)'
+    Write-Host '  build-info.json (commit, toolchain versions, payload SHA-256 list)'
     Write-Host '  seal-core.exe, DirectML.dll'
     Write-Host '  models/<the three PP-OCRv4 .onnx files>'
     Write-Host '  config/defaults.yaml.example, local.yaml.example, attributes.yaml, attributes.us.yaml.example'
@@ -982,6 +1277,12 @@ then pass -AcceptDirectMLRedistribution. Refusing to zip a public payload withou
     Write-Host 'Distributables (SHA-256):'
     Write-Hash $AppZip
     Write-Hash $FirmwareZip
+    $checksumPath = Join-Path $DistDir 'SHA256SUMS.txt'
+    Write-ChecksumFile $checksumPath @($AppZip, $FirmwareZip)
+    Write-Host ''
+    Write-Host "Checksums written to $checksumPath (sha256sum format, lowercase, one line per asset)."
+    Get-Content -LiteralPath $checksumPath | ForEach-Object { Write-Host "  $_" }
+    Write-SigningTodo
     exit 0
 }
 

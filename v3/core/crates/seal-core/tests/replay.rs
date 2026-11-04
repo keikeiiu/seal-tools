@@ -136,7 +136,7 @@ fn the_smoke_script_serves_the_real_response_and_event_sequence() {
     )
     .expect("the handshake result is the real shape");
     assert_eq!(result.protocol, 1);
-    assert_eq!(result.core_version, "0.1.0");
+    assert_eq!(result.core_version, env!("CARGO_PKG_VERSION"));
     assert_eq!(result.root, "replay");
     assert_eq!(result.rev, 0);
     assert!(result.config.is_object());
