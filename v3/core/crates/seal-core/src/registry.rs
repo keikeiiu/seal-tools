@@ -36,8 +36,10 @@ use crate::shop::ShopTool;
 use crate::spammer::{RealNow, SpammerTool};
 use crate::tuner::TunerTool;
 
-/// The merged config, shared between the dispatcher (publisher) and the registry (reader).
-pub type SharedConfig = Arc<RwLock<Value>>;
+/// The merged config, shared between the dispatcher (publisher) and the registry (reader). The inner
+/// `Arc<Value>` makes a reader's snapshot cheap and immutable (CORE-F11): a run keeps the config it
+/// started with without copying the whole tree, and the next publish swaps the pointer.
+pub type SharedConfig = Arc<RwLock<Arc<Value>>>;
 
 /// One run's two halves: the decision half the runner calls, and the effects it performs decisions
 /// with. They arrive together because a run cannot exist with only one of them.
@@ -128,11 +130,11 @@ impl ProductionRegistry {
         self
     }
 
-    fn config(&self) -> Value {
-        self.shared.read().map_or_else(
-            |poisoned| poisoned.into_inner().clone(),
-            |config| config.clone(),
-        )
+    fn config(&self) -> Arc<Value> {
+        match self.shared.read() {
+            Ok(config) => Arc::clone(&config),
+            Err(poisoned) => Arc::clone(&poisoned.into_inner()),
+        }
     }
 
     fn buy_session(&self, args: &Value) -> Result<Session, String> {
@@ -514,7 +516,7 @@ mod tests {
 
     fn registry(config: Value) -> ProductionRegistry {
         ProductionRegistry::new(
-            Arc::new(RwLock::new(config)),
+            Arc::new(RwLock::new(Arc::new(config))),
             seal_config::ConfigStore::new(std::path::PathBuf::from(r"C:\not-used-by-these-tests")),
             Arc::new(crate::logs::Logs::disabled()),
         )
@@ -848,5 +850,28 @@ mod tests {
         write_key(&mut transport, Key::Function(2), true).expect("fast function key");
 
         assert_eq!(transport.writes(), vec!["K 1\n", "f 2\n"]);
+    }
+
+    #[test]
+    fn a_shared_config_snapshot_is_swapped_not_copied_per_reader() {
+        let first = Arc::new(serde_json::json!({"tuner": {"guard_px": 8}}));
+        let shared: SharedConfig = Arc::new(RwLock::new(Arc::clone(&first)));
+        let registry = ProductionRegistry::new(
+            Arc::clone(&shared),
+            seal_config::ConfigStore::new(std::path::PathBuf::from(r"C:\not-used")),
+            Arc::new(crate::logs::Logs::disabled()),
+        );
+
+        let before = registry.config();
+        assert!(
+            Arc::ptr_eq(&before, &first),
+            "the reader shares the snapshot"
+        );
+
+        let second = Arc::new(serde_json::json!({"tuner": {"guard_px": 12}}));
+        *shared.write().expect("not poisoned") = Arc::clone(&second);
+        let after = registry.config();
+        assert!(Arc::ptr_eq(&after, &second));
+        assert_eq!(after["tuner"]["guard_px"], 12);
     }
 }

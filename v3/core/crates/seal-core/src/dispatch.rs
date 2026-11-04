@@ -586,7 +586,7 @@ fn handle_inner(state: &mut CoreState, request: &Request) -> Response {
     let shared_rev = state.revision.load(Ordering::SeqCst);
     if shared_rev > state.rev {
         if let Ok(shared) = state.shared_config.read() {
-            state.config = shared.clone();
+            state.config = shared.as_ref().clone();
         }
         state.rev = shared_rev;
     }
@@ -690,7 +690,7 @@ impl CoreState {
     /// called once per command, so registry and shell can never disagree about which preset is active.
     pub fn publish_config(&self) {
         if let Ok(mut shared) = self.shared_config.write() {
-            *shared = self.config.clone();
+            *shared = Arc::new(self.config.clone());
         }
     }
 
@@ -2796,7 +2796,7 @@ mod tests {
             Request::new("1", "hello", json!({"protocol": 1, "client": "0.1.0"})),
         );
         let worker_config = json!({"pet": {"food_slots_used": 5}});
-        *state.shared_config.write().expect("not poisoned") = worker_config.clone();
+        *state.shared_config.write().expect("not poisoned") = Arc::new(worker_config.clone());
         state.revision.fetch_add(1, Ordering::SeqCst);
 
         let _ = handle(&mut state, Request::new("2", "board.details", json!({})));
@@ -2806,7 +2806,7 @@ mod tests {
             "the dispatcher refreshed its config from the worker mirror"
         );
         assert_eq!(
-            *state.shared_config.read().expect("not poisoned"),
+            **state.shared_config.read().expect("not poisoned"),
             worker_config,
             "a read-only command must not republish the old dispatcher copy"
         );
