@@ -25,7 +25,8 @@ builds the `ThemeData`).
   portable `settings.ui.theme` (`system|light|dark`, default `dark` so the original shell does not
   change appearance on upgrade). The native title bar follows the same choice through the runner's
   `setTitleBarTheme` host call (`0` system, `1` light, `2` dark), and re-follows Windows when the
-  system setting changes in system mode.
+  system setting changes in system mode. The top bar also carries a quick appearance menu (system/light/
+  dark) so the choice is reachable without opening Setup.
 - **Type.** The `textTheme` is declared explicitly: `headlineSmall` 22/600 (page title),
   `titleMedium` 16/600 (card/dialog), `titleSmall` 14/600 (section), `labelLarge` 13/600,
   `bodyMedium` 14/400 (body/prose), `bodySmall` 12.5/400 (meta — never prose alone), `labelSmall`
@@ -286,35 +287,39 @@ screen: Save.
 
 ## Calibrate workspace (landed 2026-10-30)
 
-The one-form screen became the demo's workspace. Layout: at **content width ≥ 980** (the default 1280
-window leaves ~1064 px beside the rail, so it shows the workspace) — captures + target tree 250 px ·
-flexible canvas · mark editor + reference gallery 340 px; below the breakpoint the same panels stack in
-one column. Below the columns: the stored-coordinate table and the **Sessions** panel.
-The page header keeps the display/match chips and the Refresh/Capture actions on the right at wide
-widths and stacks them under the prose when the window is narrow. A **tool tab row** sits between the
-header and the workspace: **Buy / Sell** (Shop), **Gem Composer**, **Pet Feeder**, **Magic Tuner**,
-**Tooltip**. The three mark tabs scope the target tree and editor to that tool; the two session tabs
-replace the mark workspace with that session's one-capture workspace. A mark tool also remembers the
-frame it last captured or selected: switching tabs restores that tool's frame, and a tab with no frame
-of its own adopts the newest live shelf frame so it never starts blank while a capture is available.
+The one-form screen became the demo's workspace. Layout: at **content width ≥ 850** (the default 1280
+window leaves ~1064 px beside the rail, and the 1120 minimum still leaves ~872) — target tree 250 px ·
+flexible canvas · mark editor + reference gallery 340 px; below the breakpoint the panels stack in one
+scroll column with a "collapse the sidebar" hint. A compact **capture bar** sits between the tool tabs and
+the fixed panes: active frame/display summary plus **Captures**, **Details**, and **Stored marks**
+buttons (those three open dialogs, so the canvas is above the fold at 720 px). The page header keeps the
+display/match chips and Refresh/Capture actions. A **tool tab row** sits between the header and the
+workspace: **Buy / Sell** (Shop), **Gem Composer**, **Magic Tuner**, **Pet Feeder**, **Tooltip**. The
+three mark tabs scope the target tree and editor to that tool; the two session tabs replace the mark
+workspace with that session's one-capture workspace. A mark tool also remembers the frame it last
+captured or selected: switching tabs restores that tool's frame, and a tab with no frame of its own
+adopts the newest live shelf frame so it never starts blank while a capture is available.
 
 - **Tool-scoped target tree:** the active mark tool's 17 presentation marks / 34 instances are listed
   (Shop 5/5, Gem 3/9, Pet 9/20), with saved/partial/not-set dots and counts; named-instance kinds expand
   their targets (N/G/DG/Register/Combine, ITEM1–3, row 1–4). Selecting a kind/target drives canvas and
   editor. Switching the kind picker to another tool's kind moves the tool tab with it.
-- **Capture shelf:** sits above the mark workspace (not in the target-tree column). At most four frames
-  (the core's FIFO). Each item: label/time, physical size, that capture's **own `DisplayInfo`**, frame
-  id, and an eviction marker on the oldest; a fifth capture evicts the oldest and a save against an
-  evicted id is refused — the screen says so and never auto-recaptures. Selecting a shelf frame assigns
-  it to the active tool. The hide → one frame → show flow and its status are unchanged.
+- **Capture shelf:** behind the capture bar's **Captures** dialog. At most four frames (the core's
+  FIFO). Each item: label/time, physical size, that capture's **own `DisplayInfo`**, frame id, and an
+  eviction marker on the oldest; a fifth capture evicts the oldest and a save against an evicted id is
+  refused — the screen says so and never auto-recaptures. Selecting a shelf frame assigns it to the
+  active tool. The hide → one frame → show flow and its status are unchanged; the capture result/refusal
+  stays visible in the compact capture bar.
 - **Canvas:** fit / 1:1 / zoom ± / pan, zoom % and "1 display px = N physical px"; the selected mark is
   drawn with its label. The typed x/y/(w/h) fields stay authoritative and the mapping function is
-  unchanged and single.
-- **Fixed mark workspace:** at wide widths the target tree, canvas and inspector sit in one 620 px pane.
-  The target tree and the inspector scroll inside their own columns; the canvas does not move while the
-  inspector scrolls, so drawing and editing the selected mark happen in one view. Revert/Save are pinned
-  below the scrolling inspector, and the gallery/stored-mark details scroll with the fields. Narrow
-  windows keep the stacked layout.
+  unchanged and single. Overlay labels choose white or black text from the label background's luminance,
+  so the fixed grade/attribute/remaining palette stays legible in light mode.
+- **Fixed mark workspace:** at wide widths the target tree, canvas and inspector fill the height left
+  under the capture bar. The target tree and the inspector scroll inside their own columns with visible
+  scrollbars; the canvas does not move while the inspector scrolls, so drawing and editing the selected
+  mark happen in one view. Revert/Save are pinned below the scrolling inspector, and the gallery scrolls
+  with the fields. The page itself does not scroll for mark tools; **Details** (display environment +
+  Detect) and **Stored marks** are dialogs. Narrow windows keep the stacked layout.
 - **Editor:** surface + target pickers, shape-aware fields, the result-gem-area empty verdict, stored
   crop preview, Revert + Save (Save is the only filled action and enables only with a live frame/target/
   verdict); save refusals render verbatim, including "capture again" for an unknown frame id.
@@ -390,7 +395,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 355/355; `dart format` clean. Every
+Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 356/356; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,

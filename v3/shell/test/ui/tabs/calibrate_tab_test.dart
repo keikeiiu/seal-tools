@@ -266,6 +266,18 @@ Future<void> _tapSave(WidgetTester tester) async {
   await tester.tap(save);
 }
 
+/// The display environment and Detect now live in the compact Capture details dialog.
+Future<void> _openCaptureDetails(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('calibrate-capture-details')));
+  await tester.pumpAndSettle();
+}
+
+/// The stored-mark table now lives in its own dialog.
+Future<void> _openStoredMarks(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('calibrate-stored-marks')));
+  await tester.pumpAndSettle();
+}
+
 Map<String, dynamic> _saveArgs(AppHarness harness) =>
     (harness.lastSentWithCmd('calibration.save')!['args']
         as Map<String, dynamic>);
@@ -296,6 +308,7 @@ void main() {
     );
     expect(find.byKey(const ValueKey('calibrate-frame')), findsOneWidget);
     expect(find.textContaining('Frame 4×3 px'), findsOneWidget);
+    await _openCaptureDetails(tester);
     expect(
       _resultText(tester, 'calibrate-display'),
       contains('scale 1.5 · monitor DPI 144'),
@@ -320,11 +333,16 @@ void main() {
       await _flush(tester);
       await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
       await _flush(tester);
+      // Use a realistic 720-class window so the fixed pane actually has less room than the
+      // inspector's content.
+      tester.view.physicalSize = const ui.Size(1800, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      await tester.pump();
 
       final panes = find.byKey(const ValueKey('calibrate-workspace-panes'));
       await tester.ensureVisible(panes);
       await tester.pump();
-      expect(tester.getSize(panes).height, 620);
+      expect(tester.getSize(panes).height, greaterThan(200));
 
       final frameBefore = tester.getTopLeft(
         find.byKey(const ValueKey('calibrate-frame')),
@@ -1129,7 +1147,16 @@ void main() {
         find.byKey(const ValueKey('calibrate-tool-tooltip')),
         findsOneWidget,
       );
-      expect(find.text('Shop targets'), findsOneWidget);
+      final tabX = [
+        for (final id in ['shop', 'gem', 'tuner', 'pet', 'tooltip'])
+          tester.getTopLeft(find.byKey(ValueKey('calibrate-tool-$id'))).dx,
+      ];
+      expect(
+        tabX,
+        orderedEquals([...tabX]..sort()),
+        reason: 'the approved order is Buy/Sell, Gem, Tuner, Pet, Tooltip',
+      );
+      expect(find.text('Buy / Sell targets'), findsOneWidget);
       expect(find.byKey(const ValueKey('calibrate-tuner-note')), findsNothing);
 
       await _selectTool(tester, 'tuner');
@@ -1138,7 +1165,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('three-box session'), findsOneWidget);
-      expect(find.text('Shop targets'), findsNothing);
+      expect(find.text('Buy / Sell targets'), findsNothing);
 
       await _selectTool(tester, 'tooltip');
       expect(
@@ -1147,7 +1174,7 @@ void main() {
       );
 
       await _selectTool(tester, 'pet');
-      expect(find.text('Pet targets'), findsOneWidget);
+      expect(find.text('Pet Feeder targets'), findsOneWidget);
       expect(find.byKey(const ValueKey('calibrate-kind')), findsOneWidget);
       expect(
         find.byKey(const ValueKey('calibrate-tree-pet_menu')),
@@ -1159,7 +1186,7 @@ void main() {
       );
 
       await _selectTool(tester, 'gem');
-      expect(find.text('Gem targets'), findsOneWidget);
+      expect(find.text('Gem Composer targets'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('calibrate-tree-result_gem_area')),
         findsOneWidget,
@@ -1650,6 +1677,7 @@ void main() {
       },
     );
     await _flush(tester);
+    await _openStoredMarks(tester);
     final copy = find.byKey(const ValueKey('calibrate-copy-yaml'));
     await tester.ensureVisible(copy);
     await tester.pump();
@@ -1699,6 +1727,7 @@ void main() {
       },
     );
     await _flush(tester);
+    await _openCaptureDetails(tester);
 
     expect(find.byKey(const ValueKey('detect-panel')), findsOneWidget);
     expect(find.text('scale 1.5 → 1.25'), findsOneWidget);
@@ -1730,6 +1759,7 @@ void main() {
       },
     );
     await _flush(tester);
+    await _openCaptureDetails(tester);
 
     expect(find.text('game window not open'), findsOneWidget);
     expect(find.byKey(const ValueKey('detect-error')), findsNothing);
@@ -1782,6 +1812,7 @@ void main() {
         7,
         reason: 'the rev from the fetch travels with the save',
       );
+      await _openCaptureDetails(tester);
       expect(
         tester
             .widget<Text>(

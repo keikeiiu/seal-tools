@@ -27,6 +27,12 @@ Uint8List? decodePngBase64(String data) {
   }
 }
 
+/// Label text that stays legible on a coloured overlay (green/blue/amber in both themes).
+Color _readableLabelColor(Color background) =>
+    ThemeData.estimateBrightnessForColor(background) == Brightness.dark
+    ? Colors.white
+    : Colors.black87;
+
 /// One non-selected mark drawn on the calibration picture in its own colour (the tuner's three
 /// boxes, or the tooltip's placed cursor point). The selected/editable mark stays [CalibrationMark]
 /// on the picture so the gesture layer and its label keep one owner.
@@ -261,7 +267,9 @@ class _CalibrationFramePictureState extends State<CalibrationFramePicture> {
                                   color: overlay.color,
                                   label: overlay.label,
                                   labelBackground: overlay.color,
-                                  labelForeground: Colors.white,
+                                  labelForeground: _readableLabelColor(
+                                    overlay.color,
+                                  ),
                                 ),
                               ),
                             ),

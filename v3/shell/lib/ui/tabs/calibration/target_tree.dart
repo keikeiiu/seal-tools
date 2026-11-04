@@ -64,7 +64,12 @@ class TargetTreePanel extends StatelessWidget {
       (n, kind) => n + calibrationSavedCount(kind, stored),
     );
     return SurfacePanel(
-      title: '$tool targets',
+      title: switch (tool) {
+        'Shop' => 'Buy / Sell targets',
+        'Gem' => 'Gem Composer targets',
+        'Pet' => 'Pet Feeder targets',
+        _ => '$tool targets',
+      },
       trailing: Text(
         '$saved / ${group.markCount} saved',
         style: theme.textTheme.labelSmall?.copyWith(

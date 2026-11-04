@@ -355,6 +355,34 @@ class _TopBar extends StatelessWidget {
                   icon: const Icon(Icons.picture_in_picture_alt_outlined),
                   onPressed: () => unawaited(model.collapseToMini()),
                 ),
+              PopupMenuButton<ShellThemeMode>(
+                key: const ValueKey('app-bar-theme'),
+                tooltip: 'Appearance: ${model.themeMode.label}',
+                onSelected: (mode) => unawaited(model.setThemeMode(mode)),
+                icon: Icon(switch (model.themeMode) {
+                  ShellThemeMode.system => Icons.brightness_auto_outlined,
+                  ShellThemeMode.light => Icons.light_mode_outlined,
+                  ShellThemeMode.dark => Icons.dark_mode_outlined,
+                }),
+                itemBuilder: (context) => [
+                  for (final mode in ShellThemeMode.values)
+                    PopupMenuItem<ShellThemeMode>(
+                      value: mode,
+                      child: Row(
+                        children: [
+                          Icon(
+                            mode == model.themeMode
+                                ? Icons.check
+                                : Icons.circle_outlined,
+                            size: ShellSize.iconSm,
+                          ),
+                          const SizedBox(width: ShellSpace.sm),
+                          Text(mode.label),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
               TextButton.icon(
                 key: const ValueKey('logs-toggle'),
                 onPressed: onToggleLogs,

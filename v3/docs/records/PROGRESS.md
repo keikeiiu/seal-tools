@@ -19,6 +19,28 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-04 (40) — Calibrate above the fold, readable light labels, and a quick appearance menu
+
+First UI pass after the capture-once work, driven by the review rather than the backend:
+
+- **Above-the-fold Calibrate:** the fixed workspace now fills the height left after the header/tool tabs.
+  The capture shelf, display environment + Detect, and the stored-marks table moved behind the compact
+  capture bar's **Captures / Details / Stored marks** dialogs, so the canvas is visible at the default
+  720 px window instead of below the panels. The canvas height is responsive, and the page no longer
+  scrolls for mark tools.
+- **Light-mode labels:** calibration overlay labels pick white or black text from their background's
+  luminance; the fixed green/blue/amber palette no longer leaves white-on-amber labels.
+- **Tool order/naming:** tabs are now Buy / Sell → Gem Composer → Magic Tuner → Pet Feeder → Tooltip
+  (Pet is not the default; the shop tab remains first). The target panel is titled "Buy / Sell targets"
+  rather than "Shop targets"; Mark/Gem/Pet titles follow the same naming.
+- **Ergonomics:** the target/inspector panes have visible scrollbars with controllers, the three-column
+  breakpoint dropped from 980 to 850 so the 1120 minimum still fits with the rail, and a narrow-layout
+  hint points at Ctrl+B. The top bar gained a quick appearance menu (Follow system / Light / Dark)
+  alongside Setup → Appearance.
+
+Verification: `flutter analyze --fatal-infos` clean, `dart format` clean, shell `flutter test --no-pub`
+**356/356**, Windows debug build green. UI spec and both user guides updated.
+
 ## 2026-11-04 (39) — Appearance: light / dark / follow-system lands on the calibration branch
 
 The calibration branch had stayed dark-only while the appearance work lived on `v3-core`. The player

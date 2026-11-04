@@ -47,18 +47,14 @@ import 'calibration_widgets.dart';
 /// in one column instead of squeezing the canvas.
 ///
 /// The breakpoint is CONTENT width, not window width: the default 1280 window leaves ~1064 px beside
-/// the 216 px rail, and that must show the three-column workspace; 980 keeps the canvas usable while
-/// a 1120 window (the enforced minimum) falls back to one column.
+/// the 216 px rail, and the enforced 1120 minimum still leaves ~872; both must show the three-column
+/// workspace, so 850 is the floor.
 const double _captureColumnWidth = 250;
 const double _editorColumnWidth = 340;
-const double _workspaceBreakpoint = 980;
+const double _workspaceBreakpoint = 850;
 
 /// The canvas viewport's height; fit mode contains the frame inside (available width, this).
 const double _canvasHeight = 420;
-
-/// The mark workspace's fixed pane height: the canvas does not move while the target tree or the
-/// inspector scrolls, so drawing and editing the selected mark happen in one view.
-const double _workspacePaneHeight = 620;
 
 class CalibrateTab extends StatefulWidget {
   const CalibrateTab({
@@ -85,6 +81,9 @@ class _CalibrateTabState extends State<CalibrateTab>
   final _y = TextEditingController(text: '0');
   final _w = TextEditingController(text: '0');
   final _h = TextEditingController(text: '0');
+
+  final ScrollController _targetsScrollController = ScrollController();
+  final ScrollController _inspectorScrollController = ScrollController();
 
   String _kindName = calibrationKinds.first.name;
 
@@ -171,8 +170,8 @@ class _CalibrateTabState extends State<CalibrateTab>
   static const List<({String id, String label})> _toolTabs = [
     (id: 'Shop', label: 'Buy / Sell'),
     (id: 'Gem', label: 'Gem Composer'),
-    (id: 'Pet', label: 'Pet Feeder'),
     (id: 'Tuner', label: 'Magic Tuner'),
+    (id: 'Pet', label: 'Pet Feeder'),
     (id: 'Tooltip', label: 'Tooltip'),
   ];
 
@@ -210,6 +209,8 @@ class _CalibrateTabState extends State<CalibrateTab>
     _y.dispose();
     _w.dispose();
     _h.dispose();
+    _targetsScrollController.dispose();
+    _inspectorScrollController.dispose();
     super.dispose();
   }
 
@@ -815,25 +816,35 @@ class _CalibrateTabState extends State<CalibrateTab>
   }
 
   Widget _buildMarkWorkspace(ThemeData theme, CalibrationCapture? capture) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: ShellSpace.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildDisplayEnvironment(theme, capture),
-          const SizedBox(height: ShellSpace.md),
-          DetectPanel(model: widget.model),
-          _buildExternalChangeBanner(),
-          _buildCaptureShelf(theme),
-          const SizedBox(height: ShellSpace.md),
-          LayoutBuilder(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            ShellSpace.lg,
+            0,
+            ShellSpace.lg,
+            ShellSpace.sm,
+          ),
+          child: _buildCaptureBar(theme, capture),
+        ),
+        _buildExternalChangeBanner(),
+        Expanded(
+          child: LayoutBuilder(
             builder: (context, constraints) {
               final wide = constraints.maxWidth >= _workspaceBreakpoint;
+              final canvasMaxHeight = wide
+                  ? (constraints.maxHeight - 96).clamp(220.0, 520.0).toDouble()
+                  : _canvasHeight;
               final left = Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [_buildTargetTree()],
               );
-              final canvas = _buildCanvasPanel(theme, capture);
+              final canvas = _buildCanvasPanel(
+                theme,
+                capture,
+                maxHeight: canvasMaxHeight,
+              );
               final rightNarrow = Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -845,17 +856,22 @@ class _CalibrateTabState extends State<CalibrateTab>
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Expanded(
-                    child: SingleChildScrollView(
-                      key: const ValueKey('calibrate-inspector-scroll'),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildMarkEditor(theme, showActions: false),
-                          ReferenceGalleryPanel(
-                            stored: _stored,
-                            gallery: _gallery,
-                          ),
-                        ],
+                    child: Scrollbar(
+                      controller: _inspectorScrollController,
+                      thumbVisibility: true,
+                      child: SingleChildScrollView(
+                        key: const ValueKey('calibrate-inspector-scroll'),
+                        controller: _inspectorScrollController,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildMarkEditor(theme, showActions: false),
+                            ReferenceGalleryPanel(
+                              stored: _stored,
+                              gallery: _gallery,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -867,43 +883,317 @@ class _CalibrateTabState extends State<CalibrateTab>
                 ],
               );
               if (!wide) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [left, canvas, rightNarrow],
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: ShellSpace.lg,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'The three-column workspace needs a little more width. '
+                        'Collapse the sidebar (Ctrl+B) or widen the window.',
+                        key: const ValueKey('calibrate-workspace-width-hint'),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: ShellSpace.sm),
+                      left,
+                      canvas,
+                      rightNarrow,
+                      const SizedBox(height: ShellSpace.lg),
+                    ],
+                  ),
                 );
               }
-              return SizedBox(
-                key: const ValueKey('calibrate-workspace-panes'),
-                height: _workspacePaneHeight,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: _captureColumnWidth,
-                      child: SingleChildScrollView(
-                        key: const ValueKey('calibrate-targets-scroll'),
-                        child: left,
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: ShellSpace.lg),
+                child: SizedBox(
+                  key: const ValueKey('calibrate-workspace-panes'),
+                  height: constraints.maxHeight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: _captureColumnWidth,
+                        child: Scrollbar(
+                          controller: _targetsScrollController,
+                          thumbVisibility: true,
+                          child: SingleChildScrollView(
+                            key: const ValueKey('calibrate-targets-scroll'),
+                            controller: _targetsScrollController,
+                            child: left,
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: ShellSpace.lg),
-                    Expanded(child: canvas),
-                    const SizedBox(width: ShellSpace.lg),
-                    SizedBox(width: _editorColumnWidth, child: rightWide),
-                  ],
+                      const SizedBox(width: ShellSpace.lg),
+                      Expanded(child: canvas),
+                      const SizedBox(width: ShellSpace.lg),
+                      SizedBox(width: _editorColumnWidth, child: rightWide),
+                    ],
+                  ),
                 ),
               );
             },
           ),
-          StoredMarksTablePanel(
-            stored: _stored,
-            storedErrors: _storedErrors,
-            toolFilter: _toolFilter,
-            onToolFilterChanged: (value) => setState(() => _toolFilter = value),
-            onSelectSlot: _selectSlot,
+        ),
+      ],
+    );
+  }
+
+  /// One compact row above the workspace: what frame is active and the three things that used to be
+  /// full panels (captures, display/Detect details, stored marks). Keeping them behind dialogs is what
+  /// lets the canvas sit above the fold at 720 px.
+  Widget _buildCaptureStatus(ThemeData theme) {
+    final capture = _captureAttempt;
+    final hostNote = _hostNote;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_capturing)
+          Row(
+            key: const ValueKey('calibrate-capturing'),
+            children: [
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: ShellSpace.sm),
+              Expanded(
+                child: Text(
+                  'Hiding the shell → waiting one frame → capturing the game only → '
+                  'restoring the shell. The show is unconditional.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: ShellSpace.lg),
+        if (hostNote != null)
+          Text(
+            hostNote,
+            key: const ValueKey('calibrate-host-note'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        if (capture != null)
+          ActionResultLine(
+            key: const ValueKey('calibrate-capture-result'),
+            label: 'Capture',
+            line: capture.ok
+                ? 'captured frame ${capture.value!.frame.frameId} '
+                      '(${capture.value!.frame.width}×${capture.value!.frame.height} px)'
+                : capture.errorLine,
+            isError: !capture.ok,
+          ),
+        if (capture != null && !capture.ok)
+          Text(
+            'Old captures stay usable. Press Capture to retry — a capture is never retried '
+            'automatically.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        if (_shelfNote != null)
+          Text(
+            _shelfNote!,
+            key: const ValueKey('calibrate-shelf-note'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCaptureBar(ThemeData theme, CalibrationCapture? capture) {
+    final colors = theme.colorScheme;
+    final hasStatus =
+        _captureAttempt != null ||
+        _hostNote != null ||
+        _capturing ||
+        _shelfNote != null;
+    return SurfacePanel(
+      padding: const EdgeInsets.symmetric(
+        horizontal: ShellSpace.sm,
+        vertical: ShellSpace.xs,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.photo_camera_outlined,
+                size: ShellSize.iconMd,
+                color: colors.onSurfaceVariant,
+              ),
+              const SizedBox(width: ShellSpace.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      capture == null
+                          ? 'No capture yet'
+                          : '${capture.label} · ${capture.sizeLabel} · frame ${capture.frame.frameId}',
+                      key: const ValueKey('calibrate-active-capture'),
+                      style: theme.textTheme.labelMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      capture == null
+                          ? 'Capture the game window to start drawing marks.'
+                          : displaySummary(capture.display),
+                      key: const ValueKey('calibrate-active-display'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: ShellSpace.sm),
+              OutlinedButton.icon(
+                key: const ValueKey('calibrate-captures'),
+                onPressed: () => unawaited(_openCapturesDialog()),
+                icon: const Icon(Icons.photo_library_outlined, size: 16),
+                label: Text('Captures ${_captures.length}'),
+              ),
+              const SizedBox(width: ShellSpace.xs),
+              TextButton.icon(
+                key: const ValueKey('calibrate-capture-details'),
+                onPressed: () => unawaited(_openCaptureDetailsDialog()),
+                icon: const Icon(Icons.tune, size: 16),
+                label: const Text('Details'),
+              ),
+              TextButton.icon(
+                key: const ValueKey('calibrate-stored-marks'),
+                onPressed: () => unawaited(_openStoredMarksDialog()),
+                icon: const Icon(Icons.table_chart_outlined, size: 16),
+                label: const Text('Stored marks'),
+              ),
+            ],
+          ),
+          if (hasStatus) ...[
+            const SizedBox(height: ShellSpace.xs),
+            _buildCaptureStatus(theme),
+          ],
         ],
       ),
+    );
+  }
+
+  Future<void> _openCapturesDialog() {
+    return _showCalibrateDialog(
+      title: 'Captures',
+      child: Builder(
+        builder: (context) => _buildCaptureShelf(Theme.of(context)),
+      ),
+    );
+  }
+
+  Future<void> _openCaptureDetailsDialog() {
+    final capture = _activeCapture;
+    return _showCalibrateDialog(
+      title: 'Capture details',
+      child: Builder(
+        builder: (context) {
+          final theme = Theme.of(context);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildDisplayEnvironment(theme, capture),
+              const SizedBox(height: ShellSpace.md),
+              DetectPanel(model: widget.model),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _openStoredMarksDialog() {
+    return _showCalibrateDialog(
+      title: 'Stored marks',
+      width: 980,
+      child: StatefulBuilder(
+        builder: (context, setDialogState) => StoredMarksTablePanel(
+          stored: _stored,
+          storedErrors: _storedErrors,
+          toolFilter: _toolFilter,
+          onToolFilterChanged: (value) {
+            setDialogState(() {});
+            setState(() => _toolFilter = value);
+          },
+          onSelectSlot: (slot) {
+            Navigator.of(context).pop();
+            _selectSlot(slot);
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showCalibrateDialog({
+    required String title,
+    required Widget child,
+    double width = 820,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return Dialog(
+          key: const ValueKey('calibrate-detail-dialog'),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: width, maxHeight: 620),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    ShellSpace.lg,
+                    ShellSpace.md,
+                    ShellSpace.sm,
+                    ShellSpace.sm,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(title, style: theme.textTheme.titleMedium),
+                      ),
+                      IconButton(
+                        key: const ValueKey('calibrate-detail-close'),
+                        tooltip: 'Close',
+                        icon: const Icon(Icons.close, size: ShellSize.iconSm),
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(ShellSpace.lg),
+                    child: child,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1148,57 +1438,8 @@ class _CalibrateTabState extends State<CalibrateTab>
   }
 
   Widget _buildCaptureShelf(ThemeData theme) {
-    final capture = _captureAttempt;
-    final hostNote = _hostNote;
-    final statusChildren = <Widget>[
-      if (_capturing)
-        Row(
-          key: const ValueKey('calibrate-capturing'),
-          children: [
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            const SizedBox(width: ShellSpace.sm),
-            Expanded(
-              child: Text(
-                'Hiding the shell → waiting one frame → capturing the game only → '
-                'restoring the shell. The show is unconditional.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ],
-        ),
-      if (hostNote != null)
-        Text(
-          hostNote,
-          key: const ValueKey('calibrate-host-note'),
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      if (capture != null)
-        ActionResultLine(
-          key: const ValueKey('calibrate-capture-result'),
-          label: 'Capture',
-          line: capture.ok
-              ? 'captured frame ${capture.value!.frame.frameId} '
-                    '(${capture.value!.frame.width}×${capture.value!.frame.height} px)'
-              : capture.errorLine,
-          isError: !capture.ok,
-        ),
-      if (capture != null && !capture.ok)
-        Text(
-          'Old captures stay usable. Press Capture to retry — a capture is never retried '
-          'automatically.',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-    ];
+    final hasStatus =
+        _captureAttempt != null || _hostNote != null || _capturing;
     return CaptureShelfPanel(
       captures: _captures,
       selectedFrameId: _activeCapture?.frameId,
@@ -1209,13 +1450,8 @@ class _CalibrateTabState extends State<CalibrateTab>
       onCapture: _captureFrame,
       capturing: _capturing,
       refusedFrameIds: _refusedFrameIds,
-      status: statusChildren.isEmpty
-          ? null
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: statusChildren,
-            ),
-      note: _shelfNote,
+      status: hasStatus ? _buildCaptureStatus(theme) : null,
+      note: null,
     );
   }
 
@@ -1228,7 +1464,11 @@ class _CalibrateTabState extends State<CalibrateTab>
     onSelectTarget: _selectTreeTarget,
   );
 
-  Widget _buildCanvasPanel(ThemeData theme, CalibrationCapture? capture) {
+  Widget _buildCanvasPanel(
+    ThemeData theme,
+    CalibrationCapture? capture, {
+    double maxHeight = _canvasHeight,
+  }) {
     if (capture == null) {
       return SurfacePanel(
         padding: const EdgeInsets.all(ShellSpace.lg),
@@ -1279,7 +1519,7 @@ class _CalibrateTabState extends State<CalibrateTab>
           CalibrationFramePicture(
             key: const ValueKey('calibrate-frame'),
             frame: capture.frame,
-            maxHeight: _canvasHeight,
+            maxHeight: maxHeight,
             mark: _editorMark(),
             markLabel: _markLabel,
             clientOrigin: Offset(

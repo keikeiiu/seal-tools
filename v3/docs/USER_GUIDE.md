@@ -553,15 +553,16 @@ section 8.
 
 The one calibration surface for every tool. Section 6 is the full walkthrough: capture the game
 window, choose a **Surface**, optionally a **target instance**, draw the mark, **Save mark**, and read
-the core's stored mark / derived values / artifact below. A **tool tab row** picks what you are
-calibrating: **Buy / Sell**, **Gem Composer**, **Pet Feeder**, **Magic Tuner**, **Tooltip**. The first
-three scope Targets and the editor to that tool, and each remembers the frame you captured for it —
-switching tabs restores that tool's capture instead of showing another tool's frame; the capture shelf
-sits directly above the workspace. The canvas stays fixed while the target list and inspector scroll
-independently, and Revert/Save stay pinned under the inspector. **Magic Tuner** and **Tooltip** open
+the core's stored mark / derived values / artifact. A **tool tab row** picks what you are calibrating:
+**Buy / Sell**, **Gem Composer**, **Magic Tuner**, **Pet Feeder**, **Tooltip**. The first three scope
+Targets and the editor to that tool, and each remembers the frame you captured for it — switching tabs
+restores that tool's capture instead of showing another tool's frame. A compact **capture bar** above
+the workspace names the active frame and display and opens **Captures**, **Details** (display
+environment + Detect) and **Stored marks**; the canvas stays fixed while the target list and inspector
+scroll independently, with Revert/Save pinned under the inspector. **Magic Tuner** and **Tooltip** open
 their one-capture session directly in the workspace instead of a panel below the stored table. The
 tab's caption repeats the capture behaviour: the shell hides itself for the grab, waits one frame, and
-reopens.
+reopens. The top bar also has a quick appearance menu (Follow system / Light / Dark).
 
 ---
 

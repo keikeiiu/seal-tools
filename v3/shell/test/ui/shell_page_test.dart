@@ -15,7 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:seal_shell/app/version.dart';
+import 'package:seal_shell/app/app.dart';
 import 'package:seal_shell/protocol/protocol.dart';
 import 'package:seal_shell/ui/shell_app.dart';
 import 'package:seal_shell/ui/tool_card.dart';
@@ -413,4 +413,20 @@ void main() {
       expect(host.openedLogsFolders, ['pet.log']);
     },
   );
+
+  testWidgets('the top-bar appearance menu switches the shell theme', (
+    tester,
+  ) async {
+    final harness = await _pumpShell(tester);
+    harness.answerConfigCommands();
+
+    final menu = find.byKey(const ValueKey('app-bar-theme'));
+    expect(menu, findsOneWidget);
+    await tester.tap(menu);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Light'));
+    await tester.pumpAndSettle();
+
+    expect(harness.model.themeMode, ShellThemeMode.light);
+  });
 }
