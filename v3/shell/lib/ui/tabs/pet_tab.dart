@@ -1271,268 +1271,393 @@ class _PetTabState extends State<PetTab>
     return buildConfigTab(
       title: 'Pet Feeder',
       description:
-          'The feeder\'s setup: rows, queue, bag food cells and the run\'s mode and timings, '
-          'saved together. A row\'s live boarding state is written immediately; the calibrated '
-          'marks and reference crops are drawn on the Calibrate tab and stay read-only here.',
+          'Rows, queue, food plan and run behaviour. Calibrated marks and crops stay read-only '
+          'here; fix those in Calibrate.',
       readOnly: [_referencePanel(machine)],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // The page opens with the core's verdict as a designed state (PLAN-V3-UI-UX §6 Pet),
-          // not one uncoloured sentence — the checklist rows carry the per-item detail.
           _readinessSection(theme),
-          SurfacePanel(
-            title: 'Boarding rows',
-            description:
-                'A row\'s live boarding state is written the moment you tick it; the '
-                'enabled switch and stack count save with the tab\'s Save.',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (rows.isEmpty)
-                  const EmptyState(
-                    key: ValueKey('pet-no-rows'),
-                    icon: Icons.grid_view_outlined,
-                    title: 'No breeding rows configured',
-                    hint:
-                        'A migrated v2 config carries them; adding a row needs the pet '
-                        'capture session (OPEN). The feeder refuses on Start until one exists.',
-                    compact: true,
-                  )
-                else
-                  for (var index = 0; index < rows.length; index++)
-                    _rowCard(theme, index, rows[index]),
-                if (_boardingError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: ShellSpace.xs),
-                    child: Text(
-                      _boardingError!,
-                      key: const ValueKey('pet-boarding-error'),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.error,
-                      ),
+          _petSummary(theme, rows.length, queue, _foodSlots().length),
+          const SizedBox(height: ShellSpace.md),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 900;
+              final left = Column(
+                key: const ValueKey('pet-left-column'),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SurfacePanel(
+                    title: 'Boarding rows',
+                    description:
+                        'A row\'s live boarding state is written the moment you tick it; the '
+                        'enabled switch and stack count save with the tab\'s Save.',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (rows.isEmpty)
+                          const EmptyState(
+                            key: ValueKey('pet-no-rows'),
+                            icon: Icons.grid_view_outlined,
+                            title: 'No breeding rows configured',
+                            hint:
+                                'A migrated v2 config carries them; adding a row needs the pet '
+                                'capture session (OPEN). The feeder refuses on Start until one exists.',
+                            compact: true,
+                          )
+                        else
+                          for (var index = 0; index < rows.length; index++)
+                            _rowCard(theme, index, rows[index]),
+                        if (_boardingError != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: ShellSpace.xs),
+                            child: Text(
+                              _boardingError!,
+                              key: const ValueKey('pet-boarding-error'),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.error,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: ShellSpace.xs),
+                        ShellProse(
+                          'Rows come from the pet capture session (OPEN): tick one and set its '
+                          'stack count here; its rects and crops are read-only. Rows cannot be '
+                          'added or removed here.',
+                          key: const ValueKey('pet-rows-caption'),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                const SizedBox(height: ShellSpace.xs),
-                ShellProse(
-                  'Rows come from the pet capture session (OPEN): tick one and set its '
-                  'stack count here; its rects and crops are read-only. Rows cannot be '
-                  'added or removed here.',
-                  key: const ValueKey('pet-rows-caption'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                  SurfacePanel(
+                    title: 'Queue',
+                    description:
+                        'Pets are boarded in this order when a row frees up.',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (queue.isEmpty)
+                          const EmptyState(
+                            key: ValueKey('pet-queue-empty'),
+                            icon: Icons.pets_outlined,
+                            title: 'No pets queued',
+                            hint:
+                                'The return slot is then the fallback the run right-clicks. '
+                                'Add a pet by icon below.',
+                            compact: true,
+                          )
+                        else ...[
+                          _queueHeader(theme),
+                          for (var index = 0; index < queue.length; index++)
+                            _queueEntryRow(theme, index, queue[index]),
+                        ],
+                        const SizedBox(height: ShellSpace.xs),
+                        ShellProse(
+                          'The icon is the pet\'s identity — the run matches on it, and the label is '
+                          'for the log and this list only. Edits and a captured entry save with the '
+                          'tab\'s Save.',
+                          key: const ValueKey('pet-queue-caption'),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          SurfacePanel(
-            title: 'Queue',
-            description: 'Pets are boarded in this order when a row frees up.',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (queue.isEmpty)
-                  const EmptyState(
-                    key: ValueKey('pet-queue-empty'),
-                    icon: Icons.pets_outlined,
-                    title: 'No pets queued',
-                    hint:
-                        'The return slot is then the fallback the run right-clicks. '
-                        'Add a pet by icon below.',
-                    compact: true,
-                  )
-                else ...[
-                  _queueHeader(theme),
-                  for (var index = 0; index < queue.length; index++)
-                    _queueEntryRow(theme, index, queue[index]),
+                  EditorSection(
+                    title: 'Add a pet by icon',
+                    children: _addPetEditor(theme),
+                  ),
                 ],
-                const SizedBox(height: ShellSpace.xs),
-                ShellProse(
-                  'The icon is the pet\'s identity — the run matches on it, and the label is '
-                  'for the log and this list only. Edits and a captured entry save with the '
-                  'tab\'s Save.',
-                  key: const ValueKey('pet-queue-caption'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+              );
+              final right = Column(
+                key: const ValueKey('pet-right-column'),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  EditorSection(
+                    title: 'Scan the bag (read-only)',
+                    children: _scanSection(theme),
                   ),
-                ),
-              ],
+                  EditorSection(
+                    title: 'Bag food cells',
+                    children: _foodCellEditor(theme, bagGrid),
+                  ),
+                  EditorSection(
+                    title: 'Return slot',
+                    children: [
+                      DraftFieldSlot(
+                        slotKey: 'pet-return-page',
+                        syncToken: _machineDraft.seedRevision,
+                        child: DraftNumberField(
+                          label: 'Bag page (ITEM1 = 1)',
+                          helper: 'the page the returned pet lands on',
+                          integer: true,
+                          value: _returnPage,
+                          width: 200,
+                          onChanged: _setReturnPage,
+                        ),
+                      ),
+                      const SizedBox(height: ShellSpace.sm),
+                      DraftFieldSlot(
+                        slotKey: 'pet-return-cell',
+                        syncToken: _machineDraft.seedRevision,
+                        child: DraftNumberField(
+                          label: 'Cell (0–63, row-major)',
+                          helper: 'both values are needed — the pair saves together',
+                          integer: true,
+                          value: _returnCell,
+                          width: ShellWidth.fieldLg,
+                          onChanged: _setReturnCell,
+                        ),
+                      ),
+                    ],
+                  ),
+                  EditorSection(
+                    title: 'Food loading',
+                    children: [
+                      DraftDropdownField(
+                        key: const ValueKey('pet-food-load-mode'),
+                        label: 'Food load mode',
+                        value: _foodLoadMode,
+                        options: _foodLoadModes,
+                        width: ShellWidth.picker,
+                        onChanged: (value) {
+                          if (value != null) {
+                            _setMachine('food_load_mode', value);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: ShellSpace.xs),
+                      ShellProse(
+                        'right_click lets the game choose the box; drag names it, which '
+                        'needs the row food strip and a board whose firmware can drag.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      DraftSwitchField(
+                        key: const ValueKey('pet-reload-on-start'),
+                        label: 'Reload on start',
+                        helper: 'open and close the boarding window once when a run begins',
+                        value:
+                            asBool(_machineDraft.value['reload_on_start']) ??
+                            false,
+                        onChanged: (value) =>
+                            _setMachine('reload_on_start', value),
+                      ),
+                    ],
+                  ),
+                  ExpansionTile(
+                    key: const ValueKey('pet-advanced'),
+                    initiallyExpanded: false,
+                    maintainState: true,
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: const EdgeInsets.only(top: ShellSpace.sm),
+                    title: Text(
+                      'Timing & thresholds',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    subtitle: Text(
+                      'Action wait, count thresholds and portable rates',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    children: [
+                      EditorSection(
+                        title: 'Timing & read thresholds',
+                        children: [
+                          DraftFieldSlot(
+                            slotKey: 'pet-action-wait',
+                            syncToken: _machineDraft.seedRevision,
+                            child: DraftNumberField(
+                              label: 'Action wait (ms)',
+                              helper: 'core default 1200',
+                              integer: true,
+                              value: asNumber(
+                                _machineDraft.value['action_wait_ms'],
+                              ),
+                              width: ShellWidth.fieldLg,
+                              onChanged: (value) =>
+                                  _setMachine('action_wait_ms', value.round()),
+                            ),
+                          ),
+                          const SizedBox(height: ShellSpace.sm),
+                          DraftFieldSlot(
+                            slotKey: 'pet-wait-after-empty',
+                            syncToken: _machineDraft.seedRevision,
+                            child: DraftNumberField(
+                              label: 'Wait after empty (minutes)',
+                              helper: 'core default 5',
+                              integer: true,
+                              value: asNumber(
+                                _machineDraft.value['wait_after_empty_minutes'],
+                              ),
+                              width: ShellWidth.picker,
+                              onChanged: (value) => _setMachine(
+                                'wait_after_empty_minutes',
+                                value.round(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: ShellSpace.sm),
+                          DraftFieldSlot(
+                            slotKey: 'pet-feeder-left-fraction',
+                            syncToken: _machineDraft.seedRevision,
+                            child: DraftNumberField(
+                              label: 'Count read — left fraction (0–1)',
+                              helper: 'core default 0.40',
+                              value: asNumber(
+                                _machineDraft
+                                    .value['feeder_count_left_fraction'],
+                              ),
+                              width: 280,
+                              onChanged: (value) => _setMachine(
+                                'feeder_count_left_fraction',
+                                value,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: ShellSpace.sm),
+                          DraftFieldSlot(
+                            slotKey: 'pet-feeder-min-score',
+                            syncToken: _machineDraft.seedRevision,
+                            child: DraftNumberField(
+                              label: 'Count read — min score (0–1)',
+                              helper: 'core default 0.75',
+                              value: asNumber(
+                                _machineDraft.value['feeder_count_min_score'],
+                              ),
+                              width: 280,
+                              onChanged: (value) =>
+                                  _setMachine('feeder_count_min_score', value),
+                            ),
+                          ),
+                        ],
+                      ),
+                      EditorSection(
+                        title: 'Feeding (portable — saved in settings.pet)',
+                        children: [
+                          DraftFieldSlot(
+                            slotKey: 'pet-items-per-minute',
+                            syncToken: _portableDraft.seedRevision,
+                            child: DraftNumberField(
+                              label: 'Items per minute (fallback rate)',
+                              helper: 'used only when the boarding window\'s rate line cannot be read',
+                              integer: true,
+                              value: asNumber(
+                                _portableDraft.value['items_per_minute'],
+                              ),
+                              width: 260,
+                              onChanged: (value) =>
+                                  _setPortable('items_per_minute', value),
+                            ),
+                          ),
+                          const SizedBox(height: ShellSpace.md),
+                          DraftFieldSlot(
+                            slotKey: 'pet-occupied-above',
+                            syncToken: _portableDraft.seedRevision,
+                            child: DraftNumberField(
+                              label: 'Occupied above (0–1 distance)',
+                              helper:
+                                  'how unlike the empty reference a slot must look before it '
+                                  'counts as occupied',
+                              value: asNumber(
+                                _portableDraft.value['pet_slot_occupied_above'],
+                              ),
+                              width: 260,
+                              onChanged: (value) => _setPortable(
+                                'pet_slot_occupied_above',
+                                value,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              );
+              if (!wide) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    left,
+                    const SizedBox(height: ShellSpace.lg),
+                    right,
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: left),
+                  const SizedBox(width: ShellSpace.lg),
+                  Expanded(child: right),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A one-line read of the setup above the two columns: rows, queue, food marks and the pet that
+  /// boards next. The full editors stay below; this only saves the player from opening every panel to
+  /// answer "what will the next run do?".
+  Widget _petSummary(
+    ThemeData theme,
+    int rows,
+    List<Map<String, dynamic>> queue,
+    int foodCells,
+  ) {
+    final next = queue.isEmpty
+        ? null
+        : asString(queue.first['label']) ?? 'pet 1';
+    Widget pill(String key, String label, String value) => Container(
+      key: ValueKey(key),
+      padding: const EdgeInsets.symmetric(
+        horizontal: ShellSpace.sm,
+        vertical: ShellSpace.xxs,
+      ),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(ShellRadius.s),
+      ),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '$label ',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
-          ),
-          EditorSection(
-            title: 'Add a pet by icon',
-            children: _addPetEditor(theme),
-          ),
-          EditorSection(
-            title: 'Scan the bag (read-only)',
-            children: _scanSection(theme),
-          ),
-          EditorSection(
-            title: 'Bag food cells',
-            children: _foodCellEditor(theme, bagGrid),
-          ),
-          EditorSection(
-            title: 'Return slot',
-            children: [
-              DraftFieldSlot(
-                slotKey: 'pet-return-page',
-                syncToken: _machineDraft.seedRevision,
-                child: DraftNumberField(
-                  label: 'Bag page (ITEM1 = 1)',
-                  helper: 'the page the returned pet lands on',
-                  integer: true,
-                  value: _returnPage,
-                  width: 200,
-                  onChanged: _setReturnPage,
-                ),
+            TextSpan(
+              text: value,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.onSurface,
               ),
-              const SizedBox(height: ShellSpace.sm),
-              DraftFieldSlot(
-                slotKey: 'pet-return-cell',
-                syncToken: _machineDraft.seedRevision,
-                child: DraftNumberField(
-                  label: 'Cell (0–63, row-major)',
-                  helper: 'both values are needed — the pair saves together',
-                  integer: true,
-                  value: _returnCell,
-                  width: ShellWidth.fieldLg,
-                  onChanged: _setReturnCell,
-                ),
-              ),
-            ],
-          ),
-          EditorSection(
-            title: 'Food loading',
-            children: [
-              DraftDropdownField(
-                key: const ValueKey('pet-food-load-mode'),
-                label: 'Food load mode',
-                value: _foodLoadMode,
-                options: _foodLoadModes,
-                width: ShellWidth.picker,
-                onChanged: (value) {
-                  if (value != null) {
-                    _setMachine('food_load_mode', value);
-                  }
-                },
-              ),
-              const SizedBox(height: ShellSpace.xs),
-              ShellProse(
-                'right_click lets the game choose the box; drag names it, which '
-                'needs the row food strip and a board whose firmware can drag.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              DraftSwitchField(
-                key: const ValueKey('pet-reload-on-start'),
-                label: 'Reload on start',
-                helper:
-                    'open and close the boarding window once when a run begins',
-                value: asBool(_machineDraft.value['reload_on_start']) ?? false,
-                onChanged: (value) => _setMachine('reload_on_start', value),
-              ),
-            ],
-          ),
-          EditorSection(
-            title: 'Timing & read thresholds',
-            children: [
-              DraftFieldSlot(
-                slotKey: 'pet-action-wait',
-                syncToken: _machineDraft.seedRevision,
-                child: DraftNumberField(
-                  label: 'Action wait (ms)',
-                  helper: 'core default 1200',
-                  integer: true,
-                  value: asNumber(_machineDraft.value['action_wait_ms']),
-                  width: ShellWidth.fieldLg,
-                  onChanged: (value) =>
-                      _setMachine('action_wait_ms', value.round()),
-                ),
-              ),
-              const SizedBox(height: ShellSpace.sm),
-              DraftFieldSlot(
-                slotKey: 'pet-wait-after-empty',
-                syncToken: _machineDraft.seedRevision,
-                child: DraftNumberField(
-                  label: 'Wait after empty (minutes)',
-                  helper: 'core default 5',
-                  integer: true,
-                  value: asNumber(
-                    _machineDraft.value['wait_after_empty_minutes'],
-                  ),
-                  width: ShellWidth.picker,
-                  onChanged: (value) =>
-                      _setMachine('wait_after_empty_minutes', value.round()),
-                ),
-              ),
-              const SizedBox(height: ShellSpace.sm),
-              DraftFieldSlot(
-                slotKey: 'pet-feeder-left-fraction',
-                syncToken: _machineDraft.seedRevision,
-                child: DraftNumberField(
-                  label: 'Count read — left fraction (0–1)',
-                  helper: 'core default 0.40',
-                  value: asNumber(
-                    _machineDraft.value['feeder_count_left_fraction'],
-                  ),
-                  width: 280,
-                  onChanged: (value) =>
-                      _setMachine('feeder_count_left_fraction', value),
-                ),
-              ),
-              const SizedBox(height: ShellSpace.sm),
-              DraftFieldSlot(
-                slotKey: 'pet-feeder-min-score',
-                syncToken: _machineDraft.seedRevision,
-                child: DraftNumberField(
-                  label: 'Count read — min score (0–1)',
-                  helper: 'core default 0.75',
-                  value: asNumber(
-                    _machineDraft.value['feeder_count_min_score'],
-                  ),
-                  width: 280,
-                  onChanged: (value) =>
-                      _setMachine('feeder_count_min_score', value),
-                ),
-              ),
-            ],
-          ),
-          EditorSection(
-            title: 'Feeding (portable — saved in settings.pet)',
-            children: [
-              DraftFieldSlot(
-                slotKey: 'pet-items-per-minute',
-                syncToken: _portableDraft.seedRevision,
-                child: DraftNumberField(
-                  label: 'Items per minute (fallback rate)',
-                  helper: 'used only when the boarding window\'s rate line cannot be read',
-                  integer: true,
-                  value: asNumber(_portableDraft.value['items_per_minute']),
-                  width: 260,
-                  onChanged: (value) => _setPortable('items_per_minute', value),
-                ),
-              ),
-              const SizedBox(height: ShellSpace.md),
-              DraftFieldSlot(
-                slotKey: 'pet-occupied-above',
-                syncToken: _portableDraft.seedRevision,
-                child: DraftNumberField(
-                  label: 'Occupied above (0–1 distance)',
-                  helper:
-                      'how unlike the empty reference a slot must look before it '
-                      'counts as occupied',
-                  value: asNumber(
-                    _portableDraft.value['pet_slot_occupied_above'],
-                  ),
-                  width: 260,
-                  onChanged: (value) =>
-                      _setPortable('pet_slot_occupied_above', value),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
+        ),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(top: ShellSpace.sm),
+      child: Wrap(
+        spacing: ShellSpace.xs,
+        runSpacing: ShellSpace.xs,
+        children: [
+          pill('pet-summary-rows', 'rows', '$rows'),
+          pill('pet-summary-queue', 'queued', '${queue.length}'),
+          pill('pet-summary-food', 'food cells', '$foodCells / $_bagSlots'),
+          if (next != null) pill('pet-summary-next', 'next', next),
         ],
       ),
     );

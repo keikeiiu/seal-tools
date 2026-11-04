@@ -401,6 +401,12 @@ The feeder also keeps its own run progress: while it works it saves `food_slots_
 state. The Pet tab's stored values can therefore update while a run is in progress — that is the
 feeder's own progress write, not a player edit.
 
+The page opens with the readiness verdict and a compact summary (rows · queued · food cells · next
+pet), then splits the editors into two columns at wide widths: rows/queue/add-by-icon on the left;
+bag scan, food cells, return slot and food loading on the right. **Timing & read thresholds** and the
+portable **Feeding** fields are folded into one collapsed **Timing & thresholds** section, so the
+common setup stays short. Narrow windows stack the columns.
+
 **Setup so far & Ready to run.** The tab reads the core's preflight on open, on **Refresh
 checklists**, after a successful **Save** and after a successful boarding tick: a **Calibration** list,
 a **Setup so far** list, then the core's readiness lines verbatim. **Ready to run.** means the core

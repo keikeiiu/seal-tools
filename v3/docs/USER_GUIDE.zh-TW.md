@@ -341,6 +341,10 @@ image(s) from logs/captures.」；其餘日誌會保留。它只是家務清理�
 重新啟動後不會再對已用過的格子或錯誤的 boarding 狀態繼續。Pet 分頁的已存值因此可能在執行期間更新 —— 那是
 餵食器自己的進度寫入，不是你做的編輯。
 
+頁面會先顯示就緒判定與精簡摘要（列 · 佇列 · 食物格 · 下一隻），寬螢幕時再把編輯器分成兩欄：左邊是
+列／佇列／用圖示新增；右邊是背包掃描、食物格、返回格與食物裝載。**Timing & read thresholds** 與可攜的
+**Feeding** 欄位收進預設收合的 **Timing & thresholds** 區塊，常用設定因此保持精簡；窄視窗會改成上下堆疊。
+
 **Setup so far & Ready to run。** 分頁在開啟時、按 **Refresh checklists**、成功 **Save** 之後，以及成功勾選
 boarding 之後讀取核心的 preflight：先 **Calibration** 清單、再 **Setup so far** 清單，最後是核心的就緒行
 原文。**Ready to run.** 表示核心預期 Start 會**接受**這份已儲存的設定 —— 它反映 Start 的拒絕條件，不是

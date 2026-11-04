@@ -263,6 +263,12 @@ screen: Save.
 
 ## Pet (landed 2026-10-30)
 
+- **Layout:** readiness and a one-line summary (rows · queued · food cells · next pet) span the page.
+  Below, at wide widths, the setup is two columns: **rows + queue + add-by-icon** on the left;
+  **bag scan + food cells + return slot + food loading** on the right. **Timing & read thresholds** and
+  the portable **Feeding** fields are folded into one **Timing & thresholds** disclosure, collapsed by
+  default; narrow windows stack the columns. This removes the previous single 10-panel scroll without
+  dropping any editor.
 - **Readiness first:** a `StatusBanner` whose kind is the core's verdict (`pet.preflight`: success ready,
   warning not-ready, error on a refusal, info while reading) with **Refresh checklists** as a text
   action. Below it, a panel of per-item checklist rows (icon + label + detail) and the core's readiness
@@ -395,7 +401,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 356/356; `dart format` clean. Every
+Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 372/372; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,

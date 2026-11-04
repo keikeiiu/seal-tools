@@ -19,6 +19,25 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-05 (43) — Pet Feeder gets the calmer two-column setup
+
+The Pet tab was the longest single scroll in the app: readiness, rows, queue, add-pet, bag scan, 8×8
+food grid, return slot, loading, timing, portable feeding and the reference panel all in one column.
+This implements the approved Pet design study without dropping an editor.
+
+- **Two-column layout at ≥900 px:** readiness + summary span the page; rows/queue/add-by-icon are the
+  left column, bag scan/food cells/return slot/food loading the right. Narrow windows stack.
+- **Summary strip:** rows, queued pets, marked food cells and the next pet, so the common question is
+  answered before opening an editor.
+- **Timing & thresholds disclosure:** action wait, wait-after-empty, count thresholds and the portable
+  feeding fields are one collapsed `ExpansionTile`; the tests open it explicitly so every field keeps
+  its coverage.
+- **Shorter copy:** the page description and section descriptions were trimmed; the demo's prose wall
+  was the main source of the "too much" feeling.
+
+Verification: Pet tests **44/44**, full shell `flutter test --no-pub` **372/372**, analyze
+`--fatal-infos` clean, format clean, Windows debug build green. UI spec and both guides updated.
+
 ## 2026-11-05 (42) — Phase 1 and Phase 2 review work, except engine/library swaps
 
 The player asked to finish the remaining Phase 1 and Phase 2 review findings, leaving out anything
