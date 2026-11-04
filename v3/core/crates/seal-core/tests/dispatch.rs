@@ -691,6 +691,16 @@ fn board_test_and_probe_report_tool_busy_while_a_run_holds_the_board() {
             json!({"kind": "key", "key": "E"}),
         ),
         ("lease-probe", "board.probe", json!({})),
+        (
+            "lease-boarding",
+            "pet.set_boarding",
+            json!({"row": 1, "running": true}),
+        ),
+        (
+            "lease-food",
+            "pet.apply_food_scan",
+            json!({"cells": [[1, 1]]}),
+        ),
     ] {
         let response = handle(&mut state, Request::new(id, command, args));
         let error = response

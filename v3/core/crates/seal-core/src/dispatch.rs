@@ -1272,6 +1272,9 @@ fn pet_preflight(state: &CoreState, request: &Request) -> Response {
 /// answers `{rev, block:<merged pet>}`. A bad row/type is `bad_request`; an I/O failure is logged
 /// and answered `io` (the file is never partially written by the store).
 fn pet_set_boarding(state: &mut CoreState, request: &Request) -> Response {
+    if let Some(refusal) = input_lease_refusal(state, request) {
+        return refusal;
+    }
     let (row, running) = match crate::pet_session::boarding_arguments(&request.args) {
         Ok(argument) => argument,
         Err((message, field)) => {
@@ -1938,6 +1941,11 @@ fn pointer_failure(id: &str, error: pointer::PointerFailure) -> Response {
 /// ZERO-BASED config pairs and resets `food_slots_used`, one A1 field-precise write + one
 /// `config.changed` after the response. Empty is refused (nothing found means nothing written).
 fn pet_apply_food_scan(state: &mut CoreState, request: &Request) -> Response {
+    // A live feeder owns the game; accepting this write would let the run's next fold overwrite the
+    // new cell list with its own snapshot (PET-F11). The same lease refusal board diagnostics use.
+    if let Some(refusal) = input_lease_refusal(state, request) {
+        return refusal;
+    }
     let cells = match crate::pet_scan::apply_cells(&state.config, &request.args) {
         Ok(cells) => cells,
         Err((message, field)) => {
