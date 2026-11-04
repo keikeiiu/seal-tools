@@ -284,19 +284,19 @@ window leaves ~1064 px beside the rail, so it shows the workspace) — captures 
 flexible canvas · mark editor + reference gallery 340 px; below the breakpoint the same panels stack in
 one column. Below the columns: the stored-coordinate table and the **Sessions** panel.
 The page header keeps the display/match chips and the Refresh/Capture actions on the right at wide
-widths and stacks them under the prose when the window is narrow.
+widths and stacks them under the prose when the window is narrow. A **tool tab row** sits between the
+header and the workspace: **Buy / Sell** (Shop), **Gem Composer**, **Pet Feeder**, **Magic Tuner**,
+**Tooltip**. The three mark tabs scope the target tree and editor to that tool; the two session tabs
+replace the mark workspace with that session's one-capture workspace.
 
+- **Tool-scoped target tree:** the active mark tool's 17 presentation marks / 34 instances are listed
+  (Shop 5/5, Gem 3/9, Pet 9/20), with saved/partial/not-set dots and counts; named-instance kinds expand
+  their targets (N/G/DG/Register/Combine, ITEM1–3, row 1–4). Selecting a kind/target drives canvas and
+  editor. Switching the kind picker to another tool's kind moves the tool tab with it.
 - **Capture shelf:** at most four frames (the core's FIFO). Each item: label/time, physical size, that
   capture's **own `DisplayInfo`**, frame id, and an eviction marker on the oldest; a fifth capture
   evicts the oldest and a save against an evicted id is refused — the screen says so and never
   auto-recaptures. The hide → one frame → show flow and its status are unchanged.
-- **Target tree:** 17 presentation marks / 34 instances grouped by tool (Shop 5/5, Gem 3/9, Pet 9/20,
-  Tuner 0/0 + session) with saved/partial/not-set dots and counts; named-instance kinds expand their
-  targets (N/G/DG/Register/Combine, ITEM1–3, row 1–4). Selecting a kind/target drives canvas and editor.
-  A tool's **session** rows (Tuner OCR 3-box + Spring point, Pet tooltip offset) sit INSIDE that tool's
-  group with a `session` label and use the same selection logic: selecting one brings its session card
-  into view, and the page header's **Sessions** action jumps to the panel. Spring point is not a normal
-  mark — it is set inside the Tuner session so one tuner capture covers all four tuner targets.
 - **Canvas:** fit / 1:1 / zoom ± / pan, zoom % and "1 display px = N physical px"; the selected mark is
   drawn with its label. The typed x/y/(w/h) fields stay authoritative and the mapping function is
   unchanged and single.
@@ -312,12 +312,13 @@ widths and stacks them under the prose when the window is narrow.
 - **Display environment:** the capture's DisplayInfo and the stored environment; a mismatch raises a
   `StatusBanner` "recalibrate before running a tool" (client-size/screen invalidates every point, scale
   alone does not; no auto-anchor, no proportional transform).
-- **Sessions:** the panel below the stored table keeps only the calibrations that need more than one
-  mark. Every session starts with a numbered step strip (Capture → measure → save), states what it
-  needs, and keeps the typed fields authoritative. At wide widths each session is a **split
-  workspace**: the captured picture stays fixed on the left (fit to 380 px) while a 470 px right pane
-  scrolls its target cards/fields independently, so a drag and the box being edited are visible
-  together; narrow widths stack the two columns.
+- **Sessions:** **Magic Tuner** and **Tooltip** are top-level tool tabs (not a panel below the stored
+  table). Each is one capture-owned workspace: every session starts with a numbered step strip
+  (Capture → measure → save), states what it needs, and keeps the typed fields authoritative. At wide
+  widths each session is a **split workspace**: the captured picture stays fixed on the left (fit to
+  380 px) while a 470 px right pane scrolls its target cards/fields independently, so a drag and the
+  box being edited are visible together; narrow widths stack the two columns. Switching tabs keeps both
+  session states and typed fields mounted.
   - **Tuner OCR 3-box + Spring point** — the top of the card pairs **Capture screen / Recapture
     screen** with the required capture state and the **Target to drag** chips (grade, attributes,
     remaining, spring). One capture covers the three OCR boxes AND the optional spring point (v2's

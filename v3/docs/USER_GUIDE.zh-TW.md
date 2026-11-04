@@ -456,10 +456,10 @@ Arduino 分頁是唯讀的連線卡加上測試介面。它開啟時會呼叫 `b
 ### 5.11 Calibrate
 
 所有工具共用的校正介面。第 6 節是完整流程：拍下遊戲視窗、選 **Surface**、必要時選**目標實例**、繪製標記、
-**Save mark**，然後在下方讀核心回報的已存標記/衍生值/產物。已存表格下方的 **Sessions** 只放兩個需要多個
-標記的校正：**Tuner OCR 3-box + Spring point** 與 **Pet tooltip offset + shape**。頁首的 **Sessions** 會跳到
-該面板，會談列位在 Targets 中各自工具的群組內。分頁上的說明也再次說明拍攝行為：殼層會為了擷取隱藏自己、
-等一個影格、再開回來。
+**Save mark**，然後在下方讀核心回報的已存標記/衍生值/產物。**工具分頁**選擇要校正的對象：**Buy / Sell**、
+**Gem Composer**、**Pet Feeder**、**Magic Tuner**、**Tooltip**。前三者會把 Targets 與編輯器限定在該工具；
+**Magic Tuner** 與 **Tooltip** 直接把一次拍攝的會談開在工作區，而不是放在已存表格下方。分頁上的說明也再次
+說明拍攝行為：殼層會為了擷取隱藏自己、等一個影格、再開回來。
 
 ---
 
@@ -557,10 +557,10 @@ Arduino 分頁是唯讀的連線卡加上測試介面。它開啟時會呼叫 `b
 
 ### 6.5 Tuner OCR 3-box + Spring point 會談
 
-1. 在 **Calibrate** 打開 **Sessions**（或點 Targets 的 **Tuner** 群組中的 **Tuner OCR 3-box + Spring
-   point** 列）。讓遊戲裡的改造師狀態視窗可見，按卡片最上方的 **Capture screen**（或 **Recapture
-   screen**）。**這一次拍攝就涵蓋三個 OCR 框與 Spring point** —— 就是 v2 的一次拍攝流程。拍完後畫面固定
-   在左側，框的卡片在右側獨立捲動，所以拖曳與欄位編輯不需要上下捲動切換。
+1. 在 **Calibrate** 選 **Magic Tuner** 工具分頁。讓遊戲裡的改造師狀態視窗可見，按卡片最上方的
+   **Capture screen**（或 **Recapture screen**）。**這一次拍攝就涵蓋三個 OCR 框與 Spring point** ——
+   就是 v2 的一次拍攝流程。拍完後畫面固定在左側，框的卡片在右側獨立捲動，所以拖曳與欄位編輯不需要
+   上下捲動切換。
 2. 選一個 **Target to drag** chip —— **Grade letter**（綠）、**Attribute rows**（藍）、**Remaining count**
    （琥珀）或 **Spring point** —— 然後在**左側的畫面**上直接拖曳。拖曳會填入目前的框並自動跳到下一個；
    要回頭可點卡片標題或 chip。`x / y / w / h` 欄位是替代方式，仍是權威。Spring point 是單擊且選用
@@ -573,9 +573,10 @@ Arduino 分頁是唯讀的連線卡加上測試介面。它開啟時會呼叫 `b
 
 ### 6.6 Pet tooltip 位移與面板形狀會談
 
-1. 把遊戲放到最前面，讓要量測的提示面板（物品或寵物）可見。在 **Tooltip offset + shape** 卡片設定
-   **hover x / y** 與延遲，按 **Capture hover**。殼層會隱藏、核心把游標放到該點並擷取面板；畫面回來後
-   固定顯示在左側，hover/offset 控制項留在右側，游標位置以粉紅色十字顯示。
+1. 在 **Calibrate** 選 **Tooltip** 工具分頁。把遊戲放到最前面，讓要量測的提示面板（物品或寵物）可見。
+   在 **Tooltip offset + shape** 卡片設定 **hover x / y** 與延遲，按 **Capture hover**。殼層會隱藏、核心把
+   游標放到該點並擷取面板；畫面回來後固定顯示在左側，hover/offset 控制項留在右側，游標位置以粉紅色十字
+   顯示。
 2. 在畫面上框住面板（核心要求至少 20×20 px），或直接輸入 **offset x / y** 與 **width / height**。公式行會顯示
    `cursor + offset = panel top-left`，面板框會疊在游標上。
 3. 按 **Save tooltip**：寫入這台機器的 `tooltip` 區塊（位移、大小、延遲）。

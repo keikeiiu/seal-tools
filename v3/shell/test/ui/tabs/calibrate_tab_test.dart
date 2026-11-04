@@ -245,6 +245,13 @@ Future<void> _selectTarget(WidgetTester tester, String target) async {
   await tester.pumpAndSettle();
 }
 
+/// Switches the Calibrate tool tab. Session tools replace the mark workspace with their own panel,
+/// so the session flow tests start here instead of scrolling to a section below the stored table.
+Future<void> _selectTool(WidgetTester tester, String tool) async {
+  await tester.tap(find.byKey(ValueKey('calibrate-tool-$tool')));
+  await tester.pumpAndSettle();
+}
+
 Map<String, dynamic> _saveArgs(AppHarness harness) =>
     (harness.lastSentWithCmd('calibration.save')!['args']
         as Map<String, dynamic>);
@@ -991,34 +998,76 @@ void main() {
     },
   );
 
-  testWidgets('the tuner note is present and no tuner save is offered', (
-    tester,
-  ) async {
-    await _pumpCalibrate(
-      tester,
-      answer: (request) => switch (request['cmd']) {
-        'calibration.fetch' => {
-          'result': _fetchAnswer(
-            (request['args'] as Map<String, dynamic>)['kind'] as String,
-          ),
+  testWidgets(
+    'tool tabs scope the workspace to one tool and host the sessions',
+    (tester) async {
+      await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          },
+          _ => {'result': <String, dynamic>{}},
         },
-        _ => {'result': <String, dynamic>{}},
-      },
-    );
+      );
+      await _flush(tester);
 
-    expect(find.byKey(const ValueKey('calibrate-tuner-note')), findsOneWidget);
-    expect(find.textContaining('three-box session'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('calibrate-kind')));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('calibrate-kind-item-tuner_region')),
-      findsNothing,
-    );
-    await tester.tap(
-      find.byKey(const ValueKey('calibrate-kind-item-bag_grid')).last,
-    );
-    await tester.pumpAndSettle();
-  });
+      expect(find.byKey(const ValueKey('calibrate-tool-shop')), findsOneWidget);
+      expect(find.byKey(const ValueKey('calibrate-tool-gem')), findsOneWidget);
+      expect(find.byKey(const ValueKey('calibrate-tool-pet')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('calibrate-tool-tuner')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('calibrate-tool-tooltip')),
+        findsOneWidget,
+      );
+      expect(find.text('Shop targets'), findsOneWidget);
+      expect(find.byKey(const ValueKey('calibrate-tuner-note')), findsNothing);
+
+      await _selectTool(tester, 'tuner');
+      expect(
+        find.byKey(const ValueKey('calibrate-tuner-note')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('three-box session'), findsOneWidget);
+      expect(find.text('Shop targets'), findsNothing);
+
+      await _selectTool(tester, 'tooltip');
+      expect(
+        find.byKey(const ValueKey('calibrate-tooltip-note')),
+        findsOneWidget,
+      );
+
+      await _selectTool(tester, 'pet');
+      expect(find.text('Pet targets'), findsOneWidget);
+      expect(find.byKey(const ValueKey('calibrate-kind')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('calibrate-tree-pet_menu')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('calibrate-tree-bag_grid')),
+        findsNothing,
+      );
+
+      await _selectTool(tester, 'gem');
+      expect(find.text('Gem targets'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('calibrate-tree-result_gem_area')),
+        findsOneWidget,
+      );
+
+      await _selectTool(tester, 'shop');
+      expect(
+        find.byKey(const ValueKey('calibrate-tree-bag_grid')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('a fetched unknown kind renders its line, not a crash', (
     tester,
@@ -1758,60 +1807,31 @@ void main() {
     expect(find.textContaining('10, 20, 30, 40'), findsWidgets);
   });
 
-  testWidgets('the Sessions shortcut scrolls to the session cards', (
-    tester,
-  ) async {
-    await _pumpCalibrate(
-      tester,
-      answer: (_) => {'result': <String, dynamic>{}},
-    );
-    await _flush(tester);
+  testWidgets(
+    'a session tool tab opens its session on screen, not below the fold',
+    (tester) async {
+      await _pumpCalibrate(
+        tester,
+        answer: (_) => {'result': <String, dynamic>{}},
+      );
+      await _flush(tester);
 
-    final shortcut = find.byKey(const ValueKey('calibrate-sessions'));
-    expect(shortcut, findsOneWidget);
-    await tester.tap(shortcut);
-    await tester.pumpAndSettle();
+      await _selectTool(tester, 'tuner');
+      final bar = find.byKey(const ValueKey('session-tuner-capture-bar'));
+      expect(bar, findsOneWidget);
+      final top = tester.getTopLeft(bar).dy;
+      final height =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      expect(top, greaterThanOrEqualTo(0));
+      expect(top, lessThan(height), reason: 'the tuner workspace is on screen');
 
-    final note = find.byKey(const ValueKey('calibrate-tooltip-note'));
-    expect(note, findsOneWidget);
-    final top = tester.getTopLeft(note).dy;
-    final height =
-        tester.view.physicalSize.height / tester.view.devicePixelRatio;
-    expect(top, greaterThanOrEqualTo(0));
-    expect(top, lessThan(height), reason: 'the sessions are on screen now');
-  });
-
-  testWidgets('choosing a session in Targets selects and scrolls to its card', (
-    tester,
-  ) async {
-    await _pumpCalibrate(
-      tester,
-      answer: (_) => {'result': <String, dynamic>{}},
-    );
-    await _flush(tester);
-
-    final tunerRow = find.byKey(const ValueKey('calibrate-tree-session-tuner'));
-    await tester.ensureVisible(tunerRow);
-    await tester.pump();
-    await tester.tap(tunerRow);
-    await tester.pumpAndSettle();
-
-    expect(
-      find.byKey(const ValueKey('calibrate-tree-session-tuner-selected')),
-      findsOneWidget,
-      reason: 'the session row uses the same selected state as a kind row',
-    );
-    final bar = find.byKey(const ValueKey('session-tuner-capture-bar'));
-    expect(bar, findsOneWidget);
-    final top = tester.getTopLeft(bar).dy;
-    final height =
-        tester.view.physicalSize.height / tester.view.devicePixelRatio;
-    expect(
-      top,
-      lessThan(height),
-      reason: 'the tuner session is brought into view',
-    );
-  });
+      await _selectTool(tester, 'tooltip');
+      expect(
+        find.byKey(const ValueKey('calibrate-tooltip-note')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('the tooltip session drives hover, save and test over the core', (
     tester,
@@ -1877,6 +1897,7 @@ void main() {
       },
     );
     await _flush(tester);
+    await _selectTool(tester, 'tooltip');
 
     final hover = find.byKey(const ValueKey('session-tooltip-hover'));
     await tester.ensureVisible(hover);
@@ -2007,6 +2028,7 @@ void main() {
       },
     );
     await _flush(tester);
+    await _selectTool(tester, 'tuner');
 
     final capture = find.byKey(const ValueKey('session-tuner-capture'));
     await tester.ensureVisible(capture);
@@ -2149,6 +2171,7 @@ void main() {
         },
       );
       await _flush(tester);
+      await _selectTool(tester, 'tuner');
 
       expect(
         find.byKey(const ValueKey('session-tuner-frame')),
@@ -2254,6 +2277,7 @@ void main() {
         },
       );
       await _flush(tester);
+      await _selectTool(tester, 'tooltip');
 
       final hover = find.byKey(const ValueKey('session-tooltip-hover'));
       await tester.ensureVisible(hover);

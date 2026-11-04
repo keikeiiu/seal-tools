@@ -96,10 +96,10 @@ class _CalibrateTabState extends State<CalibrateTab>
 
   /// The captures this screen took, newest first; the core keeps the last four, so 4 is the cap.
   final List<CalibrationCapture> _captures = <CalibrationCapture>[];
-  final GlobalKey _sessionsKey = GlobalKey();
-  final GlobalKey _tooltipSessionKey = GlobalKey();
-  final GlobalKey _tunerSessionKey = GlobalKey();
-  String? _selectedSession;
+
+  /// The active tool tab. Mark tools scope the target tree/canvas/editor to one tool; Tuner and
+  /// Tooltip replace that workspace with their session panel, so their capture is the tool's own.
+  String _tool = calibrationKinds.first.tool;
   String? _selectedFrameId;
   int _captureSequence = 0;
 
@@ -136,6 +136,19 @@ class _CalibrateTabState extends State<CalibrateTab>
   String _toolFilter = 'All';
 
   CalibrationKind get _selected => calibrationKindByName(_kindName);
+
+  bool get _sessionTool => _tool == 'Tuner' || _tool == 'Tooltip';
+
+  /// The session panel id for the two session tools; mark tools never ask for one.
+  String get _sessionId => _tool == 'Tooltip' ? 'tooltip' : 'tuner';
+
+  static const List<({String id, String label})> _toolTabs = [
+    (id: 'Shop', label: 'Buy / Sell'),
+    (id: 'Gem', label: 'Gem Composer'),
+    (id: 'Pet', label: 'Pet Feeder'),
+    (id: 'Tuner', label: 'Magic Tuner'),
+    (id: 'Tooltip', label: 'Tooltip'),
+  ];
 
   String get _currentStoredKey => calibrationStoredKey(_kindName, _target);
 
@@ -466,14 +479,44 @@ class _CalibrateTabState extends State<CalibrateTab>
     if (name == null || name == _kindName) {
       return;
     }
+    final kind = calibrationKindByName(name);
     setState(() {
       _kindName = name;
+      _tool = kind.tool;
       _save = null;
       _emptyChoice = null;
       // Switching kind never carries a target over: the new kind's instances are its own.
       _target = null;
       _draftTouched = false;
       _seedEditorForSelection();
+    });
+  }
+
+  /// Tool tabs: the mark tools scope the tree/editor to one tool, and the two session tools show
+  /// their own workspace. The tab does not invent a selection: a mark tool lands on that tool's
+  /// first served kind, which the kind picker can then change.
+  void _selectTool(String tool) {
+    if (tool == _tool) {
+      return;
+    }
+    if (tool == 'Tuner' || tool == 'Tooltip') {
+      setState(() => _tool = tool);
+      return;
+    }
+    final group = calibrationToolGroups.firstWhere(
+      (group) => group.tool == tool,
+    );
+    final kind = group.kinds.first;
+    setState(() {
+      _tool = tool;
+      if (_kindName != kind.name) {
+        _kindName = kind.name;
+        _target = null;
+        _emptyChoice = null;
+        _draftTouched = false;
+        _save = null;
+        _seedEditorForSelection();
+      }
     });
   }
 
@@ -494,6 +537,7 @@ class _CalibrateTabState extends State<CalibrateTab>
   /// A target-tree instance row: selects its kind and instance in one step.
   void _selectTreeTarget(CalibrationKind kind, String target) {
     setState(() {
+      _tool = kind.tool;
       if (_kindName != kind.name) {
         _kindName = kind.name;
         _emptyChoice = null;
@@ -512,6 +556,7 @@ class _CalibrateTabState extends State<CalibrateTab>
       return;
     }
     setState(() {
+      _tool = slot.kind.tool;
       _kindName = slot.kind.name;
       _target = slot.target;
       _save = null;
@@ -662,114 +707,142 @@ class _CalibrateTabState extends State<CalibrateTab>
           ),
           child: _buildHeader(theme, capture),
         ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            ShellSpace.lg,
+            0,
+            ShellSpace.lg,
+            ShellSpace.sm,
+          ),
+          child: _buildToolTabs(theme),
+        ),
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: ShellSpace.lg),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildDisplayEnvironment(theme, capture),
-                const SizedBox(height: ShellSpace.md),
-                DetectPanel(model: widget.model),
-                _buildExternalChangeBanner(),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final wide = constraints.maxWidth >= _workspaceBreakpoint;
-                    final left = Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [_buildCaptureShelf(theme), _buildTargetTree()],
-                    );
-                    final canvas = _buildCanvasPanel(theme, capture);
-                    final right = Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildMarkEditor(theme),
-                        ReferenceGalleryPanel(
-                          stored: _stored,
-                          gallery: _gallery,
-                        ),
-                      ],
-                    );
-                    if (!wide) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [left, canvas, right],
-                      );
-                    }
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(width: _captureColumnWidth, child: left),
-                        const SizedBox(width: ShellSpace.lg),
-                        Expanded(child: canvas),
-                        const SizedBox(width: ShellSpace.lg),
-                        SizedBox(width: _editorColumnWidth, child: right),
-                      ],
-                    );
-                  },
-                ),
-                StoredMarksTablePanel(
-                  stored: _stored,
-                  storedErrors: _storedErrors,
-                  toolFilter: _toolFilter,
-                  onToolFilterChanged: (value) =>
-                      setState(() => _toolFilter = value),
-                  onSelectSlot: _selectSlot,
-                ),
-                const SizedBox(height: ShellSpace.md),
-                SessionCalibrationsPanel(
-                  key: _sessionsKey,
-                  tooltipKey: _tooltipSessionKey,
-                  tunerKey: _tunerSessionKey,
-                  model: widget.model,
-                  host: widget.host,
-                ),
-                const SizedBox(height: ShellSpace.lg),
-              ],
-            ),
+          // Keep both workspaces mounted so a Tuner/Tooltip capture and its typed fields survive a
+          // tab switch, and so the mark workspace does not re-seed itself on every return.
+          child: IndexedStack(
+            index: _sessionTool ? 1 : 0,
+            children: [
+              _buildMarkWorkspace(theme, capture),
+              _buildSessionWorkspace(),
+            ],
           ),
         ),
       ],
     );
   }
 
-  /// The header shortcut: the session panel is below the long stored-marks table, so scrolling to it
-  /// by hand is the one step players should not have to discover. `ensureVisible` uses the page's own
-  /// scroll view; nothing is recreated on the way.
-  void _jumpToSessions() {
-    final key = switch (_selectedSession) {
-      'tooltip' => _tooltipSessionKey,
-      'tuner' => _tunerSessionKey,
-      _ => _sessionsKey,
-    };
-    _scrollTo(key);
+  Widget _buildToolTabs(ThemeData theme) {
+    final colors = theme.colorScheme;
+    return Wrap(
+      spacing: ShellSpace.xs,
+      runSpacing: ShellSpace.xs,
+      children: [
+        for (final tab in _toolTabs)
+          Material(
+            color: tab.id == _tool
+                ? colors.secondaryContainer
+                : colors.surfaceContainerLow,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(ShellRadius.s),
+              side: BorderSide(
+                color: tab.id == _tool ? colors.primary : colors.outlineVariant,
+              ),
+            ),
+            child: InkWell(
+              key: ValueKey('calibrate-tool-${tab.id.toLowerCase()}'),
+              borderRadius: BorderRadius.circular(ShellRadius.s),
+              onTap: () => _selectTool(tab.id),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: ShellSpace.md,
+                  vertical: ShellSpace.xs,
+                ),
+                child: Text(
+                  tab.label,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: tab.id == _tool
+                        ? colors.onSecondaryContainer
+                        : colors.onSurfaceVariant,
+                    fontWeight: tab.id == _tool
+                        ? FontWeight.w600
+                        : FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
-  /// The target tree's session rows use the same selection rule as its kind rows: pick what to
-  /// calibrate, remember it, and bring its card into view.
-  void _selectSession(String session) {
-    setState(() => _selectedSession = session);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final key = switch (session) {
-        'tooltip' => _tooltipSessionKey,
-        'tuner' => _tunerSessionKey,
-        _ => _sessionsKey,
-      };
-      _scrollTo(key);
-    });
+  Widget _buildMarkWorkspace(ThemeData theme, CalibrationCapture? capture) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: ShellSpace.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildDisplayEnvironment(theme, capture),
+          const SizedBox(height: ShellSpace.md),
+          DetectPanel(model: widget.model),
+          _buildExternalChangeBanner(),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= _workspaceBreakpoint;
+              final left = Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [_buildCaptureShelf(theme), _buildTargetTree()],
+              );
+              final canvas = _buildCanvasPanel(theme, capture);
+              final right = Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildMarkEditor(theme),
+                  ReferenceGalleryPanel(stored: _stored, gallery: _gallery),
+                ],
+              );
+              if (!wide) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [left, canvas, right],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: _captureColumnWidth, child: left),
+                  const SizedBox(width: ShellSpace.lg),
+                  Expanded(child: canvas),
+                  const SizedBox(width: ShellSpace.lg),
+                  SizedBox(width: _editorColumnWidth, child: right),
+                ],
+              );
+            },
+          ),
+          StoredMarksTablePanel(
+            stored: _stored,
+            storedErrors: _storedErrors,
+            toolFilter: _toolFilter,
+            onToolFilterChanged: (value) => setState(() => _toolFilter = value),
+            onSelectSlot: _selectSlot,
+          ),
+          const SizedBox(height: ShellSpace.lg),
+        ],
+      ),
+    );
   }
 
-  void _scrollTo(GlobalKey key) {
-    final context = key.currentContext;
-    if (context == null) {
-      return;
-    }
-    unawaited(
-      Scrollable.ensureVisible(
-        context,
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeOutCubic,
-        alignment: 0.02,
+  Widget _buildSessionWorkspace() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(
+        ShellSpace.lg,
+        0,
+        ShellSpace.lg,
+        ShellSpace.lg,
+      ),
+      child: SessionCalibrationsPanel(
+        only: _sessionId,
+        model: widget.model,
+        host: widget.host,
       ),
     );
   }
@@ -867,12 +940,6 @@ class _CalibrateTabState extends State<CalibrateTab>
           runSpacing: ShellSpace.sm,
           children: [
             OutlinedButton.icon(
-              key: const ValueKey('calibrate-sessions'),
-              onPressed: _jumpToSessions,
-              icon: const Icon(Icons.tune, size: ShellSize.iconMd),
-              label: const Text('Sessions'),
-            ),
-            OutlinedButton.icon(
               key: const ValueKey('calibrate-refresh'),
               onPressed: _loadingStored ? null : _loadStoredAll,
               icon: const Icon(Icons.refresh, size: ShellSize.iconMd),
@@ -884,7 +951,12 @@ class _CalibrateTabState extends State<CalibrateTab>
       ],
     );
     // Demo header: title + prose left, display chips/actions right when there is room; stacked at a
-    // window narrow enough that side-by-side would squeeze the prose.
+    // window narrow enough that side-by-side would squeeze the prose. The session tools own their
+    // capture inside the panel, so they get the heading only — no second capture action in the page
+    // header.
+    if (_sessionTool) {
+      return heading;
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < 900) {
@@ -1069,13 +1141,12 @@ class _CalibrateTabState extends State<CalibrateTab>
   }
 
   Widget _buildTargetTree() => TargetTreePanel(
+    tool: _tool,
     selectedKind: _kindName,
     selectedTarget: _target,
     stored: _stored,
-    selectedSession: _selectedSession,
     onSelectKind: _selectKind,
     onSelectTarget: _selectTreeTarget,
-    onSelectSession: _selectSession,
   );
 
   Widget _buildCanvasPanel(ThemeData theme, CalibrationCapture? capture) {

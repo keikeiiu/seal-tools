@@ -19,6 +19,29 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-04 (36) — Calibrate gets tool tabs; sessions move into their tool workspace
+
+First implementation slice of the approved capture-once UX (`calibrate-capture-once.html` design
+study). The player picks what to calibrate first, and the Tuner/Tooltip sessions stop living below the
+stored-marks table.
+
+- **Tool tab row:** Buy / Sell (Shop), Gem Composer, Pet Feeder, Magic Tuner, Tooltip, between the page
+  header and the workspace.
+- **Mark tabs scope the tree:** the target tree now names the active tool and lists only that tool's
+  kinds/instances. The kind picker still offers all 17 marks; choosing another tool's kind moves the tab
+  with the selection, so the two pickers cannot disagree.
+- **Session tabs host the session:** Magic Tuner and Tooltip replace the mark workspace with their
+  session panel (one capture, split picture/controls). The page header hides its mark capture/refresh
+  actions on those tabs because the session owns the capture.
+- **No below-fold sessions:** the global Sessions panel, its header shortcut, and the target-tree
+  session rows are gone. Both session workspaces stay mounted in an `IndexedStack`, so switching tabs
+  keeps the captured frame and typed fields.
+- The scoped tree is guarded for a tool with no mark group (Tuner/Tooltip), and the tuner section now
+  renders its status line so a Save result is visible where the action happened.
+
+Verification: `flutter analyze --fatal-infos` clean, `dart format` clean, `flutter test --no-pub`
+**350/350**, Windows debug build green. Docs (UI spec and both user guides) updated in the same commit.
+
 ## 2026-11-04 (35) — one capture per tuner; calibration units grouped by tool
 
 Three UX corrections after the session design:

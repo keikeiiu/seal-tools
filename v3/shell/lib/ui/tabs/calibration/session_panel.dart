@@ -34,6 +34,7 @@ class SessionCalibrationsPanel extends StatefulWidget {
     super.key,
     required this.model,
     required this.host,
+    this.only,
     this.tooltipKey,
     this.tunerKey,
   });
@@ -41,7 +42,12 @@ class SessionCalibrationsPanel extends StatefulWidget {
   final ShellModel model;
   final HostActions host;
 
-  /// Section anchors the Calibrate page uses for its Sessions shortcut / target-tree selection.
+  /// Render one tool's session as the whole workspace (`tuner` or `tooltip`). The default null keeps
+  /// the combined panel for the all-sessions tests; Calibrate passes the active tab id, so a Tuner or
+  /// Tooltip tab is one capture-owned workspace instead of a section below the mark table.
+  final String? only;
+
+  /// Section anchors for the combined panel.
   final Key? tooltipKey;
   final Key? tunerKey;
 
@@ -929,6 +935,16 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
           const SizedBox(height: ShellSpace.sm),
           _tunerCheckSummary(theme, colors),
         ],
+        if (_status != null) ...[
+          const SizedBox(height: ShellSpace.sm),
+          Text(
+            _status!,
+            key: const ValueKey('session-tuner-status'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: _failed ? colors.error : colors.onSurfaceVariant,
+            ),
+          ),
+        ],
       ],
     );
     final picture = captured
@@ -1386,6 +1402,32 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    if (widget.only == 'tuner') {
+      return SurfacePanel(
+        title: 'Magic Tuner',
+        description:
+            'One tuner capture covers the three OCR boxes and the spring point; Check measures '
+            'the frame, then Save writes them together.',
+        padding: const EdgeInsets.all(ShellSpace.md),
+        child: KeyedSubtree(
+          key: widget.tunerKey,
+          child: _tunerSection(theme, colors),
+        ),
+      );
+    }
+    if (widget.only == 'tooltip') {
+      return SurfacePanel(
+        title: 'Tooltip offset + shape',
+        description:
+            'One hover capture: the core places the cursor, captures the panel, and this panel '
+            'measures the offset and shape used by the Pet Feeder.',
+        padding: const EdgeInsets.all(ShellSpace.md),
+        child: KeyedSubtree(
+          key: widget.tooltipKey,
+          child: _tooltipSection(theme, colors),
+        ),
+      );
+    }
     return SurfacePanel(
       title: 'Sessions',
       description:

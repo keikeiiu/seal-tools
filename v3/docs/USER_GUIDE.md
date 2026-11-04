@@ -549,11 +549,11 @@ section 8.
 
 The one calibration surface for every tool. Section 6 is the full walkthrough: capture the game
 window, choose a **Surface**, optionally a **target instance**, draw the mark, **Save mark**, and read
-the core's stored mark / derived values / artifact below. Below the stored table, **Sessions** holds
-only the two calibrations that need more than one mark: **Tuner OCR 3-box + Spring point** and the
-**Pet tooltip offset + shape**. The **Sessions** action in the page header jumps to that panel, and
-each session row sits inside its tool's group in Targets. The tab's panel caption repeats the capture
-behaviour: the shell hides itself for the grab, waits one frame, and reopens.
+the core's stored mark / derived values / artifact below. A **tool tab row** picks what you are
+calibrating: **Buy / Sell**, **Gem Composer**, **Pet Feeder**, **Magic Tuner**, **Tooltip**. The first
+three scope Targets and the editor to that tool; **Magic Tuner** and **Tooltip** open their one-capture
+session directly in the workspace instead of a panel below the stored table. The tab's caption repeats
+the capture behaviour: the shell hides itself for the grab, waits one frame, and reopens.
 
 ---
 
@@ -672,11 +672,11 @@ Remaining non-mark work:
 
 ### 6.5 Tuner OCR 3-box + Spring point session
 
-1. In **Calibrate**, open **Sessions** (or select the **Tuner OCR 3-box + Spring point** row in the
-   **Tuner** group of Targets). Set the game to the tuner's status window and press **Capture screen**
-   (or **Recapture screen**) at the top of the card. **This one capture covers the three OCR boxes and
-   the Spring point** — that is v2's one-capture flow. The captured picture then stays on the left
-   while the box cards scroll on the right, so you can drag and edit the matching fields without
+1. In **Calibrate**, select the **Magic Tuner** tool tab. Set the game to the tuner's status window and
+   press **Capture screen** (or **Recapture screen**) at the top of the card. **This one capture covers
+   the three OCR boxes and the Spring point** — that is v2's one-capture flow. The captured picture
+   then stays on the left while the box cards scroll on the right, so you can drag and edit the
+   matching fields without
    scrolling between them.
 2. Pick a **Target to drag** chip — **Grade letter** (green), **Attribute rows** (blue), **Remaining
    count** (amber) or **Spring point** — then drag directly on the picture on the left. Drags fill the
@@ -692,10 +692,11 @@ Remaining non-mark work:
 
 ### 6.6 Pet tooltip offset + shape session
 
-1. Put the game in front with the item or pet whose hover panel you want to measure. In the
-   **Tooltip offset + shape** card set the **hover x / y** point and delay, then press **Capture
-   hover**. The shell hides itself, the core places the cursor on that point and captures the panel;
-   the picture returns on the left while the hover/offset controls stay on the right.
+1. In **Calibrate**, select the **Tooltip** tool tab. Put the game in front with the item or pet whose
+   hover panel you want to measure. In the **Tooltip offset + shape** card set the **hover x / y** point
+   and delay, then press **Capture hover**. The shell hides itself, the core places the cursor on that
+   point and captures the panel; the picture returns on the left while the hover/offset controls stay
+   on the right.
 2. Drag a box around the panel on the picture (the core requires at least 20×20 px), or type the
    **offset x / y** and **width / height**. The formula line shows `cursor + offset = panel top-left`;
    the panel box is drawn over the cursor.
