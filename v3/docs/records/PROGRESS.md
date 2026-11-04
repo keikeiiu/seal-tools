@@ -19,6 +19,25 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-05 (45) — the grade ladder becomes colour-only and its minimum selector moves up
+
+The first ladder pass over-explained itself: flag/shield/play icons and `target`/`minimum`/`start`
+words inside each node, plus a legend underneath, made the static path busier than the chips it
+replaced.
+
+- **Nodes are just the grade.** Colour carries the role: primary fill/border = target, warning
+  fill/border = minimum, info fill/border = start, neutral surface = unmarked. When one grade is
+  both target and minimum, the primary fill shows target and the warning border shows the floor.
+- **No visible role wording or icons.** `Semantics` still expose `<grade> · target` etc. for screen
+  readers, so colour is not the only channel for assistive technology.
+- **Tuner's minimum selector is now next to the target.** The `Require grade` control moved out of
+  Filter into Grades, labelled **Minimum grade (filter)**; both markers therefore have their
+  controls directly under the ladder. The key stays `require-grade`.
+- Tests now assert the accessible role labels instead of the removed legend/words.
+
+Verification: full shell gate **375/375**, analyze `--fatal-infos` clean, format clean, Windows debug
+build green.
+
 ## 2026-11-05 (44) — Tuner and Gem share one readable grade ladder
 
 Both tabs rendered the same fixed ladder two different ways: Tuner as `N · G · DG…` text, Gem as a row

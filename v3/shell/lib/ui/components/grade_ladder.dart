@@ -67,14 +67,8 @@ class GradeLadder extends StatelessWidget {
     final minimumIndex = _indexOf(minimum);
     final startIndex = _indexOf(start);
     final hasPath = targetIndex != null || startIndex != null;
-    final roles = <GradeLadderRole>[
-      if (targetIndex != null) GradeLadderRole.target,
-      if (minimumIndex != null) GradeLadderRole.minimum,
-      if (startIndex != null) GradeLadderRole.start,
-    ];
-
     return Container(
-      padding: const EdgeInsets.all(ShellSpace.sm),
+      padding: const EdgeInsets.all(ShellSpace.md),
       decoration: BoxDecoration(
         color: colors.surfaceContainerLow,
         border: Border.all(color: colors.outlineVariant),
@@ -85,26 +79,36 @@ class GradeLadder extends StatelessWidget {
         children: [
           if (caption != null) ...[
             Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
+                Text(
+                  caption!,
+                  key: captionKey,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: ShellSpace.sm),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: ShellSpace.xs,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: colors.outlineVariant),
+                    borderRadius: BorderRadius.circular(ShellRadius.s),
+                  ),
                   child: Text(
-                    caption!,
-                    key: captionKey,
-                    style: theme.textTheme.bodySmall?.copyWith(
+                    readOnlyLabel,
+                    style: ShellText.mono.copyWith(
+                      fontSize: 9,
                       color: colors.onSurfaceVariant,
                     ),
                   ),
                 ),
-                Text(
-                  readOnlyLabel,
-                  style: ShellText.mono.copyWith(
-                    fontSize: 9.5,
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
               ],
             ),
-            const SizedBox(height: ShellSpace.xs),
+            const SizedBox(height: ShellSpace.sm),
           ],
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -113,23 +117,29 @@ class GradeLadder extends StatelessWidget {
               children: [
                 for (var index = 0; index < grades.length; index++) ...[
                   if (index > 0)
-                    Icon(
-                      Icons.arrow_right_alt,
-                      size: 17,
-                      color:
-                          hasPath &&
-                              _connectorActive(
-                                index,
-                                targetIndex: targetIndex,
-                                startIndex: startIndex,
-                              )
-                          ? colors.primary
-                          : colors.outlineVariant,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: ShellSpace.xxs,
+                      ),
+                      child: Icon(
+                        Icons.arrow_right_alt,
+                        size: 18,
+                        color:
+                            hasPath &&
+                                _connectorActive(
+                                  index,
+                                  targetIndex: targetIndex,
+                                  startIndex: startIndex,
+                                )
+                            ? colors.primary
+                            : colors.outlineVariant,
+                      ),
                     ),
                   _GradeNode(
                     key: ValueKey('$keyPrefix-${grades[index]}'),
                     grade: grades[index],
-                    role: _roleFor(
+                    roleKey: ValueKey('$keyPrefix-${grades[index]}-role'),
+                    roles: _rolesFor(
                       index,
                       targetIndex: targetIndex,
                       minimumIndex: minimumIndex,
@@ -146,52 +156,21 @@ class GradeLadder extends StatelessWidget {
               ],
             ),
           ),
-          if (roles.isNotEmpty) ...[
-            const SizedBox(height: ShellSpace.xs),
-            Wrap(
-              spacing: ShellSpace.sm,
-              runSpacing: ShellSpace.xxs,
-              children: [
-                if (roles.contains(GradeLadderRole.target))
-                  _Legend(
-                    key: ValueKey('$keyPrefix-target-legend'),
-                    role: GradeLadderRole.target,
-                  ),
-                if (roles.contains(GradeLadderRole.minimum))
-                  _Legend(
-                    key: ValueKey('$keyPrefix-minimum-legend'),
-                    role: GradeLadderRole.minimum,
-                  ),
-                if (roles.contains(GradeLadderRole.start))
-                  _Legend(
-                    key: ValueKey('$keyPrefix-start-legend'),
-                    role: GradeLadderRole.start,
-                  ),
-              ],
-            ),
-          ],
         ],
       ),
     );
   }
 
-  GradeLadderRole? _roleFor(
+  List<GradeLadderRole> _rolesFor(
     int index, {
     required int? targetIndex,
     required int? minimumIndex,
     required int? startIndex,
-  }) {
-    if (index == targetIndex) {
-      return GradeLadderRole.target;
-    }
-    if (index == minimumIndex) {
-      return GradeLadderRole.minimum;
-    }
-    if (index == startIndex) {
-      return GradeLadderRole.start;
-    }
-    return null;
-  }
+  }) => [
+    if (index == targetIndex) GradeLadderRole.target,
+    if (index == minimumIndex) GradeLadderRole.minimum,
+    if (index == startIndex) GradeLadderRole.start,
+  ];
 
   bool _nodeActive(
     int index, {
@@ -230,122 +209,78 @@ class _GradeNode extends StatelessWidget {
   const _GradeNode({
     super.key,
     required this.grade,
-    this.role,
+    required this.roleKey,
+    required this.roles,
     required this.active,
   });
 
   final String grade;
-  final GradeLadderRole? role;
+  final Key roleKey;
+  final List<GradeLadderRole> roles;
   final bool active;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final roleColor = switch (role) {
-      GradeLadderRole.target => colors.primary,
-      GradeLadderRole.minimum => theme.shellColors.warning,
-      GradeLadderRole.start => theme.shellColors.info,
-      null => colors.outlineVariant,
-    };
-    final background = switch (role) {
-      GradeLadderRole.target => colors.primaryContainer,
-      GradeLadderRole.minimum => theme.shellColors.warningContainer,
-      GradeLadderRole.start => colors.secondaryContainer,
-      null => active ? colors.surfaceContainerHigh : colors.surface,
-    };
-    final icon = switch (role) {
-      GradeLadderRole.target => Icons.flag_outlined,
-      GradeLadderRole.minimum => Icons.shield_outlined,
-      GradeLadderRole.start => Icons.play_arrow_outlined,
-      null => null,
-    };
-    final roleLabel = switch (role) {
-      GradeLadderRole.target => 'target',
-      GradeLadderRole.minimum => 'minimum',
-      GradeLadderRole.start => 'start',
-      null => null,
-    };
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 54,
-          height: 38,
-          decoration: BoxDecoration(
-            color: background,
-            border: Border.all(
-              color: role == null ? colors.outlineVariant : roleColor,
-            ),
-            borderRadius: BorderRadius.circular(ShellRadius.s),
+    final hasTarget = roles.contains(GradeLadderRole.target);
+    final hasMinimum = roles.contains(GradeLadderRole.minimum);
+    final hasStart = roles.contains(GradeLadderRole.start);
+    final roleColor = hasTarget
+        ? colors.primary
+        : hasMinimum
+        ? theme.shellColors.warning
+        : hasStart
+        ? theme.shellColors.info
+        : colors.outlineVariant;
+    final background = hasTarget
+        ? colors.primaryContainer
+        : hasMinimum
+        ? theme.shellColors.warningContainer
+        : hasStart
+        ? colors.secondaryContainer
+        : active
+        ? colors.surfaceContainerHigh
+        : colors.surface;
+    // When one grade is both target and minimum, the fill carries the target and the warning border
+    // carries the floor; no extra icon/word is drawn in the label.
+    final borderColor = hasTarget && hasMinimum
+        ? theme.shellColors.warning
+        : roleColor;
+    final rolesText = roles.map(_roleLabel).join(' · ');
+    return Semantics(
+      key: roleKey,
+      excludeSemantics: true,
+      label: rolesText.isEmpty ? grade : '$grade · $rolesText',
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 54, minHeight: 34),
+        padding: const EdgeInsets.symmetric(
+          horizontal: ShellSpace.sm,
+          vertical: ShellSpace.xs,
+        ),
+        decoration: BoxDecoration(
+          color: background,
+          border: Border.all(
+            color: roles.isEmpty ? colors.outlineVariant : borderColor,
+            width: hasTarget && hasMinimum ? 2 : 1,
           ),
-          alignment: Alignment.center,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                Icon(icon, size: 11, color: roleColor),
-                const SizedBox(width: 2),
-              ],
-              Text(
-                grade,
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: role == null ? colors.onSurface : roleColor,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
+          borderRadius: BorderRadius.circular(ShellRadius.s),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          grade,
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: roles.isEmpty ? colors.onSurface : roleColor,
+            fontWeight: FontWeight.w700,
           ),
         ),
-        if (roleLabel != null)
-          Text(
-            roleLabel,
-            style: ShellText.mono.copyWith(fontSize: 9, color: roleColor),
-          ),
-      ],
+      ),
     );
   }
-}
 
-class _Legend extends StatelessWidget {
-  const _Legend({super.key, required this.role});
-
-  final GradeLadderRole role;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final (icon, label, color) = switch (role) {
-      GradeLadderRole.target => (
-        Icons.flag_outlined,
-        'Target — the run stops here',
-        colors.primary,
-      ),
-      GradeLadderRole.minimum => (
-        Icons.shield_outlined,
-        'Minimum — lower grades are skipped',
-        theme.shellColors.warning,
-      ),
-      GradeLadderRole.start => (
-        Icons.play_arrow_outlined,
-        'Start — the run advances right from here',
-        colors.onSurfaceVariant,
-      ),
-    };
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 12, color: color),
-        const SizedBox(width: 3),
-        Text(
-          label,
-          style: theme.textTheme.labelSmall?.copyWith(
-            fontSize: 9.5,
-            color: colors.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-  }
+  static String _roleLabel(GradeLadderRole role) => switch (role) {
+    GradeLadderRole.target => 'target',
+    GradeLadderRole.minimum => 'minimum',
+    GradeLadderRole.start => 'start',
+  };
 }

@@ -435,19 +435,39 @@ class _TunerTabState extends State<TunerTab>
                 minimum: _requireGrade(),
               ),
               const SizedBox(height: ShellSpace.md),
-              DraftDropdownField(
-                key: const ValueKey('target-grade'),
-                label: 'Target grade',
-                value: _targetGrade() ?? _noTargetGrade,
-                options: [_noTargetGrade, ...order],
-                width: ShellWidth.fieldLg,
-                onChanged: (value) {
-                  if (value == null || value == _noTargetGrade) {
-                    _setTargetGrade(null);
-                  } else {
-                    _setTargetGrade(value);
-                  }
-                },
+              Wrap(
+                spacing: ShellSpace.md,
+                runSpacing: ShellSpace.sm,
+                children: [
+                  DraftDropdownField(
+                    key: const ValueKey('target-grade'),
+                    label: 'Target grade',
+                    value: _targetGrade() ?? _noTargetGrade,
+                    options: [_noTargetGrade, ...order],
+                    width: ShellWidth.fieldLg,
+                    onChanged: (value) {
+                      if (value == null || value == _noTargetGrade) {
+                        _setTargetGrade(null);
+                      } else {
+                        _setTargetGrade(value);
+                      }
+                    },
+                  ),
+                  DraftDropdownField(
+                    key: const ValueKey('require-grade'),
+                    label: 'Minimum grade (filter)',
+                    value: _requireGrade(),
+                    options: order,
+                    width: ShellWidth.fieldLg,
+                    onChanged: (value) => _setFilter((filter) {
+                      if (value == null) {
+                        filter.remove('require_grade');
+                      } else {
+                        filter['require_grade'] = value;
+                      }
+                    }),
+                  ),
+                ],
               ),
             ],
           ),
@@ -565,20 +585,6 @@ class _TunerTabState extends State<TunerTab>
                     width: ShellWidth.fieldMd,
                     onChanged: (value) =>
                         _setFilter((filter) => filter['match_mode'] = value),
-                  ),
-                  DraftDropdownField(
-                    key: const ValueKey('require-grade'),
-                    label: 'Require grade',
-                    value: _requireGrade(),
-                    options: order,
-                    width: ShellWidth.fieldMd,
-                    onChanged: (value) => _setFilter((filter) {
-                      if (value == null) {
-                        filter.remove('require_grade');
-                      } else {
-                        filter['require_grade'] = value;
-                      }
-                    }),
                   ),
                 ],
               ),

@@ -307,10 +307,9 @@ refused action.
 The tuner's portable settings; the calibrated geometry block on this tab is **read-only in this wave**
 (it is owned by config until the three-box calibration session lands — section 6.4).
 
-- **Grades** — the **fixed grade order** shown as a read-only path `N → G → DG → XG → SG`; the
-  **Target grade** is the flag marker (the run stops when it reaches it) and the filter's
-  **require_grade** is the shield marker (lower grades are skipped). Both are selected from the same
-  ladder.
+- **Grades** — the **fixed grade order** shown as a read-only path `N → G → DG → XG → SG`; colour
+  marks the roles (primary = target, warning = minimum). The **Target grade** and **Minimum grade**
+  selectors sit directly under the ladder.
 - **Retries and timing** — **Max retries**, **OCR retries**, **Click/enter delay (s)**, **OCR delay
   (s)**, **Save captures** (writes `logs/captures/` PNGs — see section 7). **OCR retries is stored but
   currently unused:** v3.0's reader scans once; the last-retry forced capture is a named not-built item

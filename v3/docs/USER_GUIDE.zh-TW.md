@@ -261,8 +261,8 @@ spammer 參數 —— 儲存被拒絕時卡片下方會顯示核心的訊息。�
 改造師的可攜設定；本分頁上的校正幾何區塊在**這階段是唯讀**的（在三個框校正會談完成前由設定檔管理 ——
 第 6.4 節）。
 
-- **Grades** —— **固定等級順序**以唯讀路徑 `N → G → DG → XG → SG` 顯示；**Target grade** 是旗標標記
-   （跑到它就停），篩選的 **require_grade** 是盾牌標記（更低等級跳過）。兩者都從同一條等級路徑選。
+- **Grades** —— **固定等級順序**以唯讀路徑 `N → G → DG → XG → SG` 顯示；顏色代表角色（主要色 = target，
+   警告色 = minimum）。**Target grade** 與 **Minimum grade** 選單就放在路徑下方。
 - **Retries and timing** —— **Max retries**、**OCR retries**、**Click/enter delay (s)**、**OCR delay
   (s)**、**Save captures**（會寫入 `logs/captures/` PNG —— 見第 7 節）。**`OCR retries` 只被儲存、目前
   沒有作用：** v3.0 的讀取器只掃描一次；最後一次重試的強制擷取是倉庫待辦清單中的未實作項目。

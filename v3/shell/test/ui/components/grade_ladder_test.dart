@@ -25,16 +25,16 @@ void main() {
       ),
     );
 
-    expect(find.text('target'), findsOneWidget);
-    expect(find.text('minimum'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('grade-order-target-legend')),
-      findsOneWidget,
+    final target = tester.widget<Semantics>(
+      find.byKey(const ValueKey('grade-order-G-role')),
     );
-    expect(
-      find.byKey(const ValueKey('grade-order-minimum-legend')),
-      findsOneWidget,
+    final minimum = tester.widget<Semantics>(
+      find.byKey(const ValueKey('grade-order-DG-role')),
     );
+    expect(target.properties.label, 'G · target');
+    expect(minimum.properties.label, 'DG · minimum');
+    expect(find.text('target'), findsNothing);
+    expect(find.text('minimum'), findsNothing);
     for (final grade in ['N', 'G', 'DG', 'XG', 'SG']) {
       expect(find.byKey(ValueKey('grade-order-$grade')), findsOneWidget);
     }
@@ -54,11 +54,11 @@ void main() {
       ),
     );
 
-    expect(find.text('start'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('gem-grade-start-legend')),
-      findsOneWidget,
+    final start = tester.widget<Semantics>(
+      find.byKey(const ValueKey('gem-grade-G-role')),
     );
+    expect(start.properties.label, 'G · start');
+    expect(find.text('start'), findsNothing);
     expect(find.text('target'), findsNothing);
   });
 }

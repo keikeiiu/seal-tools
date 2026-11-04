@@ -282,16 +282,16 @@ void main() {
     final ladder = tester.widget<GradeLadder>(find.byType(GradeLadder));
     expect(ladder.target, 'G');
     expect(ladder.minimum, 'DG');
-    expect(find.text('target'), findsOneWidget);
-    expect(find.text('minimum'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('grade-order-target-legend')),
-      findsOneWidget,
+    expect(find.byKey(const ValueKey('target-grade')), findsOneWidget);
+    expect(find.byKey(const ValueKey('require-grade')), findsOneWidget);
+    final targetNode = tester.widget<Semantics>(
+      find.byKey(const ValueKey('grade-order-G-role')),
     );
-    expect(
-      find.byKey(const ValueKey('grade-order-minimum-legend')),
-      findsOneWidget,
+    final minimumNode = tester.widget<Semantics>(
+      find.byKey(const ValueKey('grade-order-DG-role')),
     );
+    expect(targetNode.properties.label, 'G · target');
+    expect(minimumNode.properties.label, 'DG · minimum');
   });
 
   testWidgets('the grade ladder is fixed and read-only', (tester) async {

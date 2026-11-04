@@ -242,8 +242,10 @@ screen: Save.
   run: Tuner (OCR retries, save captures, capture cleanup), Gem (save empty captures), Quest (cursor
   guard). Folded by default; the controls keep their keys.
 - **Tuner** (`spammer`-style panels): Grades (the shared **GradeLadder** path `N → G → DG → XG → SG`,
-  read-only; the draft target grade and the filter's `require_grade` render as flag/shield role markers
-  with a word legend, so the static ladder explains the run instead of looking like tappable chips),
+  read-only; the target grade uses the primary fill and the filter's `require_grade` a warning
+  border/fill, with no extra icon or word inside the node. The **Target grade** and
+  **Minimum grade** selectors sit directly beneath the ladder; the old Require-grade dropdown in
+  Filter moved here so both roles have their controls in the same place.
   Timing, Springs, Filter (rules/overrides with tonal Add, outlined per-row delete), Advanced (folded);
   geometry in the aside. The aside also carries the demo's **Last run**
   panel once a run has finished: the core's `tool.finished` `summary` (Grade, Attempts, Captures saved,
@@ -252,8 +254,8 @@ screen: Save.
 - **Spammer**: Presets (editing/active pickers, tonal Add/Rename, outlined Duplicate/Delete; selection
   actions hidden when the preset list is empty) · Keys & cooldowns (opening, priority key rows) ·
   Rotation — combos.
-- **Gem**: Grades (the same **GradeLadder**, with the start grade marked as a play role and the run
-  direction stated in the legend), Empty result, Movement; calibrated positions/slots/result area in
+- **Gem**: Grades (the same **GradeLadder**; the start grade uses the info fill, no extra word or
+  icon inside the node), Empty result, Movement; calibrated positions/slots/result area in
   the aside; save-empty-captures folded.
 - **Quest**: Active selection (empty sequence reads as "flow only"), Flows, Sequences; empty lists are
   `EmptyState` with a next action; cursor guard folded.
