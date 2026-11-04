@@ -46,11 +46,15 @@ change was separable; the large cross-crate groups name their ids):
 swap), SHELL-F13 (l10n framework), SHELL-F14 (protocol codegen), CORE-F13 (typed schema codegen),
 HW-F12 (Windows.Graphics.Capture/DXGI), and real code signing (needs an external certificate).
 
+Later in the same round: **SHELL-F5** (`ce09009`) scoped event/log rebuilds to the widgets that
+render them (cards/mini/dock self-listen; logs drawer/status/connecting view own their listener) and
+**TOOL-F10** (`1aa9ce7`) gave long calibration sequences a real held lease — the supervisor refuses
+starts, game requests and other pointer actions while the 21-step gem cycle owns the game.
+
 **Known gaps in this batch:** OCR-F11's recorded-crop corpus and OCR-F15's CTC/logit scorer still need
-real captures/model logits; SHELL-F5's full selective rebuild and TOOL-F10's held-lease worker remain
-open; CORE-F11 only removed the dispatch-side clones; HW-F7's firmware change is not accompanied by a
-FW_VERSION bump, v2 pin update or reflash (hardware verification required); SHELL-F15's README rewrite
-stays at publish per CUTOVER.
+real captures/model logits; CORE-F11 only removed the dispatch-side clones; HW-F7's firmware change is
+not accompanied by a FW_VERSION bump, v2 pin update or reflash (hardware verification required);
+SHELL-F15's README rewrite stays at publish per CUTOVER.
 
 Verification: Rust fmt/clippy/rustdoc clean; `cargo test --workspace --offline` **94 suites, 1,344
 passed, 0 failed, 6 ignored**. Shell analyze clean and **369/369** tests. The launcher was rebuilt and
