@@ -1528,6 +1528,9 @@ impl<S: PetSource> PetTool<S> {
                             // reload. Positive-only: only a fresh count with food in the slot vetoes.
                             let (skip, note) = consider_veto(&reading, self.state[index].failures);
                             if skip {
+                                // PET-F7: the card message is short-lived; the file log keeps the
+                                // full veto reason.
+                                self.note(format!("row {}: {note}", row.name));
                                 self.message = note;
                             } else {
                                 self.state[index].next_minutes = Some(0.0);
@@ -1766,7 +1769,7 @@ impl<S: PetSource> PetTool<S> {
             boarding_running: vec![(index, running)],
             ..seal_config::PetRunStatePatch::default()
         });
-        self.message = folded.message;
+        self.message = folded.message.clone();
         let why = match outcome {
             RowOutcome::Reloaded { .. } => "reloaded and boarded".to_owned(),
             RowOutcome::Deferred => "deferred: boarding window did not open".to_owned(),
@@ -1775,10 +1778,15 @@ impl<S: PetSource> PetTool<S> {
         };
         let facts = self.read_facts();
         let next = self.row_action(index);
+        // PET-F7: the card message is overwritten by the next schedule line, so the durable
+        // pet.log note must carry the fold's own sentence (strikes included) and the drop reason.
         self.note(format!(
-            "row {}: {why}; {next}; {facts}",
-            self.plan.rows[index].name
+            "row {}: {}; {why}; {next}; {facts}",
+            self.plan.rows[index].name, folded.message
         ));
+        if let Some(dropped) = &folded.dropped_log {
+            self.note(dropped.clone());
+        }
     }
 
     #[allow(
@@ -2264,7 +2272,8 @@ impl<S: PetSource> PetTool<S> {
                         .collect();
                     if scheduled.is_empty() {
                         self.phase = Phase::Finished;
-                        self.pending_stop = Some(StopReason::done(every_row_failed_message()));
+                        // PET-F7: every row failed is a failure, not a successful finish.
+                        self.pending_stop = Some(StopReason::error(every_row_failed_message()));
                         continue;
                     }
                     let Some(soonest) = scheduled.into_iter().min_by(|a, b| {
@@ -3576,6 +3585,25 @@ mod loop_tests {
         }
         assert!(saw_defer_wait, "the run must defer instead of clicking");
         assert!(tool.status().message.contains("isn't in front"));
+    }
+
+    /// PET-F7: a row failure must reach `pet.log` with its strike count, because the card message is
+    /// replaced by the schedule line immediately after the fold.
+    #[test]
+    fn a_failed_reload_reaches_the_log_notes() {
+        let mut config = config(1, false, true, false);
+        config["pet"]["reload_on_start"] = serde_json::json!(true);
+        let plan = plan_of(&config);
+        // Look reads empty (due), then VerifyEmpty reads populated -> the end toggle failed.
+        let source = FakeSource::new(vec![empty(), populated()]);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        let _ = run_to_wait(&mut tool);
+        let notes = tool.drain_log_notes();
+        assert!(
+            notes.iter().any(|note| note.contains("failed 1/3")),
+            "the fold's strike sentence reaches the file log: {notes:?}"
+        );
     }
 
     #[test]
