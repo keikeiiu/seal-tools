@@ -61,9 +61,10 @@ regression gating in `d4f624f`/`108e1dd`: normalization ignores segmentation/pun
 run records the baseline, and later runs fail only on an exact-rate drop or CER rise >0.01.
 
 **Known gaps in this batch:** OCR-F15's full CTC/logit scorer still needs retained model logits (the
-model-free substitution fallback is in); HW-F7's firmware still needs a real-board reflash and
-verification; SHELL-F15's README rewrite stays at publish per CUTOVER; the OCR corpus has one real
-case and should grow toward the planned ~50.
+model-free substitution fallback is in); HW-F7's firmware is now flashed and verified as **protocol
+level 3** on the real board, but the 3-second watchdog release remains a manual behavioural check;
+SHELL-F15's README rewrite stays at publish per CUTOVER; the OCR corpus has one real case and should
+grow toward the planned ~50.
 
 Verification: Rust fmt/clippy/rustdoc clean; `cargo test --workspace --offline` **95 suites, 1,355
 passed, 0 failed, 6 ignored**. Shell analyze clean and **371/371** tests. The v2 firmware sketch test
