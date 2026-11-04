@@ -133,6 +133,9 @@ impl Tool for PortTool {
         }
     }
 }
+/// The pair that lets a test observe a blocked `decide` and then release it.
+type StuckGate = (mpsc::Sender<()>, mpsc::Receiver<()>);
+
 /// The injected registry: a script per tool, optional unavailability, an optional opening failure,
 /// and an optional gate that holds the opening phase open so a test can stop a start in flight.
 struct FakeRegistry {
@@ -151,7 +154,7 @@ struct FakeRegistry {
     panicking: Mutex<Vec<ToolId>>,
     /// Tools whose worker blocks in `decide` until released (CORE-F8), with the pair of channels
     /// that let the test observe the block and then let the detached worker leave.
-    stuck: Mutex<HashMap<ToolId, (mpsc::Sender<()>, mpsc::Receiver<()>)>>,
+    stuck: Mutex<HashMap<ToolId, StuckGate>>,
     decisions: Arc<Mutex<Vec<ToolId>>>,
 }
 

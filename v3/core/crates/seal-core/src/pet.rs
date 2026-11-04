@@ -1281,6 +1281,16 @@ impl Visit {
     }
 }
 
+/// The two one-shot pass flags, grouped so the tool itself stays below clippy's bool-count limit and
+/// the PET-F2/F6 "override pending" / "a pass acted" state reads as one concept.
+#[derive(Debug, Clone, Copy)]
+struct PassState {
+    /// `pet.reload_on_start` is a one-shot override until the first Look scheduled from it.
+    start_override_pending: bool,
+    /// Whether the pass that is about to schedule acted on a row (found due rows/started a visit).
+    acted: bool,
+}
+
 /// The resident pet feeder's loop: the plan/read-seam adapter around the domain's schedule, reload
 /// and fold rules.
 pub struct PetTool<S: PetSource> {
@@ -1302,11 +1312,10 @@ pub struct PetTool<S: PetSource> {
     /// `pet.reload_on_start` is a one-shot override: true until the first Look has scheduled from it.
     /// Every later look schedules from the readings, so the option cannot force a reload on every wake
     /// — and, with an unreadable row, cannot turn the loop into a zero-delay click cycle. PET-F6.
-    start_override_pending: bool,
+    pass: PassState,
     /// Whether the pass that is about to schedule acted on a row (found due rows and started a visit).
     /// A zero-minute schedule with nothing acted on waits [`MIN_NO_ACTION_WAIT_MINUTES`] instead of
     /// reopening immediately. PET-F6.
-    acted_this_pass: bool,
     /// The long wait the runner was just asked to take, in minutes. The next `decide` subtracts it
     /// from every row's `next_minutes` before the fresh look, so the row that was scheduled for that
     /// wake is genuinely DUE — even when its slot/feeders are unreadable on this pass. PET-F2.
@@ -1353,8 +1362,10 @@ impl<S: PetSource> PetTool<S> {
             pending_stop: None,
             visit: None,
             food_used,
-            start_override_pending,
-            acted_this_pass: false,
+            pass: PassState {
+                start_override_pending,
+                acted: false,
+            },
             pending_wait_minutes: None,
             deferred_message: None,
             message,
@@ -1524,7 +1535,7 @@ impl<S: PetSource> PetTool<S> {
         PetScheduleSettings {
             items_per_minute: self.plan.items_per_minute.max(1),
             wait_after_empty_minutes: self.plan.wait_after_empty_minutes,
-            reload_on_start: self.start_override_pending,
+            reload_on_start: self.pass.start_override_pending,
         }
     }
 
@@ -1619,11 +1630,11 @@ impl<S: PetSource> PetTool<S> {
         // The start override is ONE-SHOT: this Look has scheduled from it, so every later look
         // schedules from its readings (PET-F6). Cleared even on a retry/early break — the override is
         // about the run's first pass, not about the read succeeding.
-        self.start_override_pending = false;
+        self.pass.start_override_pending = false;
         // A pass acts only when it found due rows. If it did not, a zero-minute soonest must wait the
         // floor rather than reopen at once — that is what broke the unknown-reading case into a
         // zero-delay click loop (PET-F6; the floor is applied in `Phase::Wait`).
-        self.acted_this_pass = !due.is_empty();
+        self.pass.acted = !due.is_empty();
         if retry {
             for index in self.active_rows() {
                 if self.state[index].next_minutes.is_some() {
@@ -2413,7 +2424,7 @@ impl<S: PetSource> PetTool<S> {
                         continue;
                     };
                     let mut minutes = self.state[soonest].next_minutes.unwrap_or(0.0);
-                    if minutes <= 0.0 && !self.acted_this_pass {
+                    if minutes <= 0.0 && !self.pass.acted {
                         // A pass that reloaded nothing must not reopen at once: an unreadable row falls
                         // back to a zero-minute "reload now" on the first pass, and reopening there
                         // clicked menu/feed/close every few seconds forever (PET-F6). The review's

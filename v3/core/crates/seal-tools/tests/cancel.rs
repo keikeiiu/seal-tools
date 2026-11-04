@@ -208,7 +208,7 @@ fn an_absurd_wait_is_clamped_to_a_day() {
 
         assert_eq!(control.sleep(&clock, absurd), Ok(()));
 
-        let expected = (MAX_WAIT_SECONDS / TICK_SECONDS) as usize;
+        let expected = 1_728_000_usize; // MAX_WAIT_SECONDS / TICK_SECONDS = 86_400 / 0.05
         assert_eq!(
             clock.ticks.get(),
             expected,
@@ -402,9 +402,6 @@ fn ordinary_timer_drift_is_not_a_resume() {
 
 #[test]
 fn a_timed_wait_still_observes_a_stop() {
-    let token = CancelToken::new();
-    let control = RunControl::new(token.clone());
-    let clock = TimeKeepingClock::new(0.0);
     // Cancels on the first tick, which must be seen during the wait rather than at the deadline.
     struct Cancelling(TimeKeepingClock, CancelToken);
     impl Clock for Cancelling {
@@ -419,6 +416,10 @@ fn a_timed_wait_still_observes_a_stop() {
             self.0.wall_seconds()
         }
     }
+
+    let token = CancelToken::new();
+    let control = RunControl::new(token.clone());
+    let clock = TimeKeepingClock::new(0.0);
     let cancelling = Cancelling(clock, token);
 
     assert_eq!(control.sleep(&cancelling, 5.0), Err(Cancelled));

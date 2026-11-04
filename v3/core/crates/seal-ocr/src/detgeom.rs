@@ -537,7 +537,7 @@ pub fn quad_perimeter(quad: &Quad) -> f64 {
 }
 
 /// The quad's width: the mean of its two horizontal edge lengths. The corner ORDER matters — see
-/// [`order_corners`] (top-left first makes `0→1` and `3→2` the horizontal edges).
+/// `order_corners` (top-left first makes `0→1` and `3→2` the horizontal edges).
 #[must_use]
 pub fn quad_width(quad: &Quad) -> f64 {
     f64::midpoint(

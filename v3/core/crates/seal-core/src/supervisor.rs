@@ -191,7 +191,7 @@ impl Supervisor {
 
     /// [`Self::start`] with an explicit shutdown deadline (CORE-F8). The supervisor tests use a short
     /// budget so a worker stuck in a blocking call is provable without waiting the production five
-    /// seconds; production always uses [`SHUTDOWN_BUDGET`].
+    /// seconds; production always uses `SHUTDOWN_BUDGET`.
     pub fn start_with_shutdown_budget(
         registry: Arc<dyn ToolRegistry>,
         bus: EventBus,
