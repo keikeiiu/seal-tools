@@ -42,7 +42,7 @@ void main() {
         home: Scaffold(
           body: SizedBox(
             width: 400,
-            height: 400,
+            height: 500,
             child: CalibrationFramePicture(
               frame: _frame('f1'),
               maxHeight: 300,
@@ -72,7 +72,9 @@ void main() {
     );
   });
 
-  testWidgets('a parent rebuild does not decode the frame again', (tester) async {
+  testWidgets('a parent rebuild does not decode the frame again', (
+    tester,
+  ) async {
     var decodes = 0;
     Uint8List? countingDecoder(String data) {
       decodes++;
@@ -105,7 +107,9 @@ void main() {
     expect(decodes, 1);
   });
 
-  testWidgets('a stored crop decodes once across parent rebuilds', (tester) async {
+  testWidgets('a stored crop decodes once across parent rebuilds', (
+    tester,
+  ) async {
     var decodes = 0;
     Uint8List? countingDecoder(String data) {
       decodes++;
