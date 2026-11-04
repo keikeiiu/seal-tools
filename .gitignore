@@ -41,6 +41,8 @@ slot_captures/
 # Documentation screenshots ARE committed — the rule above exists to keep runtime captures and
 # calibration images out, and docs/images holds neither. Needs to come after *.png to take effect.
 !v2/docs/images/*.png
+# OCR regression corpus cases are committed test data, not runtime captures (OCR-F11).
+!v3/core/fixtures/ocr/**/*.png
 
 # ── Build artifacts ────────────────────────────────────
 __pycache__/
