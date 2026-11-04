@@ -1056,6 +1056,9 @@ fn ensure_portable_ui(base: &mut Value) {
     ui_object
         .entry("return_after_run".to_owned())
         .or_insert(Value::Bool(false));
+    ui_object
+        .entry("theme".to_owned())
+        .or_insert(Value::String("dark".to_owned()));
     ui_object.entry("quick_dock".to_owned()).or_insert_with(|| {
         let mut shape = Map::new();
         shape.insert(

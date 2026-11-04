@@ -19,6 +19,24 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-04 (39) — Appearance: light / dark / follow-system lands on the calibration branch
+
+The calibration branch had stayed dark-only while the appearance work lived on `v3-core`. The player
+asked for the toggle here, so the existing implementation was ported rather than reinvented.
+
+- Both `ThemeData` brightnesses now come from `buildShellTheme(brightness:)`; `ShellColors` has a light
+  semantic set, and `ShellApp` maps the model's `ShellThemeMode` to `ThemeMode` on `MaterialApp`.
+- **Setup → Appearance** offers Follow system / Light / Dark and saves immediately as the portable
+  `settings.ui.theme` (`system|light|dark`; default dark so existing installs do not change on upgrade).
+- The native title bar follows the same choice through the runner's `setTitleBarTheme(0|1|2)` host call;
+  system mode keeps following Windows when the system setting changes.
+- Core `ensure_portable_ui` seeds the `theme` leaf so a hand-edited or reloaded config carries it.
+
+Verification: shell `flutter analyze --fatal-infos` clean, `dart format` clean, `flutter test --no-pub`
+**355/355**, Windows debug build green; `seal-config` tests **24/24**. The `seal-core` config integration
+test could not link in this environment because the offline ONNX Runtime is absent; the store/config
+crate coverage for the new portable leaf is green.
+
 ## 2026-11-04 (38) — the mark workspace becomes a fixed canvas with independently scrolling sides
 
 The demo's central promise is that the game frame and the fields editing it never scroll away from
@@ -131,6 +149,24 @@ increment keeps the payloads and tests and rebuilds the presentation:
 - Tests pin the new box cards, step chips, all-box/cursor overlays, the 19 px pitch + 300×200 region
   summary, the Read-result card and the session target selection/scroll; the full shell gate is
   **353/353**, analyze `--fatal-infos` clean, format clean and the Windows debug build OK.
+## 2026-11-03 (34) — Appearance: light, dark or follow Windows
+
+The player asked for a Setup choice of light / dark / follow-system. The shell had been dark-only, so
+this increment makes both `ThemeData`s first-class instead of flipping a colour: `buildShellTheme` takes
+a `brightness`, `ShellColors` gained a light set (semantic roles tuned for the light surface), and
+`ShellApp` maps the model's `ShellThemeMode` to `ThemeMode` on `MaterialApp`.
+
+- **Persistence:** portable `settings.ui.theme` (`system|light|dark`), default **dark** so an install
+  that predates the setting keeps its look; `ensure_portable_ui` carries the leaf and the core config
+  test covers apply/local/reload/hand-written values alongside the other `ui` fields.
+- **Setup:** a new **Appearance** section offers Follow system / Light / Dark; the choice saves
+  immediately and the shell rebuilds through the model notifier.
+- **Native chrome:** the runner gained `setTitleBarTheme(0|1|2)` over `seal/host`. `Win32Window` keeps
+  the chosen mode so `WM_DWMCOLORIZATIONCOLORCHANGED` re-applies an explicit light/dark choice instead
+  of snapping back to Windows, while system mode keeps following Windows.
+- **Tests:** `ShellApp`'s ThemeMode/theme extension mapping, the model's save/restore + title-bar calls,
+  and the Setup chip payload. Shell **336/336**, analyze `--fatal-infos` clean, format clean, Windows
+  debug build incl. the runner change OK; core config test green.
 
 ## 2026-11-02 (33) — the shell lint/quality gate gets sharper
 

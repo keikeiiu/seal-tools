@@ -167,6 +167,9 @@ Hold Space 現在是自己的一張卡片（以前是頂端列的切換鈕），
 顯示的行是核心的原文。欄位正確後按 **Save**；切換變體會先解析、驗證、載入字典，最後才寫入，所以不會
 切到一半。
 
+Setup 也有一個 **Appearance** 區塊：**Follow system**、**Light**、**Dark**。選擇會立即儲存（整個外殼與
+標題列一起切換），並保存在可攜設定裡。預設是 **Dark**，所以既有安裝會維持目前的外觀，直到你主動更改。
+
 ### 3.2 校正門檻
 
 工具在它需要的標記完成校正前會拒絕啟動。拒絕訊息會指出要儲存的**標記**與唯一的 **Calibrate** 分頁：
@@ -444,8 +447,9 @@ Arduino 分頁是唯讀的連線卡加上測試介面。它開啟時會呼叫 `b
 
 ### 5.9 Setup
 
-視窗、客戶端變體與板子設定，加上 **Find window**／**Measure**／**Probe board** 與會儲存的
-**Use detected title** 動作。見第 3.1 節 —— 同一個分頁就是第一次啟動的設定介面。
+視窗、客戶端變體與板子設定，加上 **Find window**／**Measure**／**Probe board**、會儲存的
+**Use detected title** 動作，以及 **Appearance** 外觀選項（Follow system／Light／Dark）。見第 3.1 節
+—— 同一個分頁就是第一次啟動的設定介面。
 
 ### 5.10 Hotkeys
 

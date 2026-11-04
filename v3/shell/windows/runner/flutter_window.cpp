@@ -252,6 +252,16 @@ bool FlutterWindow::OnCreate() {
           }
           SetMiniChrome(*mini);
           result->Success();
+        } else if (call.method_name() == "setTitleBarTheme") {
+          // 0 follows Windows, 1 forces light, 2 forces dark.
+          const auto* mode = std::get_if<int32_t>(call.arguments());
+          if (mode == nullptr || *mode < 0 || *mode > 2) {
+            result->Error("bad_arguments",
+                          "setTitleBarTheme expects 0, 1 or 2");
+            return;
+          }
+          SetTitleBarTheme(*mode);
+          result->Success();
         } else if (call.method_name() == "setWindowRect") {
           const auto* arguments =
               std::get_if<flutter::EncodableMap>(call.arguments());

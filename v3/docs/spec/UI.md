@@ -14,11 +14,18 @@ phases, rows, counts and sentences still come from the core's `state`/`log`/`ref
 `lib/ui/tokens.dart` is the single place a new value comes from (`lib/ui/theme.dart` re-exports it and
 builds the `ThemeData`).
 
-- **Colour.** `ColorScheme.fromSeed(0xFF3B82F6, dark)` is kept. A `ShellColors` `ThemeExtension` adds
-  the meanings M3 does not name: `success` #7EE2B8 (+ `onSuccess`, `successContainer`,
-  `onSuccessContainer`), `warning` #F2CC7B (+ its pair/container), `info` #9ECAFF. `blocked` is
-  `colorScheme.error`. Colour is never the only channel: chips carry a dot + word, selected cells a
-  check, banners an icon.
+- **Colour.** `ColorScheme.fromSeed(0xFF3B82F6, brightness)` builds both themes. A `ShellColors`
+  `ThemeExtension` adds the meanings M3 does not name: dark uses `success` #7EE2B8 (+ `onSuccess`,
+  `successContainer`, `onSuccessContainer`), `warning` #F2CC7B (+ its pair/container), `info` #9ECAFF;
+  light installs the matching darker `success`/`warning`/`info` plus inverted containers so a StatusChip
+  keeps AA contrast on the light surface. `blocked` is `colorScheme.error`. Colour is never the only
+  channel: chips carry a dot + word, selected cells a check, banners an icon.
+- **Brightness.** Setup's **Appearance** section offers **Follow system / Light / Dark**; the shell
+  installs both `ThemeData`s on `MaterialApp` and maps the choice to `ThemeMode`. The choice is the
+  portable `settings.ui.theme` (`system|light|dark`, default `dark` so the original shell does not
+  change appearance on upgrade). The native title bar follows the same choice through the runner's
+  `setTitleBarTheme` host call (`0` system, `1` light, `2` dark), and re-follows Windows when the
+  system setting changes in system mode.
 - **Type.** The `textTheme` is declared explicitly: `headlineSmall` 22/600 (page title),
   `titleMedium` 16/600 (card/dialog), `titleSmall` 14/600 (section), `labelLarge` 13/600,
   `bodyMedium` 14/400 (body/prose), `bodySmall` 12.5/400 (meta — never prose alone), `labelSmall`
@@ -355,9 +362,10 @@ of its own adopts the newest live shelf frame so it never starts blank while a c
   a "moves the cursor" warning. No filled action on the page.
 - **Hotkeys:** the accepted-name help appears once above the group; raw stored codes moved into a
   section-header tooltip; the four fields keep their key-name/parse/save commands.
-- **Setup:** Detect/Measure/Probe are outlined probes under a caption that names the one writing action;
-  **Use detected title** is the single filled action with "applies a config save" under it; the detected-
-  vs-configured mismatch raises a warning banner.
+- **Setup:** **Appearance** chooses Follow system / Light / Dark and saves it immediately; **Quick dock**
+  chooses its placement and idle behaviour; Detect/Measure/Probe are outlined probes under a caption
+  that names the one writing action; **Use detected title** is the single filled action with "applies a
+  config save" under it; the detected-vs-configured mismatch raises a warning banner.
 
 ## Crash / connecting surfaces
 
@@ -382,7 +390,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 353/353; `dart format` clean. Every
+Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 355/355; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,

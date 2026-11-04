@@ -34,6 +34,7 @@ import 'host_actions.dart';
 import 'key_names_result.dart';
 import 'logs.dart';
 import 'pet_preflight.dart';
+import 'theme_preference.dart';
 import 'tools.dart';
 import 'version.dart';
 
@@ -227,6 +228,9 @@ class ShellModel extends ChangeNotifier {
   WindowRect? _dockRestoreRect;
   WindowRect? _dockWorkArea;
   WindowRect? _dockRectValue;
+
+  // The app appearance, persisted as `settings.ui.theme` (dark is the pre-setting default).
+  ShellThemeMode _themeMode = ShellThemeMode.dark;
 
   // Last-used Buy choice for the dock's next run (per-run args; session state, not config).
   String? _dockBuyPreset;
@@ -450,6 +454,7 @@ class ShellModel extends ChangeNotifier {
     // The shell owns its own placement preference in the portable `settings.ui.quick_dock` block
     // (`placement` + `collapsed`); take it before any compact window is shown.
     _restoreDockPreference();
+    _restoreThemePreference();
     // The config mirror is now the truth; apply the persisted pin exactly once. Hide/show stays
     // untouched: this is one SetWindowPos, not part of the capture's frame lifecycle.
     await _applyAlwaysOnTopFromMirror();
@@ -1564,6 +1569,58 @@ class ShellModel extends ChangeNotifier {
       await _resizeDockGeometry();
     }
     await _saveDockPreference();
+  }
+
+  /// The app appearance, persisted as the portable `settings.ui.theme` value.
+  ShellThemeMode get themeMode => _themeMode;
+
+  /// Switch the whole shell (and the native title bar) between light, dark and the Windows setting.
+  Future<void> setThemeMode(ShellThemeMode mode) async {
+    if (mode == _themeMode) {
+      return;
+    }
+    _themeMode = mode;
+    notifyListeners();
+    unawaited(_applyTitleBarTheme());
+    final outcome = await saveConfig({
+      'settings': {
+        'ui': {'theme': mode.wire},
+      },
+    });
+    if (!outcome.saved) {
+      logs.addShellNote(
+        'theme preference was not saved: ${outcome.errorLines.join(' · ')}',
+      );
+    }
+  }
+
+  /// Reads the portable `settings.ui.theme`; absent/invalid values keep the dark default.
+  void _restoreThemePreference() {
+    final settings = asJsonMap(config.config['settings']);
+    var ui = asJsonMap(settings['ui']);
+    if (ui['theme'] == null) {
+      ui = asJsonMap(config.config['ui']);
+    }
+    final mode = ShellThemeMode.fromWire(asString(ui['theme']));
+    if (mode != _themeMode) {
+      _themeMode = mode;
+      notifyListeners();
+    }
+    unawaited(_applyTitleBarTheme());
+  }
+
+  /// 0 follows the Windows setting, 1 forces light, 2 forces dark (the runner owns DWM).
+  Future<void> _applyTitleBarTheme() async {
+    final mode = switch (_themeMode) {
+      ShellThemeMode.system => 0,
+      ShellThemeMode.light => 1,
+      ShellThemeMode.dark => 2,
+    };
+    try {
+      await host.setTitleBarTheme(mode);
+    } catch (error) {
+      logs.addShellNote('cannot match the title bar to the theme: $error');
+    }
   }
 
   /// Last-used Buy preset/count, kept for the dock session so reopening the dock after a run does

@@ -233,7 +233,7 @@ Win32Window::MessageHandler(HWND hwnd,
       return 0;
 
     case WM_DWMCOLORIZATIONCOLORCHANGED:
-      UpdateTheme(hwnd);
+      ApplyTitleBarTheme();
       return 0;
   }
 
@@ -341,6 +341,28 @@ bool Win32Window::OnCreate() {
 
 void Win32Window::OnDestroy() {
   // No-op; provided for subclasses.
+}
+
+void Win32Window::SetTitleBarTheme(int mode) {
+  if (mode < 0 || mode > 2) {
+    mode = 0;
+  }
+  title_bar_theme_ = mode;
+  ApplyTitleBarTheme();
+}
+
+void Win32Window::ApplyTitleBarTheme() {
+  HWND window = GetHandle();
+  if (window == nullptr) {
+    return;
+  }
+  if (title_bar_theme_ == 0) {
+    UpdateTheme(window);
+    return;
+  }
+  BOOL enable_dark_mode = title_bar_theme_ == 2;
+  DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                        &enable_dark_mode, sizeof(enable_dark_mode));
 }
 
 void Win32Window::UpdateTheme(HWND const window) {

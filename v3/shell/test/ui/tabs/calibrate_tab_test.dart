@@ -86,6 +86,11 @@ class _FakeHost implements HostActions {
   }
 
   @override
+  Future<void> setTitleBarTheme(int mode) async {
+    // The Calibrate surface never switches the shell theme; the model's own fake host covers it.
+  }
+
+  @override
   Future<void> setAlwaysOnTop(bool enabled) async {
     // The capture lifecycle does not use the pin; the model's own fake host covers it.
   }

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:seal_shell/app/dock_placement.dart';
+import 'package:seal_shell/app/theme_preference.dart';
 import 'package:seal_shell/ui/tabs/setup_tab.dart';
 import 'package:seal_shell/ui/theme.dart';
 
@@ -376,5 +377,27 @@ void main() {
                 as Map<String, dynamic>)['ui']
             as Map<String, dynamic>;
     expect(afterUi['return_after_run'], isTrue);
+  });
+
+  testWidgets('Appearance chips save the chosen theme', (tester) async {
+    final harness = await _pumpSetup(tester);
+    harness.answerConfigCommands();
+
+    final light = find.byKey(const ValueKey('setup-theme-light'));
+    await tester.ensureVisible(light);
+    await tester.pump();
+    await tester.tap(light);
+    await _flush(tester);
+
+    expect(harness.model.themeMode, ShellThemeMode.light);
+    final apply = harness.lastSentWithCmd('config.apply');
+    expect(apply, isNotNull);
+    final sections =
+        (apply!['args'] as Map<String, dynamic>)['sections']
+            as Map<String, dynamic>;
+    final ui =
+        (sections['settings'] as Map<String, dynamic>)['ui']
+            as Map<String, dynamic>;
+    expect(ui['theme'], 'light');
   });
 }

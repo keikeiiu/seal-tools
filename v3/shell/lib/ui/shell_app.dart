@@ -17,11 +17,23 @@ class ShellApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Seal Tools',
-      debugShowCheckedModeBanner: false,
-      theme: buildShellTheme(),
-      home: ShellPage(model: model),
+    return ListenableBuilder(
+      listenable: model,
+      builder: (context, _) {
+        final mode = switch (model.themeMode) {
+          ShellThemeMode.system => ThemeMode.system,
+          ShellThemeMode.light => ThemeMode.light,
+          ShellThemeMode.dark => ThemeMode.dark,
+        };
+        return MaterialApp(
+          title: 'Seal Tools',
+          debugShowCheckedModeBanner: false,
+          theme: buildShellTheme(brightness: Brightness.light),
+          darkTheme: buildShellTheme(brightness: Brightness.dark),
+          themeMode: mode,
+          home: ShellPage(model: model),
+        );
+      },
     );
   }
 }

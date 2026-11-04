@@ -147,6 +147,10 @@ abstract class HostActions {
   /// A no-op on hosts that cannot change the window style.
   Future<void> setMiniChrome(bool mini) async {}
 
+  /// Match the native title bar to the app appearance: 0 follows the Windows setting, 1 forces light,
+  /// 2 forces dark. A no-op on hosts without native chrome.
+  Future<void> setTitleBarTheme(int mode) async {}
+
   /// The shell window's current rect in logical screen coordinates.
   Future<WindowRect> windowRect();
 
@@ -233,6 +237,10 @@ class MethodChannelHostActions implements HostActions {
   @override
   Future<void> setMiniChrome(bool mini) =>
       _channel.invokeMethod<void>('setMiniChrome', mini);
+
+  @override
+  Future<void> setTitleBarTheme(int mode) =>
+      _channel.invokeMethod<void>('setTitleBarTheme', mode);
 
   @override
   Future<WindowRect> windowRect() async {

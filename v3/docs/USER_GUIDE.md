@@ -198,6 +198,10 @@ the core to:
 Their lines are the core's own, verbatim. Press **Save** when the fields are right; a variant switch is
 resolved, validated, its dictionary loaded, and only then written, so it cannot half-switch.
 
+Setup also has an **Appearance** section: **Follow system**, **Light** or **Dark**. It saves immediately
+(the shell and its title bar switch together), and the choice is kept in the portable config. **Dark**
+is the default, so an existing install keeps its current look until you change it.
+
 ### 3.2 The calibration gate
 
 Tools refuse to start until the marks they use are calibrated. The refusal names the **mark** to save
@@ -534,9 +538,9 @@ while a tool runs.
 
 ### 5.9 Setup
 
-The window, client variant and board settings, plus **Find window**/**Measure**/**Probe board** and the
-saving **Use detected title** action. See section 3.1 — the same tab is the first-run configuration
-surface.
+The window, client variant and board settings, plus **Find window**/**Measure**/**Probe board**, the
+saving **Use detected title** action, and the **Appearance** choice (Follow system / Light / Dark). See
+section 3.1 — the same tab is the first-run configuration surface.
 
 ### 5.10 Hotkeys
 

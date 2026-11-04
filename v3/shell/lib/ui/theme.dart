@@ -1,10 +1,11 @@
-/// The shell theme: M3 dark from the blue seed, plus the token layer the redesign needs
+/// The shell theme: M3 from the blue seed, plus the token layer the redesign needs
 /// ([PLAN-V3-UI-UX.md] §4): `ShellColors` semantics, a declared type scale, card/input defaults.
 ///
-/// Density stays compact (the tool is used beside a full-screen game) and colours still come from
-/// `ColorScheme.fromSeed(0xFF3B82F6, dark)` — the palette was not reworked. This file also re-exports
-/// [tokens.dart] so a widget that already imports the theme gets `ShellWidth`/`ShellRadius` without a
-/// second import; the call sites still name a token, never a raw value.
+/// Density stays compact (the tool is used beside a full-screen game). Both brightnesses use
+/// `ColorScheme.fromSeed(0xFF3B82F6, brightness)`; the default remains dark so an install that
+/// predates the theme setting keeps its original appearance. This file also re-exports [tokens.dart]
+/// so a widget that already imports the theme gets `ShellWidth`/`ShellRadius` without a second import;
+/// the call sites still name a token, never a raw value.
 ///
 /// [PLAN-V3-UI-UX.md]: ../../../docs/plans/PLAN-V3-UI-UX.md
 library;
@@ -25,12 +26,12 @@ abstract final class ShellSpace {
   static const double xl = 24;
 }
 
-/// The app theme. Dark by default because the tool is used beside a full-screen game at night; the
-/// density is compact because a card carries a message, up to a few rows and two buttons.
-ThemeData buildShellTheme() {
+/// The app theme. [brightness] defaults to dark (the shell's original look and the setting default);
+/// the shell installs both brightnesses on [MaterialApp] and lets the player choose.
+ThemeData buildShellTheme({Brightness brightness = Brightness.dark}) {
   final scheme = ColorScheme.fromSeed(
     seedColor: const Color(0xFF3B82F6),
-    brightness: Brightness.dark,
+    brightness: brightness,
   );
   final base = ThemeData(
     colorScheme: scheme,
@@ -82,7 +83,9 @@ ThemeData buildShellTheme() {
 
   return base.copyWith(
     textTheme: textTheme,
-    extensions: const <ThemeExtension<dynamic>>[ShellColors.dark],
+    extensions: <ThemeExtension<dynamic>>[
+      brightness == Brightness.dark ? ShellColors.dark : ShellColors.light,
+    ],
     cardTheme: CardThemeData(
       margin: EdgeInsets.zero,
       elevation: 0,

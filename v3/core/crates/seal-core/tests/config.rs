@@ -681,13 +681,16 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
     let hello = session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
     let rev = hello["rev"].as_u64().expect("hello carries the rev");
 
-    let sections = json!({"settings": {"ui": {"quick_dock": {
-        "placement": "bottom_right",
-        "collapsed": true,
-        "behavior": "always_open",
-        "tiles": ["spammer", "buy", "pin:Junk row"],
-        "pins": [{"name": "Junk row", "slots": [0, 1, 2, 3]}],
-    }}}});
+    let sections = json!({"settings": {"ui": {
+        "theme": "light",
+        "quick_dock": {
+            "placement": "bottom_right",
+            "collapsed": true,
+            "behavior": "always_open",
+            "tiles": ["spammer", "buy", "pin:Junk row"],
+            "pins": [{"name": "Junk row", "slots": [0, 1, 2, 3]}],
+        },
+    }}});
     let validated = session.result("config.validate", json!({"sections": sections}));
     assert_eq!(validated["errors"], json!([]));
     assert_eq!(validated["warnings"], json!([]));
@@ -704,6 +707,10 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
     assert_eq!(
         applied["sections"]["settings"]["ui"]["quick_dock"]["behavior"],
         "always_open"
+    );
+    assert_eq!(
+        applied["sections"]["settings"]["ui"]["theme"], "light",
+        "apply echoes the effective app theme"
     );
     assert_eq!(
         applied["sections"]["settings"]["ui"]["quick_dock"]["tiles"],
@@ -731,6 +738,7 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
         local["settings"]["ui"]["quick_dock"]["behavior"],
         "always_open"
     );
+    assert_eq!(local["settings"]["ui"]["theme"], "light");
     assert_eq!(
         local["settings"]["ui"]["quick_dock"]["tiles"],
         json!(["spammer", "buy", "pin:Junk row"])
@@ -752,18 +760,20 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
         local_after["settings"]["ui"]["quick_dock"]["pins"][0]["name"],
         "Junk row"
     );
+    assert_eq!(local_after["settings"]["ui"]["theme"], "light");
 
     let reloaded = session.result("config.reload", json!({}));
     assert_eq!(
         reloaded["config"]["ui"]["quick_dock"]["placement"], "bottom_right",
         "the merged config carries the persisted preference"
     );
+    assert_eq!(reloaded["config"]["ui"]["theme"], "light");
 
     // A hand-written preference loads too (this is what a player migrating a setup file sees).
     let hand_written = config_root();
     hand_written.write(
         "config/local.yaml",
-        "settings:\n  ui:\n    quick_dock:\n      placement: top_centre\n      collapsed: true\n      behavior: always_open\n",
+        "settings:\n  ui:\n    theme: system\n    quick_dock:\n      placement: top_centre\n      collapsed: true\n      behavior: always_open\n",
     );
     let mut hand_session = Session::start(hand_written.path());
     let hand_hello = hand_session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
@@ -776,4 +786,5 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
         hand_hello["config"]["ui"]["quick_dock"]["behavior"],
         "always_open"
     );
+    assert_eq!(hand_hello["config"]["ui"]["theme"], "system");
 }

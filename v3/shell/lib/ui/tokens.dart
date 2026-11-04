@@ -42,6 +42,20 @@ class ShellColors extends ThemeExtension<ShellColors> {
     info: Color(0xFF9ECAFF),
   );
 
+  /// Tuned for the light `surface`; the same semantic roles as [dark], with the containers inverted so
+  /// the StatusChip text keeps AA contrast on a white/near-white page.
+  static const ShellColors light = ShellColors(
+    success: Color(0xFF176B4D),
+    onSuccess: Color(0xFFFFFFFF),
+    successContainer: Color(0xFFD5F3E4),
+    onSuccessContainer: Color(0xFF063B2A),
+    warning: Color(0xFF7A5000),
+    onWarning: Color(0xFFFFFFFF),
+    warningContainer: Color(0xFFFFE7BE),
+    onWarningContainer: Color(0xFF3A2702),
+    info: Color(0xFF1D5FA8),
+  );
+
   final Color success;
   final Color onSuccess;
   final Color successContainer;
@@ -140,7 +154,8 @@ abstract final class ShellText {
   );
 }
 
-/// Convenience for the semantic extension; the theme always installs [ShellColors.dark].
+/// Convenience for the semantic extension; the theme installs [ShellColors.dark] or
+/// [ShellColors.light] to match its brightness.
 extension ShellColorsContext on BuildContext {
   ShellColors get shellColors =>
       Theme.of(this).extension<ShellColors>() ?? ShellColors.dark;

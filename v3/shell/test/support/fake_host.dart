@@ -82,6 +82,9 @@ class FakeHost implements HostActions {
   /// Every mini-chrome toggle the shell asked for, in order.
   final List<bool> miniChromeCalls = <bool>[];
 
+  /// Every native title-bar theme request: 0 system, 1 light, 2 dark.
+  final List<int> titleBarThemeCalls = <int>[];
+
   /// How many times `windowRect()` was asked (the restore's baseline read).
   int windowRectQueries = 0;
 
@@ -139,6 +142,14 @@ class FakeHost implements HostActions {
       throw StateError('the host refused setMiniChrome');
     }
     miniChromeCalls.add(mini);
+  }
+
+  @override
+  Future<void> setTitleBarTheme(int mode) async {
+    if (failWindowCalls) {
+      throw StateError('the host refused setTitleBarTheme');
+    }
+    titleBarThemeCalls.add(mode);
   }
 
   @override

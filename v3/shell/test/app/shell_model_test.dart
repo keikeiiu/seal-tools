@@ -1165,6 +1165,44 @@ void main() {
       },
     );
 
+    test('theme preference is saved, applied and restored', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect();
+      harness.answerConfigCommands();
+      await settle();
+      expect(harness.model.themeMode, ShellThemeMode.dark);
+      expect(host.titleBarThemeCalls.last, 2, reason: 'dark title bar');
+
+      await harness.model.setThemeMode(ShellThemeMode.light);
+      await settle();
+      expect(harness.model.themeMode, ShellThemeMode.light);
+      expect(host.titleBarThemeCalls.last, 1);
+      final args =
+          harness.lastSentWithCmd('config.apply')!['args']
+              as Map<String, dynamic>;
+      final sections = args['sections'] as Map<String, dynamic>;
+      final settings = sections['settings'] as Map<String, dynamic>;
+      final ui = settings['ui'] as Map<String, dynamic>;
+      expect(ui['theme'], 'light');
+
+      final restoredHost = FakeHost();
+      final restored = AppHarness(host: restoredHost);
+      addTearDown(restored.dispose);
+      await restored.connect(
+        config: {
+          'window': {'title': 'TW_LIVE'},
+          'settings': {
+            'ui': {'theme': 'light'},
+          },
+        },
+      );
+      await settle();
+      expect(restored.model.themeMode, ShellThemeMode.light);
+      expect(restoredHost.titleBarThemeCalls.last, 1);
+    });
+
     test('pinned Sell actions and tile order persist and restore', () async {
       final host = FakeHost();
       final harness = AppHarness(host: host);

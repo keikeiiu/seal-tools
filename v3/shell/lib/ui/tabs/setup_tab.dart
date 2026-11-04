@@ -260,6 +260,29 @@ class _SetupTabState extends State<SetupTab>
             ],
           ),
           EditorSection(
+            title: 'Appearance',
+            children: [
+              const ShellProse(
+                'Choose the shell look. Follow system tracks the Windows light/dark setting; '
+                'Light and Dark keep it fixed. The title bar follows the same choice.',
+              ),
+              const SizedBox(height: ShellSpace.sm),
+              Wrap(
+                spacing: ShellSpace.sm,
+                runSpacing: ShellSpace.sm,
+                children: [
+                  for (final mode in ShellThemeMode.values)
+                    ChoiceChip(
+                      key: ValueKey('setup-theme-${mode.wire}'),
+                      label: Text(mode.label),
+                      selected: model.themeMode == mode,
+                      onSelected: (_) => unawaited(model.setThemeMode(mode)),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          EditorSection(
             title: 'Quick dock',
             children: [
               const ShellProse(
