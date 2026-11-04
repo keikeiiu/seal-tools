@@ -59,7 +59,7 @@ use seal_domain::tools::pet::{
     PLACE_ATTEMPTS, PetCard, PetFeeding, PetRowSetup, PetRowView, PetScheduleSettings, PetSetup,
     ReloadStep, RowOutcome, ScheduleRead, build_card, consider_veto, every_row_failed_message,
     fold_back, food_load, pet_did_not_go_in, rate_for, reload_step_message, schedule_for,
-    visit_opening_message,
+    visit_opening_message, window_left_front_message, window_not_in_front_message,
 };
 use seal_domain::tools::shop::BagGrid;
 use seal_tools::game::GamePort;
@@ -1269,6 +1269,9 @@ pub struct PetTool<S: PetSource> {
     /// from every row's `next_minutes` before the fresh look, so the row that was scheduled for that
     /// wake is genuinely DUE — even when its slot/feeders are unreadable on this pass. PET-F2.
     pending_wait_minutes: Option<f64>,
+    /// Whether the current wait carries a foreground-deferral message that must stay on the card
+    /// instead of being replaced by the generic schedule line. PET-F4.
+    deferred_message: Option<String>,
     message: String,
     /// Mid-run state persistence (A1). Tests/decision-only tools get a no-op sink.
     state_sink: Option<Arc<dyn PetStateSink>>,
@@ -1306,6 +1309,7 @@ impl<S: PetSource> PetTool<S> {
             start_override_pending,
             acted_this_pass: false,
             pending_wait_minutes: None,
+            deferred_message: None,
             message,
             state_sink: None,
             log_notes: Vec::new(),
@@ -1385,6 +1389,41 @@ impl<S: PetSource> PetTool<S> {
             self.game.release(ToolId::Pet);
             self.held = false;
         }
+    }
+
+    /// No input while the game is not in front: push every row to the short retry, send no click, and
+    /// let the card name the reason. PET-F4 (the 2026-10-01 incident guard).
+    fn defer_for_window(&mut self) {
+        let row = self.active_rows().first().map_or_else(
+            || "the row".to_owned(),
+            |index| self.plan.rows[*index].name.clone(),
+        );
+        for index in self.active_rows() {
+            if self.state[index].next_minutes.is_some() {
+                self.state[index].next_minutes = Some(RETRY_MINUTES);
+            }
+        }
+        self.visit = None;
+        self.phase = Phase::Wait;
+        self.message = window_not_in_front_message(&row);
+        self.deferred_message = Some(self.message.clone());
+        self.note(format!(
+            "defer: {row} — game window not in front; no click sent"
+        ));
+    }
+
+    /// The window left the front during a visit: abandon it without another click, and give the
+    /// current row the short retry. The remaining rows keep the schedule they already had. PET-F4.
+    fn abandon_visit_for_window(&mut self, index: usize) {
+        self.state[index].next_minutes = Some(RETRY_MINUTES);
+        self.visit = None;
+        self.phase = Phase::Wait;
+        self.message = window_left_front_message();
+        self.deferred_message = Some(self.message.clone());
+        self.note(format!(
+            "defer: {} — game window left the front mid-visit; no further click sent",
+            self.plan.rows[index].name
+        ));
     }
     pub fn card(&self) -> PetCard {
         let views: Vec<PetRowView> = self
@@ -1535,6 +1574,18 @@ impl<S: PetSource> PetTool<S> {
                     self.state[index].next_minutes = Some(RETRY_MINUTES);
                 }
             }
+            if !self.source.game_in_front() {
+                // The read failed because the window/foreground is gone; clicking Close now would be
+                // input into whatever is in front. PET-F4.
+                self.phase = Phase::Wait;
+                self.message = window_left_front_message();
+                self.deferred_message = Some(self.message.clone());
+                self.note(format!(
+                    "defer: a row read failed and the game window is not in front — retry in \
+                     {RETRY_MINUTES:.0} min without closing"
+                ));
+                return;
+            }
             self.note(format!(
                 "defer: every ticked row failed its read — retry in {RETRY_MINUTES:.0} min"
             ));
@@ -1547,11 +1598,20 @@ impl<S: PetSource> PetTool<S> {
                 .clone_into(&mut self.message);
         }
         if due.is_empty() {
-            self.close_window();
+            if self.source.game_in_front() {
+                self.close_window();
+                self.message = self
+                    .card()
+                    .schedule_line(&Self::next_label(self.soonest_minutes()));
+            } else {
+                self.message = window_left_front_message();
+                self.deferred_message = Some(self.message.clone());
+                self.note(
+                    "defer: game window left the front after the look — no Close click sent"
+                        .to_owned(),
+                );
+            }
             self.phase = Phase::Wait;
-            self.message = self
-                .card()
-                .schedule_line(&Self::next_label(self.soonest_minutes()));
         } else {
             self.message = visit_opening_message(
                 &due.iter()
@@ -1663,6 +1723,19 @@ impl<S: PetSource> PetTool<S> {
         }
     }
 
+    /// Close the window only while the game still owns the foreground; a Close click after focus
+    /// moved is input into another app. PET-F4.
+    fn close_window_if_front(&mut self) {
+        if self.source.game_in_front() {
+            self.close_window();
+        } else {
+            self.note(
+                "defer: game window left the front — no Close click sent (window may stay open)"
+                    .to_owned(),
+            );
+        }
+    }
+
     fn fold(&mut self, index: usize, outcome: &RowOutcome) {
         let row = &self.plan.rows[index];
         let loaded = seal_domain::tools::pet::load_minutes(
@@ -1722,7 +1795,7 @@ impl<S: PetSource> PetTool<S> {
             return;
         };
         if visit.pos >= visit.batch.len() {
-            self.close_window();
+            self.close_window_if_front();
             self.phase = Phase::Wait;
             self.message = self
                 .card()
@@ -1733,6 +1806,12 @@ impl<S: PetSource> PetTool<S> {
         let index = visit.batch[visit.pos];
         let row_name = self.plan.rows[index].name.clone();
         let row = self.plan.rows[index].clone();
+        // PET-F4: every step may click/right-click/Enter. Re-check the foreground before the step,
+        // not just once when the visit opened; a lost window ends the visit with no further input.
+        if !self.source.game_in_front() {
+            self.abandon_visit_for_window(index);
+            return;
+        }
         match visit.stage {
             Stage::Begin => {
                 self.message = reload_step_message(&row_name, ReloadStep::Reloading);
@@ -1757,7 +1836,12 @@ impl<S: PetSource> PetTool<S> {
                     });
                     visit.stage = Stage::Fold;
                 }
-                _ => visit.stage = Stage::PickPage,
+                Ok(_) => visit.stage = Stage::PickPage,
+                Err(_) => {
+                    // A failed read is not "empty": treating it as empty clicked PickPage blindly.
+                    self.abandon_visit_for_window(index);
+                    return;
+                }
             },
             Stage::PickPage => {
                 visit.page = 0;
@@ -1783,7 +1867,14 @@ impl<S: PetSource> PetTool<S> {
             }
             Stage::ScanPage => {
                 let icons = self.plan.queue_icons.clone();
-                if let Ok(bag) = self.source.client_capture()
+                let capture = self.source.client_capture();
+                if capture.is_err() {
+                    // A lost/changed window at the page scan is the same guard as at the click
+                    // stages: stop the visit rather than continue on a stale screen. PET-F4.
+                    self.abandon_visit_for_window(index);
+                    return;
+                }
+                if let Ok(bag) = capture
                     && let Some(grid) = self.plan.setup.bag_grid.clone()
                 {
                     let centres = BagGrid::centres(Some(&grid));
@@ -2109,7 +2200,7 @@ impl<S: PetSource> PetTool<S> {
                 visit.slot_centre = None;
                 visit.before = None;
                 if visit.pos >= visit.batch.len() {
-                    self.close_window();
+                    self.close_window_if_front();
                     self.phase = Phase::Wait;
                     self.message = self
                         .card()
@@ -2123,6 +2214,17 @@ impl<S: PetSource> PetTool<S> {
     }
     fn decide_once(&mut self) -> Decision {
         loop {
+            // The queue may still hold input (menu/feed clicks + their settle waits) when focus
+            // changes between decisions. Never pop an input decision while another window owns the
+            // foreground: drop the queued work, keep the rows' places, and defer. PET-F4.
+            if let Some(next) = self.queue.front()
+                && !matches!(next, Decision::Wait(_) | Decision::Stop(_))
+                && !self.source.game_in_front()
+            {
+                self.queue.clear();
+                self.defer_for_window();
+                continue;
+            }
             if let Some(decision) = self.queue.pop_front() {
                 return decision;
             }
@@ -2131,6 +2233,10 @@ impl<S: PetSource> PetTool<S> {
             }
             match self.phase {
                 Phase::Open => {
+                    if !self.source.game_in_front() {
+                        self.defer_for_window();
+                        continue;
+                    }
                     if let Err(reason) = self.ensure_game() {
                         return Decision::Stop(reason);
                     }
@@ -2193,8 +2299,10 @@ impl<S: PetSource> PetTool<S> {
                         // The runner is about to sleep this long; the next decide is the timer wake,
                         // so subtract it from every row before the fresh look (PET-F2).
                         self.pending_wait_minutes = Some(minutes);
-                        let label = Self::next_label(minutes);
-                        self.message = self.card().schedule_line(&label);
+                        if self.deferred_message.take().is_none() {
+                            let label = Self::next_label(minutes);
+                            self.message = self.card().schedule_line(&label);
+                        }
                         self.phase = Phase::Open;
                         for index in self.active_rows() {
                             let name = self.plan.rows[index].name.clone();
@@ -2947,6 +3055,8 @@ mod loop_tests {
         hover: Vec<String>,
         bag: PetImage,
         captures: VecDeque<PetImage>,
+        /// PET-F4: scripted foreground state; tests flip it to lose the game mid-run.
+        front: bool,
     }
 
     impl FakeSource {
@@ -2973,6 +3083,7 @@ mod loop_tests {
                     rgba: vec![0u8; 40 * 40 * 4],
                 },
                 captures: VecDeque::new(),
+                front: true,
             }
         }
     }
@@ -3004,7 +3115,7 @@ mod loop_tests {
             Some(Point::new(0, 0))
         }
         fn game_in_front(&mut self) -> bool {
-            true
+            self.front
         }
     }
 
@@ -3401,6 +3512,70 @@ mod loop_tests {
             }
         }
         assert!(acted, "the timer-due unreadable row must be acted on");
+    }
+
+    /// PET-F4: no Click/Place/Enter/RightClick may be emitted while another window owns the
+    /// foreground; the row keeps its place and the card says why.
+    #[test]
+    fn the_pet_sends_no_input_while_the_game_is_not_in_front() {
+        let config = config(1, false, true, false);
+        let plan = plan_of(&config);
+        let mut source = FakeSource::new(vec![empty()]);
+        source.front = false;
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        let mut saw_wait = false;
+        for _ in 0..50 {
+            match tool.decide() {
+                Decision::Wait(seconds) if seconds >= 60.0 => {
+                    saw_wait = true;
+                    break;
+                }
+                Decision::Wait(_) | Decision::Stop(_) => {}
+                input => panic!("input while the game is not in front: {input:?}"),
+            }
+        }
+        assert!(saw_wait, "the deferred pass must wait instead of clicking");
+        assert!(
+            tool.status().message.contains("isn't in front"),
+            "the card names the foreground refusal: {}",
+            tool.status().message
+        );
+    }
+
+    /// PET-F4: queued input must not be sent after focus moves between decisions. The menu click is
+    /// already queued when the test drops the foreground; the feed click and the rest of the batch
+    /// must be abandoned, and the run must defer without another input.
+    #[test]
+    fn queued_input_is_abandoned_when_the_game_leaves_the_front() {
+        let config = config(1, false, true, false);
+        let plan = plan_of(&config);
+        let source = FakeSource::new(vec![empty()]);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        let mut saw_menu_click = false;
+        for _ in 0..20 {
+            if matches!(tool.decide(), Decision::Click(_)) {
+                saw_menu_click = true;
+                break;
+            }
+        }
+        assert!(saw_menu_click, "the opening pass queues a real click");
+
+        tool.source.front = false;
+        let mut saw_defer_wait = false;
+        for _ in 0..50 {
+            match tool.decide() {
+                Decision::Wait(seconds) if seconds >= 60.0 => {
+                    saw_defer_wait = true;
+                    break;
+                }
+                Decision::Wait(_) | Decision::Stop(_) => {}
+                input => panic!("input after the foreground was lost: {input:?}"),
+            }
+        }
+        assert!(saw_defer_wait, "the run must defer instead of clicking");
+        assert!(tool.status().message.contains("isn't in front"));
     }
 
     #[test]
