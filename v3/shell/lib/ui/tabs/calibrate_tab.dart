@@ -1519,6 +1519,8 @@ class _CalibrateTabState extends State<CalibrateTab>
           CalibrationFramePicture(
             key: const ValueKey('calibrate-frame'),
             frame: capture.frame,
+            // The capture decoded the PNG once; a drag/zoom rebuild must reuse those bytes (SHELL-F3).
+            bytes: capture.bytes,
             maxHeight: maxHeight,
             mark: _editorMark(),
             markLabel: _markLabel,

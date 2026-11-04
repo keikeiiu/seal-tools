@@ -27,6 +27,9 @@ Uint8List? decodePngBase64(String data) {
   }
 }
 
+/// The decoder a calibration picture uses; injectable so a test can count decodes (SHELL-F3).
+typedef PngBase64Decoder = Uint8List? Function(String data);
+
 /// Label text that stays legible on a coloured overlay (green/blue/amber in both themes).
 Color _readableLabelColor(Color background) =>
     ThemeData.estimateBrightnessForColor(background) == Brightness.dark
@@ -76,9 +79,19 @@ class CalibrationFramePicture extends StatefulWidget {
     this.clientOrigin = ui.Offset.zero,
     this.onPointMark,
     this.onRectMark,
+    this.bytes,
+    this.decode = decodePngBase64,
   });
 
   final Frame frame;
+
+  /// Pre-decoded PNG bytes (for example [CalibrationCapture.bytes]). When null the widget decodes
+  /// [frame]'s base64 ONCE and reuses the bytes for later builds (SHELL-F3): drag/zoom setState must
+  /// never re-decode a multi-MB full-client frame.
+  final Uint8List? bytes;
+
+  /// The decoder used when [bytes] is null; injectable for the decode-count regression test.
+  final PngBase64Decoder decode;
 
   /// The canvas viewport's height; fit mode contains the frame in `(available width, maxHeight)`.
   final double maxHeight;
@@ -120,6 +133,12 @@ class _CalibrationFramePictureState extends State<CalibrationFramePicture> {
   /// While pan mode is on, a left drag moves the view instead of drawing a mark.
   bool _panMode = false;
 
+  /// The decoded PNG and the exact inputs it came from: a drag move rebuilds this State, but the
+  /// bytes must be decoded once per frame, not once per build (SHELL-F3).
+  Uint8List? _decodedBytes;
+  Object? _decodedSource;
+  PngBase64Decoder? _decodedWith;
+
   static const double _zoomStep = 1.25;
   static const double _minZoom = 0.02;
   static const double _maxZoom = 8;
@@ -156,11 +175,27 @@ class _CalibrationFramePictureState extends State<CalibrationFramePicture> {
     );
   }
 
+  /// The frame's decoded bytes. [widget.bytes] is used when the owner already decoded the picture
+  /// (the capture shelf); otherwise the result is cached against the frame INSTANCE so a rebuild for
+  /// a pan/drag can never re-run base64 decode.
+  Uint8List? _bytesForFrame() {
+    final provided = widget.bytes;
+    if (provided != null) {
+      return provided;
+    }
+    if (!identical(widget.frame, _decodedSource) || widget.decode != _decodedWith) {
+      _decodedSource = widget.frame;
+      _decodedWith = widget.decode;
+      _decodedBytes = widget.decode(widget.frame.data);
+    }
+    return _decodedBytes;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final frame = widget.frame;
-    final bytes = decodePngBase64(frame.data);
+    final bytes = _bytesForFrame();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -664,24 +699,50 @@ class _MarkPainter extends CustomPainter {
 }
 
 /// A stored crop artifact (base64 PNG from `calibration.fetch`).
-class CalibrationCropPicture extends StatelessWidget {
+///
+/// The decode is cached against the payload instance (SHELL-F3): a parent rebuild must not decode
+/// the crop again, and `cacheWidth` keeps the decoded texture at the size actually painted.
+class CalibrationCropPicture extends StatefulWidget {
   const CalibrationCropPicture({
     super.key,
     required this.file,
     required this.pngBase64,
+    this.decode = decodePngBase64,
   });
 
   final String file;
   final String pngBase64;
 
+  /// Injectable for the decode-count test.
+  final PngBase64Decoder decode;
+
+  @override
+  State<CalibrationCropPicture> createState() => _CalibrationCropPictureState();
+}
+
+class _CalibrationCropPictureState extends State<CalibrationCropPicture> {
+  Uint8List? _bytes;
+  String? _decodedSource;
+  PngBase64Decoder? _decodedWith;
+
+  Uint8List? _bytesForCrop() {
+    if (!identical(widget.pngBase64, _decodedSource) ||
+        widget.decode != _decodedWith) {
+      _decodedSource = widget.pngBase64;
+      _decodedWith = widget.decode;
+      _bytes = widget.decode(widget.pngBase64);
+    }
+    return _bytes;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bytes = decodePngBase64(pngBase64);
+    final bytes = _bytesForCrop();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Stored crop: $file', style: theme.textTheme.labelMedium),
+        Text('Stored crop: ${widget.file}', style: theme.textTheme.labelMedium),
         const SizedBox(height: ShellSpace.xs),
         if (bytes == null)
           Text(
@@ -695,6 +756,7 @@ class CalibrationCropPicture extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 320, maxHeight: 240),
             child: Image.memory(
               bytes,
+              cacheWidth: 640,
               fit: BoxFit.contain,
               gaplessPlayback: true,
               errorBuilder: (context, error, stackTrace) => Text(

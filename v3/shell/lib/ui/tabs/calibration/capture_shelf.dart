@@ -11,6 +11,8 @@
 /// [PROTOCOL.md]: ../../../docs/spec/PROTOCOL.md
 library;
 
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../../../protocol/protocol.dart';
@@ -24,18 +26,26 @@ import 'calibration_catalog.dart';
 const double _thumbWidth = 52;
 const double _thumbHeight = 34;
 
+/// The thumbnail decodes at 2x the painted width so it stays crisp on a high-DPI display without
+/// decoding the full client frame (SHELL-F3).
+const int _thumbCacheWidth = 104;
+
 /// One capture this screen took: the frame, the measurement that came WITH it, the screen's own
 /// sequence number (the core's ids are `f1`, `f2`, … and are not itself an ordinal) and the time.
 class CalibrationCapture {
-  const CalibrationCapture({
+  CalibrationCapture({
     required this.frame,
     required this.display,
     required this.sequence,
     required this.capturedAt,
-  });
+  }) : bytes = decodePngBase64(frame.data);
 
   final Frame frame;
   final DisplayInfo display;
+
+  /// The frame's PNG bytes, decoded once when the capture is recorded (SHELL-F3). A shelf rebuild
+  /// must never re-decode a multi-MB full-client frame; the bytes double as the picture's image key.
+  final Uint8List? bytes;
 
   /// 1-based capture order on this screen, only for the label.
   final int sequence;
@@ -189,7 +199,7 @@ class _CaptureTile extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final borderColor = selected ? colors.primary : colors.outlineVariant;
-    final bytes = decodePngBase64(capture.frame.data);
+    final bytes = capture.bytes;
     return Padding(
       padding: const EdgeInsets.only(bottom: ShellSpace.sm - ShellSpace.xxs),
       child: Material(
@@ -217,6 +227,7 @@ class _CaptureTile extends StatelessWidget {
                         ? ColoredBox(color: colors.surfaceContainerHighest)
                         : Image.memory(
                             bytes,
+                            cacheWidth: _thumbCacheWidth,
                             fit: BoxFit.cover,
                             gaplessPlayback: true,
                             errorBuilder: (context, error, stackTrace) =>
