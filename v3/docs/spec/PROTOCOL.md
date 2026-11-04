@@ -64,6 +64,11 @@ against it, and the golden fixtures in §10 are how they are kept in agreement.
 
 Every message is one JSON object. `v` is always present and is the protocol version (`1`).
 
+A line that is not valid UTF-8 or not a decodable request is answered with `bad_request`, echoing
+the `id` when the envelope yielded one (a numeric id is rendered as a string); a request whose `v`
+is not `1` is `bad_version`. Neither ends the session. A line longer than 64 MiB is refused and its
+remaining bytes are discarded before the next request.
+
 Request:
 
 ```json

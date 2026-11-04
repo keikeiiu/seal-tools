@@ -73,3 +73,51 @@ fn the_binary_refuses_to_start_when_the_config_cannot_be_loaded() {
         "stderr names the failure: {stderr}"
     );
 }
+
+#[test]
+fn malformed_requests_are_answered_and_do_not_kill_the_core() {
+    let root = config_root();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_seal-core"))
+        .arg("--root")
+        .arg(root.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("the core binary starts");
+    {
+        let stdin = child.stdin.as_mut().expect("stdin is piped");
+        // CORE-F9: invalid UTF-8 used to end the loop as EOF, and a bad envelope used to answer
+        // with an empty id. The core must refuse each line, keep serving, and echo the id it can
+        // recover (the numeric id is rendered as a string so the shell can match its call).
+        stdin.write_all(b"\xff\n").unwrap();
+        stdin
+            .write_all(br#"{"id":7,"cmd":"hello","args":{"protocol":1}}"#)
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin
+            .write_all(br#"{"v":2,"id":"old","cmd":"hello","args":{"protocol":1}}"#)
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin
+            .write_all(br#"{"v":1,"id":"ok","cmd":"hello","args":{"protocol":1}}"#)
+            .unwrap();
+        stdin.write_all(b"\n").unwrap();
+    }
+    drop(child.stdin.take());
+    let output = child.wait_with_output().expect("the core exits");
+    let stdout = String::from_utf8(output.stdout).expect("stdout is UTF-8");
+    let responses: Vec<Value> = stdout
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("every line is JSON"))
+        .filter(|value| value.get("event").is_none())
+        .collect();
+    assert_eq!(responses.len(), 4, "one response per malformed/valid line");
+    assert_eq!(responses[0]["error"]["code"], "bad_request");
+    assert_eq!(responses[1]["error"]["code"], "bad_request");
+    assert_eq!(responses[1]["id"], "7");
+    assert_eq!(responses[2]["error"]["code"], "bad_version");
+    assert_eq!(responses[2]["id"], "old");
+    assert_eq!(responses[3]["ok"], true);
+    assert_eq!(responses[3]["id"], "ok");
+}

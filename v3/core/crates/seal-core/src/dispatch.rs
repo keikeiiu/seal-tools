@@ -545,6 +545,16 @@ pub(crate) fn frame_rgba(frame: &Value) -> Result<(usize, usize, Vec<u8>), Strin
 )]
 pub fn handle(state: &mut CoreState, request: Request) -> Response {
     let id = request.id.clone();
+    if request.v != PROTOCOL_VERSION {
+        return Response::err(
+            &id,
+            Error::new(
+                "bad_version",
+                &format!("protocol {} is not {}", request.v, PROTOCOL_VERSION),
+                json!({"expected": PROTOCOL_VERSION}),
+            ),
+        );
+    }
     match catch_unwind(AssertUnwindSafe(|| handle_inner(state, &request))) {
         Ok(response) => response,
         Err(_) => internal(&id, "internal error — see error.log"),

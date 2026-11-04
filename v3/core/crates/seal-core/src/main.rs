@@ -31,9 +31,17 @@ use seal_core::root::find_root;
 use seal_core::supervisor::Supervisor;
 use seal_proto::framing::decode_line;
 use seal_proto::{Error, Request, Response};
-use std::io::BufRead;
+use std::io::{BufRead, Read};
 use std::path::PathBuf;
 
+/// One NDJSON line may be large because calibration frames are inline base64, but it must not be
+/// unbounded: a client bug must not grow the core's buffer without limit (CORE-F9).
+const MAX_LINE_BYTES: usize = 64 * 1024 * 1024;
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "main keeps the ordered load → serve → shutdown lifecycle in one place; that order is the contract"
+)]
 fn main() {
     // Replay wins over `--root` (§13). This branch is deliberately before root discovery and before
     // `CoreState::load`, so replay cannot construct the config store, open the board, measure/capture
@@ -112,17 +120,106 @@ fn main() {
 
     let stdin = std::io::stdin();
     let reason = loop {
-        let mut line = String::new();
-        match stdin.lock().read_line(&mut line) {
-            Ok(0) | Err(_) => break "eof",
+        let mut raw = Vec::new();
+        let read = {
+            let input = stdin.lock();
+            input
+                .take((MAX_LINE_BYTES + 1) as u64)
+                .read_until(b'\n', &mut raw)
+        };
+        let overlong = matches!(read, Ok(bytes) if bytes > MAX_LINE_BYTES);
+        match read {
+            Ok(0) => break "eof",
             Ok(_) => {}
+            Err(error) => {
+                // A read failure (not an invalid byte: the bytes are decoded below) is answered and
+                // the loop keeps serving; the next read starts at the next line.
+                writer.response(Response::err(
+                    "",
+                    Error::new(
+                        "bad_request",
+                        &format!("stdin read failed: {error}"),
+                        serde_json::json!({}),
+                    ),
+                ));
+                state.flush_events();
+                continue;
+            }
         }
+        if overlong && !raw.ends_with(b"\n") {
+            // Discard the remainder of the offending line so the next request starts cleanly.
+            let mut rest = Vec::new();
+            loop {
+                rest.clear();
+                match stdin.lock().read_until(b'\n', &mut rest) {
+                    Ok(0) => break,
+                    Ok(_) if rest.ends_with(b"\n") => break,
+                    Ok(_) => {}
+                    Err(error) => {
+                        writer.response(Response::err(
+                            "",
+                            Error::new(
+                                "bad_request",
+                                &format!(
+                                    "stdin failed while discarding an over-long line: {error}"
+                                ),
+                                serde_json::json!({}),
+                            ),
+                        ));
+                        state.flush_events();
+                        break;
+                    }
+                }
+            }
+        }
+        if overlong {
+            writer.response(Response::err(
+                "",
+                Error::new(
+                    "bad_request",
+                    &format!("request line exceeds {MAX_LINE_BYTES} bytes"),
+                    serde_json::json!({}),
+                ),
+            ));
+            state.flush_events();
+            continue;
+        }
+        let Ok(line) = String::from_utf8(raw) else {
+            writer.response(Response::err(
+                "",
+                Error::new(
+                    "bad_request",
+                    "request line is not valid UTF-8",
+                    serde_json::json!({}),
+                ),
+            ));
+            state.flush_events();
+            continue;
+        };
         if line.trim().is_empty() {
             continue;
         }
 
-        let response = match decode_line::<Request>(&line) {
-            Ok(request) => handle(&mut state, request),
+        // CORE-F9: decode the envelope first so a malformed request can still echo its string id
+        // instead of the shell waiting 10 s for a timeout. Missing/numeric ids are also answered.
+        let response = match decode_line::<serde_json::Value>(&line) {
+            Ok(value) => {
+                let id = value
+                    .get("id")
+                    .map(|id| id.as_str().map_or_else(|| id.to_string(), str::to_owned))
+                    .unwrap_or_default();
+                match serde_json::from_value::<Request>(value) {
+                    Ok(request) => handle(&mut state, request),
+                    Err(error) => Response::err(
+                        &id,
+                        Error::new(
+                            "bad_request",
+                            &format!("unparseable request: {error}"),
+                            serde_json::json!({}),
+                        ),
+                    ),
+                }
+            }
             Err(error) => Response::err(
                 "",
                 Error::new(
