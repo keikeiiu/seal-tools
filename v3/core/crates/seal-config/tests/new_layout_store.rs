@@ -211,3 +211,68 @@ fn a_newer_file_is_refused_by_the_live_loader() {
     let error = store.load().expect_err("a newer file is loud");
     assert!(error.to_string().contains("machine/tuner.yaml"), "{error}");
 }
+
+#[test]
+fn a_corrupt_machine_file_is_quarantined_and_the_load_still_succeeds() {
+    // One bad measurement file used to fail the whole load, which meant the core could not start
+    // and the player had no way to recalibrate it from the UI (HW-F15).
+    let dir = tree();
+    dir.write("machine/tuner.yaml", "tuner: [unclosed\n");
+    let store = ConfigStore::new(dir.path());
+
+    let loaded = store
+        .load_detailed()
+        .expect("the rest of the tree still loads");
+
+    assert_eq!(loaded.warnings.len(), 1, "{:?}", loaded.warnings);
+    assert!(
+        loaded.warnings[0].contains("machine/tuner.yaml")
+            && loaded.warnings[0].contains("moved aside"),
+        "the warning names the file and what happened: {}",
+        loaded.warnings[0]
+    );
+    assert_eq!(
+        loaded.config["tuner"]["ocr"]["row_height"], 10,
+        "the base stands in for the quarantined measurement"
+    );
+    assert_eq!(
+        loaded.config["window"]["title"], "TW_LIVE",
+        "the other files still load"
+    );
+    let quarantined: Vec<String> = std::fs::read_dir(dir.path().join("machine"))
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with("tuner.yaml.corrupt-"))
+        .collect();
+    assert_eq!(quarantined.len(), 1, "{quarantined:?}");
+    assert!(
+        dir.read(&format!("machine/{}", quarantined[0]))
+            .contains("tuner: [unclosed"),
+        "the player's bytes are kept for a report"
+    );
+
+    let second = store.load_detailed().expect("the quarantined file is gone");
+    assert!(
+        second.warnings.is_empty(),
+        "one quarantine, not one per load: {:?}",
+        second.warnings
+    );
+}
+
+#[test]
+fn a_corrupt_setup_file_still_fails_loudly_and_is_not_moved() {
+    // Portable data is the player's own; quarantining it silently would look like a save that did
+    // nothing, so the load names the file and line instead (HW-F15).
+    let dir = tree();
+    dir.write("setup/common.yaml", "window: [unclosed\n");
+    let store = ConfigStore::new(dir.path());
+
+    let error = store.load().expect_err("a corrupt setup file is loud");
+
+    assert!(error.to_string().contains("setup/common.yaml"), "{error}");
+    assert!(
+        dir.exists("setup/common.yaml"),
+        "a setup file is never moved aside"
+    );
+}

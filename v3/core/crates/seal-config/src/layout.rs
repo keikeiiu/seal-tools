@@ -45,6 +45,9 @@ pub struct Loaded {
 /// cannot be read or parsed, when its shape is wrong, or when its `schema_version` is newer than
 /// this core understands.
 pub fn load(root: &Path, base: &Value) -> Result<Loaded, ConfigError> {
+    // A writer killed mid-save leaves `<file>.<pid><nanos>.tmp` behind; sweep the old ones so the
+    // player's config folder does not accumulate litter (HW-F5). Age-gated, so a live save is safe.
+    file::sweep_stale_temps(root);
     crate::transaction::recover(root)?;
     let mut config = base.clone();
     if !config.is_object() {
@@ -55,7 +58,13 @@ pub fn load(root: &Path, base: &Value) -> Result<Loaded, ConfigError> {
         if def.class != registry::Class::Setup && def.class != registry::Class::Machine {
             continue;
         }
-        let Some(contents) = file::read(root, def)? else {
+        // A corrupt machine file is quarantined with a warning instead of failing the whole load;
+        // a corrupt setup file still stops the load loudly (HW-F15).
+        let (contents, warning) = file::read_or_quarantine(root, def)?;
+        if let Some(warning) = warning {
+            warnings.push(warning);
+        }
+        let Some(contents) = contents else {
             continue;
         };
         merge_overlay(&mut config, &contents);

@@ -32,6 +32,14 @@ pub enum ConfigError {
         found: u64,
         supported: u8,
     },
+    /// The migration's verify-before-retire comparison failed: the new tree would not load back to
+    /// the settings the old loader served, so nothing was retired and the files it wrote were
+    /// restored from the backup. `differences` names the JSON pointers (HW-F4).
+    MigrationMismatch {
+        differences: Vec<String>,
+        backup: PathBuf,
+        message: String,
+    },
 }
 
 impl fmt::Display for ConfigError {
@@ -59,6 +67,18 @@ impl fmt::Display for ConfigError {
                 "{} states schema_version {found}, but this core understands at most {supported}; \
                  it was written by a newer build and was not changed",
                 path.display()
+            ),
+            Self::MigrationMismatch {
+                differences,
+                backup,
+                message,
+            } => write!(
+                f,
+                "the layout migration was refused: the new tree would not load back to the settings \
+                 the old one served ({}) — nothing was retired and the files it wrote were restored \
+                 from {}{message}",
+                differences.join(", "),
+                backup.display()
             ),
         }
     }

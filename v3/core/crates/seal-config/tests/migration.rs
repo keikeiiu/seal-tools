@@ -173,6 +173,97 @@ fn the_migration_splits_the_old_file_into_the_new_tree_and_keeps_a_backup() {
 }
 
 #[test]
+fn a_shipped_install_folds_its_legacy_defaults_before_migrating() {
+    // The pre-fold install kept the player's settings in defaults.yaml. The migration routes only
+    // local.yaml and then retires it, so without a fold first those values are moved out of reach
+    // forever (HW-F3).
+    let dir = TestDir::new();
+    dir.write(
+        "config/defaults.yaml.example",
+        "window:\n  title: DEFAULT\nhotkeys:\n  start: 0\n  stop: 0\ntuner:\n  target_grade: N\n",
+    );
+    dir.write("config/local.yaml.example", "# fresh install\n");
+    dir.write(
+        "config/defaults.yaml",
+        "hotkeys:\n  start: 99\ntuner:\n  target_grade: DG\n",
+    );
+    dir.write(
+        "config/local.yaml",
+        "calibration:\n  dpi_scale: 1.5\nsettings:\n  window:\n    title: OLD_WINDOW\n",
+    );
+    let root = dir.path().join("config");
+    let store = seal_config::ConfigStore::new(&root);
+
+    let loaded = store
+        .load_detailed()
+        .expect("the shipped install folds, migrates and loads");
+
+    assert_eq!(
+        loaded.config["hotkeys"]["start"], 99,
+        "the value that lived only in the old shipped file reached the player"
+    );
+    assert_eq!(loaded.config["tuner"]["target_grade"], "DG");
+    assert_eq!(
+        loaded.config["window"]["title"], "OLD_WINDOW",
+        "the overlay's own setting is still there"
+    );
+    assert_eq!(loaded.config["calibration"]["dpi_scale"], 1.5);
+
+    let common = file::read(&root, def("setup/common.yaml"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        common["hotkeys"]["start"], 99,
+        "the fold landed in the NEW tree, not only in the session"
+    );
+    assert!(
+        !root.join("local.yaml").exists(),
+        "the old overlay is retired, and the fold ran before it could be"
+    );
+    let meta = file::read(&root, def("meta.yaml")).unwrap().unwrap();
+    assert_eq!(meta["legacy_folded"], true);
+}
+
+#[test]
+fn a_routing_gap_refuses_the_migration_restores_the_tree_and_keeps_the_old_file() {
+    // A template section whose only registry owner is a file the loader never reads: the routing
+    // succeeds, so "the new tree loaded" used to pass, and then local.yaml was retired with the
+    // block effectively gone. The verify-before-retire comparison must catch it (HW-F4).
+    let dir = TestDir::new();
+    fs::create_dir_all(dir.path().join("config")).unwrap();
+    dir.write(
+        "config/local.yaml",
+        "calibration:\n  dpi_scale: 1.5\nsettings:\n  meta:\n    note: player\n",
+    );
+    let root = dir.path().join("config");
+    let base = json!({
+        "window": {"title": "DEFAULT"},
+        "meta": {"note": "base"},
+    });
+
+    let error = migrate(&root, &base).expect_err("a dropped block refuses the migration");
+
+    let message = error.to_string();
+    assert!(message.contains("/meta/note"), "{message}");
+    assert!(
+        message.contains("restored"),
+        "the refusal says what happened to the written files: {message}"
+    );
+    assert!(
+        root.join("local.yaml").is_file(),
+        "the old file is the one thing that must survive a refusal"
+    );
+    assert!(
+        !root.join("meta.yaml").exists(),
+        "the file the migration wrote is removed again, so the next launch retries"
+    );
+    assert!(
+        !root.join("machine/display.yaml").exists(),
+        "every written file is rolled back, not just the one with the mismatch"
+    );
+}
+
+#[test]
 fn a_second_migration_is_a_no_op() {
     let dir = migrated_root();
     let root = dir.path().join("config");

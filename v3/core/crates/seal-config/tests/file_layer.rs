@@ -177,3 +177,58 @@ fn the_registry_class_decides_which_kind_of_header_is_written() {
     assert!(machine_text.contains("PER-PC"), "{machine_text}");
     assert_eq!(machine.class, Class::Machine);
 }
+
+#[test]
+fn the_one_atomic_writer_replaces_the_file_and_leaves_no_temp() {
+    // The legacy store, the artifact writer and the transaction all call this one function, so its
+    // own contract is pinned here rather than three times (HW-F5).
+    let dir = TestDir::new();
+    dir.write("artifacts/pet_slot_empty_1.png", "old bytes");
+    let path = dir.path().join("artifacts/pet_slot_empty_1.png");
+
+    file::atomic_replace(&path, b"new bytes").expect("the replace succeeds");
+
+    assert_eq!(dir.read("artifacts/pet_slot_empty_1.png"), "new bytes");
+    assert!(
+        temp_files(&dir).is_empty(),
+        "the temp is consumed by the rename: {:?}",
+        temp_files(&dir)
+    );
+}
+
+#[test]
+fn a_stale_writer_temp_is_swept_at_load_but_a_fresh_one_is_kept() {
+    // A writer killed mid-save leaves `<file>.<pid><nanos>.tmp`; the loader sweeps only temps older
+    // than an hour, so a live save's temp can never be removed from under it (HW-F5).
+    let dir = TestDir::new();
+    dir.write("setup/common.yaml", "window:\n  title: KEPT\n");
+    dir.write("setup/common.yaml.0a.tmp", "stale");
+    dir.write("setup/common.yaml.0b.tmp", "fresh");
+    dir.write("artifacts/old.png.0c.tmp", "stale");
+    let stale = dir.path().join("setup/common.yaml.0a.tmp");
+    let stale_artifact = dir.path().join("artifacts/old.png.0c.tmp");
+    let two_hours_ago = std::time::SystemTime::now() - std::time::Duration::from_hours(2);
+    for path in [&stale, &stale_artifact] {
+        let handle = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+        handle
+            .set_times(std::fs::FileTimes::new().set_modified(two_hours_ago))
+            .unwrap();
+    }
+
+    seal_config::layout::load(dir.path(), &json!({"window": {"title": "BASE"}}))
+        .expect("the load succeeds");
+
+    assert!(!stale.exists(), "a stale temp is litter and is swept");
+    assert!(
+        !stale_artifact.exists(),
+        "the artifacts folder is swept too"
+    );
+    assert!(
+        dir.exists("setup/common.yaml.0b.tmp"),
+        "a fresh temp may belong to a live writer and must survive"
+    );
+    assert!(
+        dir.exists("setup/common.yaml"),
+        "the data file is untouched"
+    );
+}

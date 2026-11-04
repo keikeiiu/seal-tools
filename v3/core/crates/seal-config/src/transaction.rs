@@ -143,7 +143,9 @@ pub fn commit(root: &Path, writes: &[PendingWrite]) -> Result<(), ConfigError> {
         path: journal_temp.clone(),
         source,
     })?;
-    fs::rename(&journal_temp, &journal_path).map_err(|source| ConfigError::Write {
+    // Every replace goes through the one retrying rename: a two-file save was just as exposed to a
+    // transient holder as a single-file one (HW-F5).
+    file::rename_with_retry(&journal_temp, &journal_path).map_err(|source| ConfigError::Write {
         path: journal_path.clone(),
         source,
     })?;
@@ -160,7 +162,9 @@ pub fn commit(root: &Path, writes: &[PendingWrite]) -> Result<(), ConfigError> {
             });
             break;
         }
-        if let Err(source) = fs::rename(directory.join(format!("{index}.tmp")), &target) {
+        if let Err(source) =
+            file::rename_with_retry(&directory.join(format!("{index}.tmp")), &target)
+        {
             failure = Some(ConfigError::Write {
                 path: target,
                 source,
@@ -176,7 +180,7 @@ pub fn commit(root: &Path, writes: &[PendingWrite]) -> Result<(), ConfigError> {
     // The renames are the commit. Mark it explicitly and check that step: removing the journal only
     // best-effort would let a surviving journal roll back a save the player was told succeeded.
     let done_marker = directory.join(JOURNAL_DONE);
-    fs::rename(&journal_path, &done_marker).map_err(|source| ConfigError::Write {
+    file::rename_with_retry(&journal_path, &done_marker).map_err(|source| ConfigError::Write {
         path: done_marker,
         source,
     })?;
