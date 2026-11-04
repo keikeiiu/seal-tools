@@ -175,6 +175,34 @@ fn a_read_snapshot_is_immutable_after_a_new_publish() {
     assert_eq!(cell.read().expect("published").message, "second");
 }
 
+#[test]
+fn the_phase_never_goes_back_from_stopping_to_running() {
+    let cell = StateCell::new(ToolSnapshot::new(ToolId::Tuner).running(ToolPhase::Running));
+    cell.publish(ToolSnapshot::new(ToolId::Tuner).running(ToolPhase::Stopping));
+
+    // The tool's next status update tries to repaint Running; the cell must keep the stop visible.
+    cell.publish(
+        ToolSnapshot::new(ToolId::Tuner)
+            .running(ToolPhase::Running)
+            .message("row 2"),
+    );
+    let stopped = cell.read().expect("published");
+    assert_eq!(stopped.phase, ToolPhase::Stopping);
+    assert_eq!(stopped.message, "row 2", "the status fields still update");
+    assert!(stopped.running);
+
+    // `update` sees the previous snapshot and is still guarded by the same rule.
+    cell.update(|current| {
+        assert_eq!(
+            current.expect("a snapshot").phase,
+            ToolPhase::Stopping,
+            "the closure reads the current value under the write lock"
+        );
+        ToolSnapshot::new(ToolId::Tuner).running(ToolPhase::Running)
+    });
+    assert_eq!(cell.read().expect("published").phase, ToolPhase::Stopping);
+}
+
 /// The torn-read test: the pair `message` ↔ `countdown_s` ↔ `rows[0].status` is written together and
 /// must always be read together. Two threads run through a barrier, the writer publishes 5 000
 /// snapshots, and the reader checks every snapshot it sees is internally consistent — the failure a

@@ -345,13 +345,45 @@ impl StateCell {
     /// Replaces the published snapshot. A panic in a publisher poisons the lock; recovering from the
     /// poison keeps the cell readable for every later reader, which is the whole point of publishing
     /// a value rather than exposing state.
+    ///
+    /// The phase is monotonic: once `Stopping`, a later status publish cannot show `Running` again
+    /// while the run is being torn down (TOOL-F14).
     pub fn publish(&self, snapshot: ToolSnapshot) {
-        let snapshot = Arc::new(snapshot);
+        self.store(snapshot);
+    }
+
+    /// Change the current snapshot under ONE write lock. The closure gets the previous snapshot so
+    /// a read-modify-write cannot lose a concurrent publisher's update (TOOL-F14).
+    pub fn update<F>(&self, change: F)
+    where
+        F: FnOnce(Option<&ToolSnapshot>) -> ToolSnapshot,
+    {
+        let next = {
+            let current = self
+                .current
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            change(current.as_deref())
+        };
+        self.store(next);
+    }
+
+    fn store(&self, snapshot: ToolSnapshot) {
+        let mut snapshot = Arc::new(snapshot);
         {
             let mut current = self
                 .current
                 .write()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(previous) = current.as_ref()
+                && previous.phase == ToolPhase::Stopping
+                && matches!(snapshot.phase, ToolPhase::Starting | ToolPhase::Running)
+            {
+                let mut guarded = (*snapshot).clone();
+                guarded.phase = ToolPhase::Stopping;
+                guarded.running = true;
+                snapshot = Arc::new(guarded);
+            }
             *current = Some(Arc::clone(&snapshot));
         }
         // Notify outside the current lock. A slow observer must not block a reader or the next

@@ -441,11 +441,14 @@ impl Arbiter {
 }
 
 fn publish_phase(handle: &RunHandle, phase: ToolPhase) {
-    let current = handle.state.read().map_or_else(
-        || ToolSnapshot::new(handle.tool),
-        |snapshot| (*snapshot).clone(),
-    );
-    handle.state.publish(current.running(phase));
+    // One locked read-modify-write: the old read-then-publish could lose a concurrent status
+    // update, and the cell's phase guard keeps a later Running publish from undoing Stopping.
+    handle.state.update(|current| {
+        current.map_or_else(
+            || ToolSnapshot::new(handle.tool).running(phase),
+            |snapshot| snapshot.clone().running(phase),
+        )
+    });
 }
 
 /// The final snapshot of a run: idle, not running, the reason's message, and (for a failure) the

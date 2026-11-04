@@ -338,7 +338,7 @@ pub fn run(
 
         // Publish the tool's own card state BEFORE performing the decision, so a countdown shows
         // while its wait runs and a message caused by a read is visible as soon as it exists.
-        publish_status(handle, tool, &mut published_status);
+        publish_status(handle, tool, &mut published_status, &control);
         match decision {
             Decision::Click(at) => {
                 if let Err(error) = effects.click(at) {
@@ -421,15 +421,27 @@ pub fn run(
 /// Publishes the tool's own card state when it changed since the last publish. Pulled out of
 /// [`run`] so the loop's line count stays readable: the countdown/message/rows/detail replacement is
 /// one concern, and the decision/effect dispatch is another.
-fn publish_status(handle: &RunHandle, tool: &dyn Tool, published: &mut ToolStatus) {
+fn publish_status(
+    handle: &RunHandle,
+    tool: &dyn Tool,
+    published: &mut ToolStatus,
+    control: &RunControl,
+) {
     let status = tool.status();
     if *published == status {
         return;
     }
     *published = status.clone();
+    // The tool may have observed a cancellation in `status()`; never paint Running over Stopping
+    // (the cell also enforces this monotonic phase for the ordinary Stop path, TOOL-F14).
+    let phase = if control.is_cancelled() {
+        ToolPhase::Stopping
+    } else {
+        ToolPhase::Running
+    };
     handle.state.publish(
         ToolSnapshot::new(tool.id())
-            .running(ToolPhase::Running)
+            .running(phase)
             .message(status.message)
             .countdown_s(status.countdown_s)
             .rows(status.rows)
