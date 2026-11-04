@@ -19,6 +19,43 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-05 (42) — Phase 1 and Phase 2 review work, except engine/library swaps
+
+The player asked to finish the remaining Phase 1 and Phase 2 review findings, leaving out anything
+that needs an engine or library swap. The work landed in focused commits (one per finding where the
+change was separable; the large cross-crate groups name their ids):
+
+- **OCR** (`0da1994`): F1 unclipped crop, F2 bbox-bounded scoring/contour work, F3 det max-side and
+  padding, F4 corner order, F5 left-to-right grade line, F9 one shared model set, F10 optional
+  classifier, F12 cubic/area upscale, F14 fixed-layout reads skip detection, F16 allocation-light
+  contour tracing.
+- **Config/board/HW** (`1b1f1c3`, `f0bfa43`, `5caf9eb`): HW-F3/F4/F5 migration + verify + durable
+  fsync/retry, HW-F6/F7/F8/F9/F10/F11 firmware/serial/placement work, HW-F13 RAII cleanup of the
+  existing GDI backend, HW-F14 foreign keys (earlier), HW-F15 corrupt-file quarantine; CORE-F15
+  rejects absolute/UNC artifact references.
+- **Pet/tools** (`e2f2d3d`, `252e458`, `07bbcc6`): PET-F8/F9/F11/F12/F13/F14/F15/F16, TOOL-F10's
+  lease check surface, TOOL-F11/F12/F15/F16, TOOL-F13 press-intent-before-write.
+- **Core** (`a72cbf4`, plus `ddffd1a`): CORE-F7/F8/F10/F12/F14; CORE-F9 framing (earlier).
+- **Shell** (`f8dd35f`, `b6bd31e`, `2012172`, `43daee9`): SHELL-F3 single frame decode,
+  SHELL-F6 dirty-draft close guard, SHELL-F9 release gates/checksums/no-signing, SHELL-F10 pubspec as
+  version source, SHELL-F11 generated notices.
+- Tooling: `991feaf` greens the strict clippy/rustdoc gates, `e088d0a` fixes the frame-cache test's
+  harness height.
+
+**Deliberately excluded:** OCR-F6 (DirectML/multi-thread runtime engine), OCR-F13 (recogniser model
+swap), SHELL-F13 (l10n framework), SHELL-F14 (protocol codegen), CORE-F13 (typed schema codegen),
+HW-F12 (Windows.Graphics.Capture/DXGI), and real code signing (needs an external certificate).
+
+**Known gaps in this batch:** OCR-F11's recorded-crop corpus and OCR-F15's CTC/logit scorer still need
+real captures/model logits; SHELL-F5's full selective rebuild and TOOL-F10's held-lease worker remain
+open; CORE-F11 only removed the dispatch-side clones; HW-F7's firmware change is not accompanied by a
+FW_VERSION bump, v2 pin update or reflash (hardware verification required); SHELL-F15's README rewrite
+stays at publish per CUTOVER.
+
+Verification: Rust fmt/clippy/rustdoc clean; `cargo test --workspace --offline` **94 suites, 1,344
+passed, 0 failed, 6 ignored**. Shell analyze clean and **369/369** tests. The launcher was rebuilt and
+restarted on the new binaries.
+
 ## 2026-11-05 (41) — the remaining Claude-review Phase 0 fixes
 
 The player asked to work the still-open review items one by one. All ten Phase-0 findings left after
