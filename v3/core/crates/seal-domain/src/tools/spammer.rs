@@ -48,6 +48,13 @@ pub struct SpammerRotation {
 
 /// The rotation's rules, derived once: what to walk, what the combos are, and whether preemption is
 /// on.
+///
+/// # The shortest usable cooldown (TOOL-F12)
+///
+/// The caller ticks every 20 ms (`SkillSpammer.Run`'s `SleepCheck(0.02)`), so a cooldown below one
+/// tick is "due on every tick" rather than a rate. [`SpammerPlan::cooldown_problems`] refuses those at
+/// START; the walk below also rotates where it starts looking, so even a key whose cooldown EQUALS one
+/// tick cannot monopolise every tick and starve the rest of the order.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpammerPlan {
     cooldowns: BTreeMap<String, f64>,
@@ -59,6 +66,10 @@ pub struct SpammerPlan {
     pub preempt: bool,
     pub startup: SpammerStartup,
 }
+
+/// One tick of the run loop, in seconds: `SkillSpammer.Run`'s `SleepCheck(0.02)`. A cooldown shorter
+/// than this cannot be honoured, because the loop is never awake more often (TOOL-F12).
+pub const MIN_COOLDOWN_SECONDS: f64 = 0.02;
 
 impl SpammerPlan {
     /// Derives the plan from a rotation. See [`runnable_combos`] and [`singles`] for the rules.
@@ -89,6 +100,24 @@ impl SpammerPlan {
     #[must_use]
     pub fn cooldown(&self, key: &str) -> Option<f64> {
         self.cooldowns.get(key).copied()
+    }
+
+    /// The cooldowns this run cannot use, each as a player line (TOOL-F12). A cooldown that is not a
+    /// finite number, or shorter than one tick, makes the key due on EVERY tick — about fifty presses
+    /// a second — and under a priority order the top key then starves every other key silently.
+    #[must_use]
+    pub fn cooldown_problems(&self) -> Vec<String> {
+        self.cooldowns
+            .iter()
+            .filter(|(_, cooldown)| !(cooldown.is_finite() && **cooldown >= MIN_COOLDOWN_SECONDS))
+            .map(|(key, cooldown)| {
+                format!(
+                    "Spammer key '{key}' has a cooldown of {cooldown} s — it must be at least \
+                     {MIN_COOLDOWN_SECONDS} s (one tick), or that key fires every tick and the \
+                     others never get a turn. Fix the preset on the Spammer tab."
+                )
+            })
+            .collect()
     }
 }
 
@@ -241,6 +270,9 @@ pub struct SpammerRun {
     running_gap: f64,
     opening_at: f64,
     lead_in: f64,
+    /// Where the single-key walk starts looking next (TOOL-F12). Advanced past whichever key was
+    /// pressed last, so a key that is due on every tick cannot take every tick.
+    cursor: usize,
 }
 
 impl SpammerRun {
@@ -300,6 +332,7 @@ impl SpammerRun {
             running_gap: 0.0,
             opening_at,
             lead_in,
+            cursor: 0,
         }
     }
 
@@ -354,15 +387,27 @@ impl SpammerRun {
         }
 
         if self.pending.is_empty() {
-            for key in self.plan.singles.clone() {
+            // TOOL-F12: the walk starts where the LAST press left it and wraps. Taking the first due
+            // key every tick is what let a priority key whose cooldown is one tick long press on
+            // every tick forever, so nothing below it in the order ever fired — silent starvation.
+            let count = self.plan.singles.len();
+            let start = self.cursor;
+            let mut pressed_at: Option<usize> = None;
+            for step in 0..count {
+                let index = (start + step) % count;
+                let key = self.plan.singles[index].clone();
                 if !self.due(&key, now) {
                     continue;
                 }
                 self.last_press.insert(key.clone(), now);
                 presses.push(SpammerPress::new(key));
+                pressed_at = Some(index);
                 if self.plan.preempt {
                     break;
                 }
+            }
+            if let Some(index) = pressed_at {
+                self.cursor = (index + 1) % count;
             }
         } else {
             // A running combo OWNS the tick.

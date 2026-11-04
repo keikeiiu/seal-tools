@@ -62,7 +62,9 @@ fn settings() -> GemSettings {
         move_mode: MoveMode::Tuned,
         resource_gems: vec![vec![500, 300], vec![520, 300], vec![540, 300]],
         empty_mode: EmptyMode::Stop,
-        empty_distance: 0.18,
+        // TOOL-F15: one knob per metric — the pixel-diff fraction and the colour distance.
+        empty_diff_max: seal_domain::tools::gem::DEFAULT_EMPTY_DIFF_MAX,
+        empty_signature_distance: seal_domain::tools::gem::DEFAULT_EMPTY_SIGNATURE_DISTANCE,
         empty_signature: Some(signature()),
         empty_streak: 2,
     }
@@ -252,28 +254,38 @@ fn the_composition_distance_is_euclidean_not_the_mean_that_hid_a_gem() {
 }
 
 /// The crop is the primary signal: when a diff fraction exists it alone decides, in the safe
-/// direction for a missing reference.
+/// direction for a missing reference. TOOL-F15: the pixel diff has its OWN threshold (the spec's
+/// 0.01), not the colour distance's 0.18.
 #[test]
 fn a_diff_fraction_at_or_below_the_threshold_is_empty() {
     assert!(result_box_is_empty(
         &EmptyRead::DiffFraction(0.0),
         Some(&signature()),
+        0.01,
         0.18
     ));
     assert!(result_box_is_empty(
-        &EmptyRead::DiffFraction(0.18),
+        &EmptyRead::DiffFraction(0.01),
         Some(&signature()),
+        0.01,
+        0.18
+    ));
+    assert!(!result_box_is_empty(
+        &EmptyRead::DiffFraction(0.05),
+        Some(&signature()),
+        0.01,
         0.18
     ));
     assert!(!result_box_is_empty(
         &EmptyRead::DiffFraction(0.357),
         Some(&signature()),
+        0.01,
         0.18
     ));
 }
 
 /// Without the crop, the weaker colour signature is the fallback; without either, the composer must
-/// NOT advance on a missing reference.
+/// NOT advance on a missing reference. The fallback keeps its own, wider, measured threshold.
 #[test]
 fn the_colour_signature_is_the_fallback_and_no_reference_is_never_empty() {
     let frame = signature();
@@ -281,14 +293,21 @@ fn the_colour_signature_is_the_fallback_and_no_reference_is_never_empty() {
     assert!(result_box_is_empty(
         &EmptyRead::Composition(frame),
         Some(&signature()),
-        0.01
+        0.01,
+        0.18
     ));
     assert!(!result_box_is_empty(
         &EmptyRead::Composition(frame),
         None,
-        0.01
+        0.01,
+        0.18
     ));
-    assert!(!result_box_is_empty(&EmptyRead::NoReference, None, 0.01));
+    assert!(!result_box_is_empty(
+        &EmptyRead::NoReference,
+        None,
+        0.01,
+        0.18
+    ));
 }
 
 // ── the run: start, combine, settle, advance ──────────────────────────────────────────────

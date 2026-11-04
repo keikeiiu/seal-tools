@@ -42,8 +42,8 @@ use seal_domain::config::{ColorComposition, MovementsConfig};
 use seal_domain::decision::{Decision, StopReason};
 use seal_domain::geometry::Rect;
 use seal_domain::tools::gem::{
-    EmptyMode, EmptyRead, GemRun, GemSettings, GemStep, GemTurn, MoveMode, analyze_composition,
-    result_box_is_empty,
+    DEFAULT_EMPTY_DIFF_MAX, DEFAULT_EMPTY_SIGNATURE_DISTANCE, EmptyMode, EmptyRead, GemRun,
+    GemSettings, GemStep, GemTurn, MoveMode, analyze_composition, result_box_is_empty,
 };
 use seal_tools::runner::{Tool, ToolStatus};
 use seal_tools::tool::{ToolDetail, ToolId, ToolRow};
@@ -202,7 +202,14 @@ fn settings(config: &Value) -> Result<GemSettings, String> {
         empty_mode: EmptyMode::parse(
             &text(config, "/gem/empty_mode").unwrap_or_else(|| "stop".to_owned()),
         ),
-        empty_distance: float(config, "/gem/empty_distance").unwrap_or(0.18),
+        // TOOL-F15: two metrics, two thresholds. The pixel-diff fraction takes the spec's 0.01; the
+        // old single `empty_distance` key seeds the COLOUR-DISTANCE threshold only (its shipped 0.18
+        // is that scale), so an existing config keeps the value it was tuned for and stops loosening
+        // the pixel test by four and a half times.
+        empty_diff_max: float(config, "/gem/empty_diff_max").unwrap_or(DEFAULT_EMPTY_DIFF_MAX),
+        empty_signature_distance: float(config, "/gem/empty_signature_distance")
+            .or_else(|| float(config, "/gem/empty_distance"))
+            .unwrap_or(DEFAULT_EMPTY_SIGNATURE_DISTANCE),
         empty_signature,
         empty_streak: number(config, "/gem/empty_streak").unwrap_or(2),
     })
@@ -293,7 +300,10 @@ pub struct GemResultSource {
     signature: Option<ColorComposition>,
     colored_gap_min: i32,
     save_empty_captures: bool,
-    empty_distance: f64,
+    /// The pixel-diff fraction that still counts as empty (TOOL-F15).
+    empty_diff_max: f64,
+    /// The colour distance that still counts as empty (TOOL-F15).
+    empty_signature_distance: f64,
     logs: Arc<Logs>,
 }
 
@@ -334,7 +344,8 @@ impl GemResultSource {
             signature: plan.settings.empty_signature,
             colored_gap_min: plan.colored_gap_min,
             save_empty_captures: plan.save_empty_captures,
-            empty_distance: plan.settings.empty_distance,
+            empty_diff_max: plan.settings.empty_diff_max,
+            empty_signature_distance: plan.settings.empty_signature_distance,
             logs,
         })
     }
@@ -366,7 +377,8 @@ impl GemSource for GemResultSource {
                 &self.logs,
                 &read,
                 self.signature.as_ref(),
-                self.empty_distance,
+                self.empty_diff_max,
+                self.empty_signature_distance,
                 frame_png.as_deref(),
             );
         }
@@ -383,16 +395,22 @@ pub fn record_empty_check(
     logs: &Logs,
     read: &EmptyRead,
     signature: Option<&ColorComposition>,
-    empty_distance: f64,
+    empty_diff_max: f64,
+    empty_signature_distance: f64,
     frame_png: Option<&[u8]>,
 ) -> Option<String> {
-    let empty = result_box_is_empty(read, signature, empty_distance);
+    let empty = result_box_is_empty(read, signature, empty_diff_max, empty_signature_distance);
     let detail = match read {
         EmptyRead::DiffFraction(fraction) => format!("diff={fraction:.3}"),
         EmptyRead::Composition(_) => "diff=n/a (colour fallback)".to_owned(),
         EmptyRead::NoReference => "diff=n/a (no reference)".to_owned(),
     };
-    let mut line = format!("empty check: {detail} threshold={empty_distance:.3} empty={empty}");
+    // BOTH thresholds, named by the metric they apply to (TOOL-F15): one line saying "threshold=0.18"
+    // for a pixel diff was what made a 2× margin look like the calibrated one.
+    let mut line = format!(
+        "empty check: {detail} diff_max={empty_diff_max:.3} \
+         signature_distance={empty_signature_distance:.3} empty={empty}"
+    );
     let capture = frame_png.and_then(|png| {
         logs.capture(
             &format!("empty_check_crop_{}.png", crate::logs::short_stamp()),
@@ -632,7 +650,8 @@ impl<S: GemSource + Send> Tool for GemTool<S> {
                     let empty = result_box_is_empty(
                         &read,
                         self.plan.settings.empty_signature.as_ref(),
-                        self.plan.settings.empty_distance,
+                        self.plan.settings.empty_diff_max,
+                        self.plan.settings.empty_signature_distance,
                     );
                     self.phase = Phase::Finish(Some(empty));
                 }
@@ -672,6 +691,7 @@ mod tests {
                 "empty_streak": empty_streak,
                 "move_mode": "arduino",
                 "colored_gap_min": 40,
+                // The OLD single key, still seeded into the colour-distance threshold (TOOL-F15).
                 "empty_distance": 0.18,
                 "empty_signature": signature(),
                 "result_gem_area": [610, 800, 220, 60],
@@ -756,7 +776,10 @@ mod tests {
         assert_eq!(plan.settings.start_grade, "N");
         assert_eq!(plan.settings.move_mode, MoveMode::Arduino);
         assert_eq!(plan.settings.empty_mode, EmptyMode::AdvanceGrade);
-        assert_eq!(plan.settings.empty_distance, 0.18);
+        // TOOL-F15: the old single key seeded the colour-distance threshold (0.18), while the
+        // pixel-diff threshold takes the spec's 0.01 — they are different metrics.
+        assert_eq!(plan.settings.empty_signature_distance, 0.18);
+        assert_eq!(plan.settings.empty_diff_max, 0.01);
         assert_eq!(plan.result_area, Some(Rect::new(610, 800, 220, 60)));
         assert_eq!(plan.colored_gap_min, 40);
         assert!(!plan.save_empty_captures);
@@ -1064,7 +1087,49 @@ mod tests {
         let read = empty_read_from_frame(reference, None, 40, 4, 4, &[0u8; 64]);
 
         assert_eq!(read, EmptyRead::NoReference);
-        assert!(!result_box_is_empty(&read, None, 0.18));
+        assert!(!result_box_is_empty(&read, None, 0.01, 0.18));
+    }
+
+    /// TOOL-F15: the two metrics no longer share one knob. A pixel difference of 0.05 is a GEM under
+    /// the spec's 0.01 threshold, even though the old code accepted it (0.05 ≤ 0.18) and advanced the
+    /// grade early; the colour-distance fallback keeps its own, wider, calibrated 0.18.
+    #[test]
+    fn a_pixel_diff_above_the_spec_threshold_is_not_empty() {
+        let gem = EmptyRead::DiffFraction(0.05);
+        assert!(
+            !result_box_is_empty(&gem, None, 0.01, 0.18),
+            "0.05 differs from the empty reference by five times the spec's 0.01"
+        );
+        assert!(result_box_is_empty(
+            &EmptyRead::DiffFraction(0.005),
+            None,
+            0.01,
+            0.18
+        ));
+
+        // The colour fallback is measured on a different scale: a small distance in it is still
+        // inside the 0.18 threshold.
+        let empty_signature = ColorComposition {
+            mean_v: 0.30,
+            mean_sat: 0.10,
+            colored_fraction: 0.05,
+            mean_r: 0.30,
+            mean_g: 0.30,
+            mean_b: 0.30,
+        };
+        let frame = ColorComposition {
+            mean_v: empty_signature.mean_v + 0.09,
+            ..empty_signature
+        };
+        assert!(
+            result_box_is_empty(
+                &EmptyRead::Composition(frame),
+                Some(&empty_signature),
+                0.01,
+                0.18
+            ),
+            "the colour distance still uses its own 0.18 threshold"
+        );
     }
 
     #[test]

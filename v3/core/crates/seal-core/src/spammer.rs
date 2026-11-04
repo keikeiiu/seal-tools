@@ -49,7 +49,21 @@ impl Now for RealNow {
 /// (the loader preserves map order, which is the order the player sees), plus that preset's
 /// priority/combos/startup. `presets_configured` and `active` travel separately because the domain's
 /// refusal line differs between "no presets at all" and "that name is not here".
-pub fn rotation(config: &Value) -> (bool, String, Option<SpammerRotation>) {
+///
+/// `problems` are values the config has but the run cannot use (TOOL-F12): a cooldown that is not a
+/// number was silently treated as `0.0`, which makes the key due on every tick — about fifty presses a
+/// second. They are player lines; [`plan`] refuses to start while one is present.
+#[derive(Debug, Clone)]
+pub struct Rotation {
+    pub presets_configured: bool,
+    pub active: String,
+    pub rotation: Option<SpammerRotation>,
+    pub problems: Vec<String>,
+}
+
+/// Resolve the active preset, keeping the values the config could not use as refusal lines.
+pub fn rotation(config: &Value) -> Rotation {
+    let mut problems = Vec::new();
     let spammer = config.get("spammer");
     let presets = spammer
         .and_then(|block| block.get("presets"))
@@ -65,16 +79,32 @@ pub fn rotation(config: &Value) -> (bool, String, Option<SpammerRotation>) {
         .and_then(|presets| presets.get(&active))
         .and_then(Value::as_object)
     else {
-        return (presets_configured, active, None);
+        return Rotation {
+            presets_configured,
+            active,
+            rotation: None,
+            problems,
+        };
     };
     if body.is_empty() {
-        return (presets_configured, active, None);
+        return Rotation {
+            presets_configured,
+            active,
+            rotation: None,
+            problems,
+        };
     }
 
-    let keys: Vec<(String, f64)> = body
-        .iter()
-        .map(|(key, cooldown)| (key.clone(), cooldown.as_f64().unwrap_or(0.0)))
-        .collect();
+    let mut keys: Vec<(String, f64)> = Vec::with_capacity(body.len());
+    for (key, cooldown) in body {
+        match cooldown.as_f64() {
+            Some(seconds) => keys.push((key.clone(), seconds)),
+            None => problems.push(format!(
+                "Spammer key '{key}' has no cooldown — give it a number of seconds on the Spammer tab \
+                 (a value that is not a number fires the key on every tick)."
+            )),
+        }
+    }
     let branch = |name: &str| {
         spammer
             .and_then(|block| block.get(name))
@@ -92,26 +122,39 @@ pub fn rotation(config: &Value) -> (bool, String, Option<SpammerRotation>) {
         .and_then(|value| serde_json::from_value(value).ok())
         .unwrap_or_default();
 
-    (
+    Rotation {
         presets_configured,
-        active.clone(),
-        Some(SpammerRotation {
+        active: active.clone(),
+        rotation: Some(SpammerRotation {
             keys,
             priority,
             combos,
             startup,
         }),
-    )
+        problems,
+    }
 }
 
 /// The run's plan, or the refusal line v2's `Run()` shows.
 ///
+/// TOOL-F12: a cooldown the run cannot honour (not a number, zero, negative, or shorter than one
+/// tick) refuses the START by name instead of pressing that key fifty times a second.
+///
 /// # Errors
 ///
-/// Returns the refusal line when no preset is configured or the active preset is missing.
+/// Returns the refusal line when no preset is configured, the active preset is missing, or a
+/// cooldown cannot be used.
 pub fn plan(config: &Value) -> Result<SpammerPlan, String> {
-    let (presets_configured, active, rotation) = rotation(config);
-    plan_or_stop(presets_configured, &active, rotation).map_err(|reason| reason.message)
+    let read = rotation(config);
+    if let Some(problem) = read.problems.first() {
+        return Err(problem.clone());
+    }
+    let plan = plan_or_stop(read.presets_configured, &read.active, read.rotation)
+        .map_err(|reason| reason.message)?;
+    match plan.cooldown_problems().first() {
+        Some(problem) => Err(problem.clone()),
+        None => Ok(plan),
+    }
 }
 
 /// The keys the firmware cannot send, one v2 warning line each. The whole rotation is checked at
@@ -119,8 +162,7 @@ pub fn plan(config: &Value) -> Result<SpammerPlan, String> {
 /// player can fix the preset before anything is pressed.
 #[must_use]
 pub fn unsupported_keys(config: &Value) -> Vec<String> {
-    let (_, _, rotation) = rotation(config);
-    let Some(rotation) = rotation else {
+    let Some(rotation) = rotation(config).rotation else {
         return Vec::new();
     };
     rotation
@@ -283,11 +325,12 @@ mod tests {
             "buff",
         );
 
-        let (configured, active, rotation) = rotation(&config);
+        let read = rotation(&config);
 
-        assert!(configured, "two presets are configured");
-        assert_eq!(active, "buff");
-        let rotation = rotation.expect("the active preset resolved");
+        assert!(read.presets_configured, "two presets are configured");
+        assert_eq!(read.active, "buff");
+        assert!(read.problems.is_empty(), "{:?}", read.problems);
+        let rotation = read.rotation.expect("the active preset resolved");
         assert_eq!(
             rotation.keys,
             vec![("1".to_owned(), 1.0), ("2".to_owned(), 0.5)],
@@ -375,8 +418,8 @@ mod tests {
 
     #[test]
     fn a_tick_turns_presses_into_decisions_then_waits() {
-        // A cooldown above zero is what makes the key STOP being due: a zero-cooldown key is due every
-        // tick, which is a legitimate preset (a key with no cooldown) rather than the wait case.
+        // A cooldown above the tick is what makes the key STOP being due; a cooldown below the tick
+        // is refused at start (TOOL-F12), so there is no "always due" preset left to wait on.
         let config = config(&serde_json::json!({"buff": {"1": 5.0}}), "buff");
         let plan = plan(&config).expect("a plan");
         let mut tool = SpammerTool::new(&plan, Box::new(StepNow::new(0.0)));
@@ -388,10 +431,34 @@ mod tests {
 
     #[test]
     fn a_starred_key_is_the_fast_tap_decision() {
-        let config = config(&serde_json::json!({"buff": {"*1": 0.0}}), "buff");
+        // The shortest cooldown the tick can honour; a zero one is refused at start (TOOL-F12).
+        let config = config(&serde_json::json!({"buff": {"*1": 0.02}}), "buff");
         let plan = plan(&config).expect("a plan");
         let mut tool = SpammerTool::new(&plan, Box::new(StepNow::new(0.0)));
 
         assert_eq!(tool.decide(), Decision::KeyFast(Key::Char('1')));
+    }
+
+    /// TOOL-F12: a cooldown the run cannot honour refuses the START and names the key. Before this, a
+    /// cooldown written as a string (or 0, or negative) became "due every tick" — about fifty presses
+    /// a second, and under a priority order the other keys never fired at all.
+    #[test]
+    fn a_cooldown_that_is_not_a_number_or_too_short_refuses_the_start() {
+        let text = config(&serde_json::json!({"buff": {"1": "fast"}}), "buff");
+        let line = plan(&text).expect_err("a string cooldown cannot start");
+        assert!(line.contains("Spammer key '1' has no cooldown"), "{line}");
+
+        let zero = config(&serde_json::json!({"buff": {"1": 0.0, "2": 2.0}}), "buff");
+        let line = plan(&zero).expect_err("a zero cooldown cannot start");
+        assert!(line.contains("Spammer key '1'"), "{line}");
+        assert!(line.contains("at least 0.02 s"), "{line}");
+
+        let negative = config(&serde_json::json!({"buff": {"1": -1.0}}), "buff");
+        let line = plan(&negative).expect_err("a negative cooldown cannot start");
+        assert!(line.contains("Spammer key '1'"), "{line}");
+
+        // One tick is the shortest cooldown the 20 ms loop can honour.
+        let shortest = config(&serde_json::json!({"buff": {"1": 0.02}}), "buff");
+        assert!(plan(&shortest).is_ok());
     }
 }

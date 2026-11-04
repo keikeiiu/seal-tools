@@ -6,7 +6,8 @@
 //! collapse into "the run exists" and the tool is simply:
 //!
 //! 1. first decision: [`Decision::HoldSpace`] (the wire's `P`);
-//! 2. then `Wait` on v2's 50 ms tick until the runner cancels.
+//! 2. then `Wait` on v2's 50 ms tick until the runner cancels, re-sending `P` once a second as the
+//!    firmware's hung-host watchdog heartbeat (HW-F7).
 //!
 //! **The release cannot be forgotten.** The runner drops the effects object when the worker ends
 //! (normal stop, `tool.stop`, an effect failure, shutdown), and [`SpaceHoldEffects`]' `Drop` sends `U`
@@ -32,10 +33,19 @@ use crate::logs::Logs;
 /// v2's `HoldSpace` loop tick (`HoldSpace.cs`: `SleepCheck(0.05)`).
 pub const TICK_SECONDS: f64 = 0.05;
 
+/// How many loop ticks between two `P` writes while the spacebar is held: 20 × 50 ms = one second.
+///
+/// The firmware's held-input watchdog releases everything after three seconds without a byte from
+/// the host, because its `!Serial` check cannot see a HUNG process that still holds the port open
+/// (HW-F7). Re-sending `P` is the heartbeat: the sketch's `P` handler is idempotent (the key is
+/// already down), and one second is a comfortable margin under the three-second threshold.
+pub const HEARTBEAT_TICKS: u32 = 20;
+
 /// The hold loop as the runner sees it.
 #[derive(Debug, Default)]
 pub struct HoldSpaceTool {
     started: bool,
+    ticks_since_hold: u32,
 }
 
 impl HoldSpaceTool {
@@ -53,6 +63,13 @@ impl seal_tools::runner::Tool for HoldSpaceTool {
     fn decide(&mut self) -> Decision {
         if !self.started {
             self.started = true;
+            self.ticks_since_hold = 0;
+            return Decision::HoldSpace;
+        }
+        self.ticks_since_hold += 1;
+        if self.ticks_since_hold >= HEARTBEAT_TICKS {
+            // The heartbeat, not a new hold: see HEARTBEAT_TICKS (HW-F7).
+            self.ticks_since_hold = 0;
             return Decision::HoldSpace;
         }
         // The release is the effects object's Drop, not a decision: the runner never calls `decide`
@@ -167,6 +184,28 @@ mod tests {
         assert_eq!(tool.decide(), Decision::HoldSpace);
         assert_eq!(tool.decide(), Decision::Wait(TICK_SECONDS));
         assert_eq!(tool.decide(), Decision::Wait(TICK_SECONDS));
+    }
+
+    #[test]
+    fn the_hold_is_refreshed_once_a_second_before_the_firmware_watchdog_can_fire() {
+        // The firmware releases a held key after three seconds without a byte from the host, which
+        // is what catches a HUNG launcher; a healthy one must therefore keep talking (HW-F7).
+        let mut tool = HoldSpaceTool::new();
+        assert_eq!(tool.decide(), Decision::HoldSpace, "the first hold");
+
+        for _ in 0..HEARTBEAT_TICKS - 1 {
+            assert_eq!(tool.decide(), Decision::Wait(TICK_SECONDS));
+        }
+        assert_eq!(
+            tool.decide(),
+            Decision::HoldSpace,
+            "the twentieth tick re-sends P"
+        );
+        assert_eq!(
+            TICK_SECONDS * f64::from(HEARTBEAT_TICKS),
+            1.0,
+            "the heartbeat is one second, well inside the firmware's three-second silence window"
+        );
     }
 
     #[test]

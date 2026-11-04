@@ -5,16 +5,16 @@
 //! (`Click`, `Key`, `Wait`, `Stop(Reason)`) that carries the message to show; the loop only performs
 //! effects." v2's equivalent loop was untestable because it closed over the serial port, the config
 //! and the OCR engine at once (`PROGRESS.md` entry 59). Here the tool is a trait, the effects are a
-//! trait, time is a `Clock`, and the stop is the cancellation token — so a whole run is a
+//! trait, time is a `Clock`, and the stop is the cancellation token —so a whole run is a
 //! single-threaded test.
 //!
-//! The loop is deliberately small: publish `running`, then `decide` → perform → check the stop. It
+//! The loop is deliberately small: publish `running`, then `decide` —perform —check the stop. It
 //! does not catch anything a tool does; a panic is the process's problem and the arbiter's `finished`
 //! is what publishes the final word. The real tool half lives in the tools' crates; the effects half
 //! lives in `seal-core` over the board, capture and OCR.
 //!
 //! The hotkey watches v2's `SleepCheck` also carried (quit/pause) are NOT here: they belong to the
-//! core's input loop, which cancels the token when the player presses quit — the loop then stops
+//! core's input loop, which cancels the token when the player presses quit —the loop then stops
 //! through the same mechanism as the Stop button, which is what makes the two indistinguishable to
 //! the tool.
 
@@ -29,7 +29,7 @@ use crate::tool::{ToolId, ToolPhase, ToolSnapshot};
 /// A tool's decision half. One method: what to do next. The loop calls it repeatedly and performs
 /// each answer; the tool keeps any state it needs between calls.
 ///
-/// A decision half must not perform I/O — it returns `Decision`s and the runner performs them. That
+/// A decision half must not perform I/O —it returns `Decision`s and the runner performs them. That
 /// is what makes a whole run testable with a fake tool, and it is why the message a run ends with
 /// rides on `Stop`, not on a writer of its own.
 pub trait Tool {
@@ -48,7 +48,7 @@ pub trait Tool {
     }
 
     /// The run's LAST facts for `tool.finished.summary` (G11), built by the tool because only it can
-    /// say what the run achieved — e.g. the Tuner's final grade/attempts/captures and which stop
+    /// say what the run achieved —e.g. the Tuner's final grade/attempts/captures and which stop
     /// reason ended it. `None` (the default) publishes `"summary": null`; `ended_at` is added by the
     /// event builder, so a tool never carries a clock.
     fn summary(&self, _reason: &StopReason) -> Option<serde_json::Value> {
@@ -62,6 +62,29 @@ pub trait Tool {
     fn drain_log_notes(&mut self) -> Vec<String> {
         Vec::new()
     }
+
+    /// An effect failed. The default ends the run (every counted tool does: a buy pass that cannot
+    /// click is over), but a RESIDENT tool outlives a single bad click, so it can ask the loop to
+    /// carry on (PET-F8). Called with the failure before anything is decided about the run.
+    fn on_effect_error(&mut self, _error: &EffectError) -> EffectRecovery {
+        EffectRecovery::Stop
+    }
+
+    /// A wait was cut short because the machine SLEPT through it: `actual_seconds` of real time
+    /// passed while only the requested wait was accounted for (PET-F12). A tool whose schedule is
+    /// time based applies the difference here; the default does nothing, because a tool that reads
+    /// its state fresh every decision has nothing to correct.
+    fn on_resume(&mut self, _actual_seconds: f64) {}
+}
+
+/// What the loop does after an effect failed. See [`Tool::on_effect_error`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum EffectRecovery {
+    /// End the run as an error carrying the failure's line —the default.
+    Stop,
+    /// The tool absorbed the failure (a strike, a retry window) and the run continues: publish
+    /// `message`, wait `after_s` (cancellable), then ask the tool for its next decision.
+    Retry { after_s: f64, message: String },
 }
 
 /// What a tool wants its card to say between decisions. Compared by value by the runner, so a tool
@@ -126,7 +149,7 @@ pub trait Effects {
 
     /// Press one key as the fast tap. The default is the ordinary press, so an effects
     /// implementation that does not model the distinction still sends the key rather than dropping
-    /// it — the slower tap is a visible-but-working outcome, a dropped key is an invisible bug.
+    /// it —the slower tap is a visible-but-working outcome, a dropped key is an invisible bug.
     ///
     /// # Errors
     ///
@@ -259,7 +282,7 @@ pub trait Effects {
     }
 }
 
-/// An effect failed. The message is what the tool's card shows, so it is a sentence — v2's
+/// An effect failed. The message is what the tool's card shows, so it is a sentence —v2's
 /// `Exception.Message` was not, which is why its cards occasionally showed a stack-frame string.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EffectError {
@@ -288,7 +311,7 @@ impl std::fmt::Display for EffectError {
 impl std::error::Error for EffectError {}
 
 /// The line a cancelled run ends with. v2 published no message on a normal stop (its card fell to a
-/// bare "stopped" made of UI text), and `tool.finished` needs a string — this is that string, defined
+/// bare "stopped" made of UI text), and `tool.finished` needs a string —this is that string, defined
 /// where v2 has none.
 pub const STOPPED_MESSAGE: &str = "Stopped.";
 
@@ -299,11 +322,13 @@ pub const EFFECT_FAILED_MESSAGE: &str = "A board or capture action failed.";
 /// Runs a tool to its end and returns the reason it stopped.
 ///
 /// The loop, in order: publish `running`; check the stop; ask for a decision; check the stop
-/// AGAIN (a slow `decide` — the tuner's OCR pass — can outlast a Stop press, and the effect a
+/// AGAIN (a slow `decide` —the tuner's OCR pass —can outlast a Stop press, and the effect a
 /// pending non-terminal decision asks for must not run after it); perform it; repeat.
 /// `Wait` sleeps through [`RunControl`]'s ticked sleep, so a stop is noticed DURING a long wait (the
-/// pet feeder's ~30 s reload) rather than after it. A failed effect ends the run as an error; a
-/// cancelled token ends it as cancelled; `Decision::Stop` ends it with its own reason and message.
+/// pet feeder's ~30 s reload) rather than after it. A failed effect ends the run as an error —unless
+/// the tool absorbed it through [`Tool::on_effect_error`], in which case the loop publishes its line
+/// and carries on (PET-F8). A cancelled token ends it as cancelled; `Decision::Stop` ends it with its
+/// own reason and message.
 ///
 /// The final snapshot is NOT published here: the arbiter publishes it from the returned
 /// [`StopReason`] in `finished`, so the reason and the card cannot disagree, and a stop requested
@@ -339,82 +364,62 @@ pub fn run(
         // Publish the tool's own card state BEFORE performing the decision, so a countdown shows
         // while its wait runs and a message caused by a read is visible as soon as it exists.
         publish_status(handle, tool, &mut published_status, &control);
-        match decision {
-            Decision::Click(at) => {
-                if let Err(error) = effects.click(at) {
-                    return StopReason::error(effect_message(&error));
-                }
-            }
-            Decision::Key(key) => {
-                if let Err(error) = effects.key(key) {
-                    return StopReason::error(effect_message(&error));
-                }
-            }
-            Decision::KeyFast(key) => {
-                if let Err(error) = effects.key_fast(key) {
-                    return StopReason::error(effect_message(&error));
-                }
-            }
-            Decision::HoldSpace => {
-                if let Err(error) = effects.hold_space() {
-                    return StopReason::error(effect_message(&error));
-                }
-            }
-            Decision::ReleaseSpace => {
-                if let Err(error) = effects.release_space() {
-                    return StopReason::error(effect_message(&error));
-                }
-            }
-            Decision::Enter => {
-                if let Err(error) = effects.enter() {
-                    return StopReason::error(effect_message(&error));
-                }
-            }
-            Decision::Place(at) => {
-                if let Err(error) = effects.place(at) {
-                    return StopReason::error(effect_message(&error));
-                }
-            }
-            Decision::ClickHere => {
-                if let Err(error) = effects.click_here() {
-                    return StopReason::error(effect_message(&error));
-                }
-            }
-            Decision::RightClickHere => {
-                if let Err(error) = effects.right_click_here() {
-                    return StopReason::error(effect_message(&error));
-                }
-            }
-            Decision::Wheel { notches, down } => {
-                if let Err(error) = effects.wheel(notches, down) {
-                    return StopReason::error(effect_message(&error));
-                }
-            }
-            Decision::MoveBy { dx, dy } => {
-                if let Err(error) = effects.move_by(dx, dy) {
-                    return StopReason::error(effect_message(&error));
-                }
-            }
-            Decision::HoldLeft => {
-                if let Err(error) = effects.hold_left() {
-                    return StopReason::error(effect_message(&error));
-                }
-            }
-            Decision::ReleaseLeft => {
-                if let Err(error) = effects.release_left() {
-                    return StopReason::error(effect_message(&error));
-                }
-            }
+        let failure = match decision {
             Decision::Wait(seconds) => {
                 if control.sleep(clock, seconds).is_err() {
                     return StopReason::cancelled(STOPPED_MESSAGE);
                 }
+                if let Some(slept) = control.take_resume() {
+                    // The machine slept through the wait: the screen may have changed or the client
+                    // disconnected. The tool decides what to re-read before acting again (PET-F12),
+                    // and its next `status()` publishes whatever it now says.
+                    tool.on_resume(slept);
+                }
+                None
             }
             Decision::Stop(reason) => {
                 // A terminal decision is the tool's own answer; the loop does not question it.
                 return reason;
             }
+            input => perform_input(effects, &input).err(),
+        };
+        // PET-F8: every counted tool ends the run here (its work is over either way), but a resident
+        // tool can absorb the failure and keep the schedule going.
+        if let Some(error) = failure {
+            match tool.on_effect_error(&error) {
+                EffectRecovery::Stop => return StopReason::error(effect_message(&error)),
+                EffectRecovery::Retry { after_s, message } => {
+                    publish_message(handle, tool, &mut published_status, &control, message);
+                    if control.sleep(clock, after_s).is_err() {
+                        return StopReason::cancelled(STOPPED_MESSAGE);
+                    }
+                }
+            }
         }
+    }
+}
+
+/// Performs one INPUT decision —everything except the loop's own two ([`Decision::Wait`] is time
+/// and [`Decision::Stop`] is the end, neither of which the effects half owns). Split out of [`run`]
+/// so the loop's shape stays readable and the per-decision rows stay a table.
+fn perform_input(effects: &mut dyn Effects, decision: &Decision) -> Result<(), EffectError> {
+    match decision {
+        Decision::Click(at) => effects.click(*at),
+        Decision::Key(key) => effects.key(*key),
+        Decision::KeyFast(key) => effects.key_fast(*key),
+        Decision::HoldSpace => effects.hold_space(),
+        Decision::ReleaseSpace => effects.release_space(),
+        Decision::Enter => effects.enter(),
+        Decision::Place(at) => effects.place(*at),
+        Decision::ClickHere => effects.click_here(),
+        Decision::RightClickHere => effects.right_click_here(),
+        Decision::Wheel { notches, down } => effects.wheel(*notches, *down),
+        Decision::MoveBy { dx, dy } => effects.move_by(*dx, *dy),
+        Decision::HoldLeft => effects.hold_left(),
+        Decision::ReleaseLeft => effects.release_left(),
+        // The caller handles both before getting here; performing them as no-ops keeps the exhaust
+        // list in one place instead of a catch-all that could swallow a future decision's effect.
+        Decision::Wait(_) | Decision::Stop(_) => Ok(()),
     }
 }
 
@@ -431,6 +436,30 @@ fn publish_status(
     if *published == status {
         return;
     }
+    publish(handle, tool.id(), control, status, published);
+}
+
+/// Publishes the tool's current status with `message` in place of its own —the retry line an effect
+/// failure produced, which the tool's own `status()` cannot show until its next decision (PET-F8).
+fn publish_message(
+    handle: &RunHandle,
+    tool: &dyn Tool,
+    published: &mut ToolStatus,
+    control: &RunControl,
+    message: String,
+) {
+    let mut status = tool.status();
+    status.message = message;
+    publish(handle, tool.id(), control, status, published);
+}
+
+fn publish(
+    handle: &RunHandle,
+    tool: ToolId,
+    control: &RunControl,
+    status: ToolStatus,
+    published: &mut ToolStatus,
+) {
     *published = status.clone();
     // The tool may have observed a cancellation in `status()`; never paint Running over Stopping
     // (the cell also enforces this monotonic phase for the ordinary Stop path, TOOL-F14).
@@ -440,7 +469,7 @@ fn publish_status(
         ToolPhase::Running
     };
     handle.state.publish(
-        ToolSnapshot::new(tool.id())
+        ToolSnapshot::new(tool)
             .running(phase)
             .message(status.message)
             .countdown_s(status.countdown_s)

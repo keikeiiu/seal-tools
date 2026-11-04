@@ -459,7 +459,8 @@ fn one_sold_slot_is_the_full_ordered_transaction() {
 
 /// A buy pass focuses, scrolls the preset's notches ONCE, then returns to the same derived row for
 /// every purchase. The count comes from the RUN, not the preset: a different number should not mean
-/// editing the preset.
+/// editing the preset. TOOL-F11: the transactions are carried as ONE repeated block, not expanded
+/// into `12 · count` steps before the first click.
 #[test]
 fn a_buy_pass_scrolls_once_and_repeats_the_row() {
     let plan = ShopPlan::buy(&settings(), Some("spring"), 2).unwrap();
@@ -469,8 +470,12 @@ fn a_buy_pass_scrolls_once_and_repeats_the_row() {
     let focus_steps = 4;
     assert_eq!(
         plan.steps.len(),
-        focus_steps + scroll_steps + 2 * steps_per_purchase
+        focus_steps + scroll_steps,
+        "the fixed steps are the focus click and the scroll, nothing per purchase"
     );
+    assert_eq!(plan.repeat.len(), steps_per_purchase);
+    assert_eq!(plan.remaining, 2, "the count is walked, not materialised");
+    assert_eq!(plan.transactions, 2);
 
     // Focus, then the preset's 2 notches down, then the settle wait.
     assert_eq!(plan.steps[0], ShopStep::Place(point(700, 300)));
@@ -485,10 +490,8 @@ fn a_buy_pass_scrolls_once_and_repeats_the_row() {
     assert_eq!(plan.steps[5], ShopStep::Wait(scroll_settle(2)));
 
     // Row 1 of 10 in a 470 px region: 300 + round(1.5 * 47) = 370.
-    assert_eq!(plan.steps[6], ShopStep::Place(point(300, 370)));
-    assert_eq!(plan.steps[8], ShopStep::Click(ClickButton::Right));
-    // The second purchase aims at the SAME row; nothing scrolls again.
-    assert_eq!(plan.steps[18], ShopStep::Place(point(300, 370)));
+    assert_eq!(plan.repeat[0], ShopStep::Place(point(300, 370)));
+    assert_eq!(plan.repeat[2], ShopStep::Click(ClickButton::Right));
 
     assert_eq!(plan.done_message, "Bought 2x 'spring'.");
 }
@@ -498,6 +501,7 @@ fn the_buy_count_comes_from_the_run_and_is_at_least_one() {
     let plan = ShopPlan::buy(&settings(), Some("spring"), 0).unwrap();
 
     assert_eq!(plan.done_message, "Bought 1x 'spring'.");
+    assert_eq!(plan.remaining, 1);
 }
 
 #[test]
@@ -507,19 +511,63 @@ fn a_preset_with_no_scroll_skips_the_scroll_steps() {
 
     let plan = ShopPlan::buy(&settings, Some("plain"), 1).unwrap();
 
-    assert_eq!(plan.steps[4], ShopStep::Place(point(300, 324)));
+    assert_eq!(plan.steps.len(), 4, "focus only, no scroll block");
+    assert_eq!(plan.repeat[0], ShopStep::Place(point(300, 324)));
 }
 
-/// Deliberately unclamped, as v2's `ShopGeometry.RowCentre` says in as many words: "asking for a row
-/// past the bottom means the preset is wrong, and that is the caller's to report, not to round off".
+/// TOOL-F11: the preset's row is checked against the calibrated list. `row_centre` used to accept any
+/// non-negative index — its own note said "that is the caller's to report", and nothing did — so a
+/// preset on row 10 of a 10-row list right-clicked half a pitch BELOW the list, which is a wrong
+/// purchase. The boundary: the last row passes, one past it is refused and names the row.
 #[test]
-fn a_row_past_the_bottom_is_planned_where_it_lands() {
-    let mut settings = settings();
-    settings.presets.insert("far".to_owned(), preset(0, 99, 1));
+fn a_row_past_the_bottom_is_refused_by_the_boundary() {
+    let mut settings = settings(); // 10 rows
+    settings.presets.insert("last".to_owned(), preset(0, 9, 1));
+    assert!(
+        ShopPlan::buy(&settings, Some("last"), 1).is_ok(),
+        "row 10 of a 10-row list is the last real row"
+    );
 
-    let plan = ShopPlan::buy(&settings, Some("far"), 1).unwrap();
+    settings.presets.insert("far".to_owned(), preset(0, 10, 1));
+    let refusal = error_message(ShopPlan::buy(&settings, Some("far"), 1));
+    assert!(
+        refusal.contains("row 11 of a 10-row shop list"),
+        "the refusal names the row and the list: {refusal}"
+    );
+    assert!(refusal.contains("Pick a row between 1 and 10"), "{refusal}");
 
-    assert_eq!(plan.steps[4], ShopStep::Place(point(300, 4976)));
+    // A negative row was already refused by `row_centre`; keep it refused and named the same way.
+    settings
+        .presets
+        .insert("behind".to_owned(), preset(0, -1, 1));
+    let refusal = error_message(ShopPlan::buy(&settings, Some("behind"), 1));
+    assert!(refusal.contains("row 0 of a 10-row shop list"), "{refusal}");
+}
+
+/// TOOL-F11: the count is capped, so a typo or a stuck key cannot turn one Start into a hundred
+/// purchases too many. Nothing is bought when the cap refuses.
+#[test]
+fn an_absurd_buy_count_is_refused_before_anything_is_planned() {
+    let refusal = error_message(ShopPlan::buy(
+        &settings(),
+        Some("spring"),
+        seal_domain::tools::shop::MAX_BUY_TRANSACTIONS + 1,
+    ));
+    assert!(
+        refusal.contains("capped at 100 transactions"),
+        "the refusal names the cap: {refusal}"
+    );
+    assert!(refusal.contains("Nothing was bought"), "{refusal}");
+
+    assert!(
+        ShopPlan::buy(
+            &settings(),
+            Some("spring"),
+            seal_domain::tools::shop::MAX_BUY_TRANSACTIONS
+        )
+        .is_ok(),
+        "the cap itself is allowed"
+    );
 }
 
 // ── mid-run failures (the loop reports them; the messages live here) ───────────────────────

@@ -5,16 +5,17 @@
 //! runner is pure except for the `Effects`/`Clock` it is handed.
 
 use std::collections::VecDeque;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use seal_domain::decision::{Decision, Key, StopKind, StopReason};
 use seal_domain::geometry::Point;
 use seal_tools::arbiter::Arbiter;
 use seal_tools::clock::Clock;
 use seal_tools::runner::{
-    EFFECT_FAILED_MESSAGE, EffectError, Effects, STOPPED_MESSAGE, Tool, ToolStatus, run,
+    EFFECT_FAILED_MESSAGE, EffectError, EffectRecovery, Effects, STOPPED_MESSAGE, Tool, ToolStatus,
+    run,
 };
-use seal_tools::tool::{StateCell, ToolId, ToolPhase};
+use seal_tools::tool::{StateCell, ToolId, ToolPhase, ToolSnapshot};
 
 struct ScriptedTool {
     id: ToolId,
@@ -168,6 +169,93 @@ impl Clock for RecordingClock {
     fn sleep_seconds(&self, seconds: f64) {
         self.slept.lock().expect("not poisoned").push(seconds);
     }
+}
+
+/// PET-F12: a wait interrupted by a suspend is reported to the tool, so a time-based schedule can
+/// apply the real time that passed instead of acting on a stale screen.
+#[test]
+fn a_suspend_during_a_wait_reaches_the_tool_as_a_resume() {
+    /// The wall clock jumps 90 s ahead of the monotonic one on the first tick.
+    #[derive(Default)]
+    struct SuspendingClock {
+        monotonic: Mutex<f64>,
+        wall: Mutex<f64>,
+        jumped: Mutex<bool>,
+    }
+
+    impl Clock for SuspendingClock {
+        fn sleep_seconds(&self, seconds: f64) {
+            *self.monotonic.lock().expect("not poisoned") += seconds;
+            let mut wall = self.wall.lock().expect("not poisoned");
+            *wall += seconds;
+            let mut jumped = self.jumped.lock().expect("not poisoned");
+            if !*jumped {
+                *jumped = true;
+                *wall += 90.0;
+            }
+        }
+
+        fn monotonic_seconds(&self) -> Option<f64> {
+            Some(*self.monotonic.lock().expect("not poisoned"))
+        }
+
+        fn wall_seconds(&self) -> Option<f64> {
+            Some(1_000.0 + *self.wall.lock().expect("not poisoned"))
+        }
+    }
+
+    struct ResumingTool {
+        script: VecDeque<Decision>,
+        resumed: Mutex<Vec<f64>>,
+    }
+
+    impl Tool for ResumingTool {
+        fn id(&self) -> ToolId {
+            ToolId::Pet
+        }
+
+        fn decide(&mut self) -> Decision {
+            self.script
+                .pop_front()
+                .unwrap_or_else(|| Decision::stop(StopReason::done("still here")))
+        }
+
+        fn on_resume(&mut self, actual_seconds: f64) {
+            self.resumed
+                .lock()
+                .expect("not poisoned")
+                .push(actual_seconds);
+        }
+    }
+
+    let mut arbiter = Arbiter::new();
+    let handle = match arbiter.start(ToolId::Pet) {
+        seal_tools::arbiter::Start::Started(handle) => handle,
+        other => panic!("expected a start, got {other:?}"),
+    };
+    let mut tool = ResumingTool {
+        script: vec![
+            Decision::wait(7_200.0),
+            Decision::stop(StopReason::done("done")),
+        ]
+        .into(),
+        resumed: Mutex::new(Vec::new()),
+    };
+    let clock = SuspendingClock::default();
+
+    let reason = run(&mut tool, &handle, &clock, &mut RecordingEffects::default());
+
+    assert_eq!(reason.message, "done");
+    let resumed = tool.resumed.lock().expect("not poisoned").clone();
+    assert_eq!(resumed.len(), 1, "one resume for one suspend: {resumed:?}");
+    assert!(
+        (resumed[0] - 90.05).abs() < 1e-6,
+        "the real time that passed: {resumed:?}"
+    );
+    assert!(
+        *clock.monotonic.lock().expect("not poisoned") < 7_200.0,
+        "the wait ended when the suspend was noticed, not hours later"
+    );
 }
 
 fn point(x: i32, y: i32) -> Point {
@@ -354,6 +442,93 @@ fn an_effect_failure_with_no_message_gets_the_defined_line() {
 
     assert_eq!(reason.kind, StopKind::Error);
     assert_eq!(reason.message, EFFECT_FAILED_MESSAGE);
+}
+
+/// PET-F8: a resident tool may absorb an effect failure instead of ending the run. The loop asks the
+/// tool first, publishes the line the tool returns, pays nothing extra, and asks for the next
+/// decision — so one board hiccup no longer ends a multi-day feeder run.
+#[test]
+fn a_tool_that_recovers_an_effect_failure_keeps_running() {
+    struct AbsorbingTool {
+        script: VecDeque<Decision>,
+        failures: usize,
+        seen: Mutex<Vec<String>>,
+    }
+
+    impl Tool for AbsorbingTool {
+        fn id(&self) -> ToolId {
+            ToolId::Pet
+        }
+
+        fn decide(&mut self) -> Decision {
+            self.script
+                .pop_front()
+                .unwrap_or_else(|| Decision::stop(StopReason::done("still here")))
+        }
+
+        fn on_effect_error(&mut self, error: &EffectError) -> EffectRecovery {
+            self.failures += 1;
+            self.seen
+                .lock()
+                .expect("not poisoned")
+                .push(error.message().to_owned());
+            EffectRecovery::Retry {
+                after_s: 0.0,
+                message: "the click failed — retrying".to_owned(),
+            }
+        }
+    }
+
+    let mut arbiter = Arbiter::new();
+    let handle = match arbiter.start(ToolId::Pet) {
+        seal_tools::arbiter::Start::Started(handle) => handle,
+        other => panic!("expected a start, got {other:?}"),
+    };
+    let mut tool = AbsorbingTool {
+        script: vec![Decision::click(point(1, 1)), Decision::click(point(2, 2))].into(),
+        failures: 0,
+        seen: Mutex::new(Vec::new()),
+    };
+    // Every click fails: the first is absorbed, the second ends the script and the run stops DONE.
+    let mut effects = RecordingEffects {
+        calls: Mutex::new(Vec::new()),
+        fail_click: Some("the board is not open"),
+    };
+    let published: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&published);
+    handle
+        .state
+        .observe(Arc::new(move |snapshot: Arc<ToolSnapshot>| {
+            seen.lock()
+                .expect("not poisoned")
+                .push(snapshot.message.clone());
+        }));
+
+    let reason = run(&mut tool, &handle, &RecordingClock::default(), &mut effects);
+
+    assert_eq!(
+        reason.kind,
+        StopKind::Done,
+        "the run was not ended by the effect failure: {reason:?}"
+    );
+    assert_eq!(reason.message, "still here");
+    assert_eq!(tool.failures, 2, "both failed clicks reached the tool");
+    assert_eq!(
+        tool.seen.lock().expect("not poisoned").clone(),
+        vec![
+            "the board is not open".to_owned(),
+            "the board is not open".to_owned()
+        ]
+    );
+    assert!(
+        published
+            .lock()
+            .expect("not poisoned")
+            .iter()
+            .any(|message| message == "the click failed — retrying"),
+        "the tool's retry line reached the card: {:?}",
+        published.lock().expect("not poisoned")
+    );
 }
 
 #[test]

@@ -292,26 +292,43 @@ pub fn composition_distance(a: &ColorComposition, b: &ColorComposition) -> f64 {
 pub fn composition_is_empty(
     frame: &ColorComposition,
     empty_reference: Option<&ColorComposition>,
-    empty_distance: f64,
+    signature_distance: f64,
 ) -> bool {
     match empty_reference {
-        Some(reference) => composition_distance(frame, reference) <= empty_distance,
+        Some(reference) => composition_distance(frame, reference) <= signature_distance,
         None => false,
     }
 }
 
+/// The pixel-diff fraction an EMPTY result box may reach (TOOL-F15). Measured: an empty box is
+/// 0.00-0.01 from its own reference, and a gem is well past it — so this is the SPEC's 0.01, not the
+/// colour-distance default it used to share.
+pub const DEFAULT_EMPTY_DIFF_MAX: f64 = 0.01;
+
+/// The six-feature COLOUR DISTANCE that separates an empty box from a gem (TOOL-F15). Measured: an
+/// empty box is 0.29 from a gem-filled one, so 0.18 sits inside that gap with a wide margin.
+pub const DEFAULT_EMPTY_SIGNATURE_DISTANCE: f64 = 0.18;
+
 /// `IsResultBoxEmpty`, from the reader's evidence: the crop comparison when there is one, the colour
 /// signature only as the fallback, and "not empty" when neither exists.
+///
+/// TWO thresholds, because this compares two DIFFERENT metrics (TOOL-F15): a pixel-diff FRACTION
+/// (0..1, where an empty box reads under a hundredth) and a six-feature colour DISTANCE (where 0.18
+/// separates an empty box from a gem). One knob served both, and its shipped default — the colour
+/// distance's 0.18 — left a small or translucent gem read as empty with a 2× margin instead of the
+/// measured 35×, which advances the grade early (and in `advance_grade_clear` mode right-clicks
+/// resources for nothing).
 #[must_use]
 pub fn result_box_is_empty(
     read: &EmptyRead,
     empty_signature: Option<&ColorComposition>,
-    empty_distance: f64,
+    empty_diff_max: f64,
+    empty_signature_distance: f64,
 ) -> bool {
     match read {
-        EmptyRead::DiffFraction(fraction) => *fraction <= empty_distance,
+        EmptyRead::DiffFraction(fraction) => *fraction <= empty_diff_max,
         EmptyRead::Composition(frame) => {
-            composition_is_empty(frame, empty_signature, empty_distance)
+            composition_is_empty(frame, empty_signature, empty_signature_distance)
         }
         EmptyRead::NoReference => false,
     }
@@ -320,8 +337,9 @@ pub fn result_box_is_empty(
 /// The gem block the decision half needs, resolved from the merged config.
 ///
 /// Field sources: `gem` in the merged config — `grades`, `start_grade`, `move_mode`, `empty_mode`,
-/// `empty_distance`, `empty_streak` (portable half in `local.yaml`'s `settings:`); `grade_positions`,
-/// `resource_gems`, `movements`, `empty_signature` (machine half in `local.yaml`).
+/// `empty_diff_max`, `empty_signature_distance`, `empty_streak` (portable half in `local.yaml`'s
+/// `settings:`); `grade_positions`, `resource_gems`, `movements`, `empty_signature` (machine half in
+/// `local.yaml`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct GemSettings {
     pub grades: Vec<String>,
@@ -331,7 +349,10 @@ pub struct GemSettings {
     pub move_mode: MoveMode,
     pub resource_gems: Vec<Vec<i32>>,
     pub empty_mode: EmptyMode,
-    pub empty_distance: f64,
+    /// The pixel-diff fraction that still counts as empty; see [`DEFAULT_EMPTY_DIFF_MAX`].
+    pub empty_diff_max: f64,
+    /// The colour distance that still counts as empty; see [`DEFAULT_EMPTY_SIGNATURE_DISTANCE`].
+    pub empty_signature_distance: f64,
     pub empty_signature: Option<ColorComposition>,
     /// Consecutive empty reads required before the `empty_mode` action fires.
     pub empty_streak: i32,

@@ -841,8 +841,9 @@ pub fn ready(setup: &PetSetup) -> Result<(), StopReason> {
 
     // A DRAG has to name the box it drops into, and the food strip is what says where the boxes are.
     // Right-click does not need it — it lets the game choose, which is the entire difference between
-    // the two modes.
-    if is_drag(&setup.food_load_mode) {
+    // the two modes. The SAME trimmed, case-insensitive reading the run uses (PET-F14): `"drag "` used
+    // to pass Start here and then fail at `FoodPlace`.
+    if super::food_load::is_drag(Some(setup.food_load_mode.as_str())) {
         for (index, row) in setup.slots.iter().enumerate() {
             if !row.enabled {
                 continue;
@@ -925,10 +926,6 @@ fn check_pages(setup: &PetSetup) -> Result<(), StopReason> {
     }
 
     Ok(())
-}
-
-fn is_drag(food_load_mode: &str) -> bool {
-    food_load_mode.eq_ignore_ascii_case("drag")
 }
 
 fn max_button(setup: &PetSetup) -> Option<&Vec<i32>> {
