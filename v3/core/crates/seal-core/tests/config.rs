@@ -768,7 +768,10 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
         "the merged config carries the persisted preference"
     );
     assert_eq!(reloaded["config"]["ui"]["theme"], "light");
+}
 
+#[test]
+fn quick_dock_hand_written_preference_loads() {
     // A hand-written preference loads too (this is what a player migrating a setup file sees).
     let hand_written = config_root();
     hand_written.write(
