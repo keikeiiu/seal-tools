@@ -771,6 +771,42 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
 }
 
 #[test]
+fn deleting_a_quest_flow_from_presets_survives_a_reload() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    let hello = session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+    let rev = hello["rev"].as_u64().expect("hello carries the rev");
+
+    let applied = session.result(
+        "config.apply",
+        json!({
+            "rev": rev,
+            "sections": {"quest": {
+                "presets": {"a": {"steps": []}, "b": {"steps": []}},
+                "active": "a",
+            }},
+        }),
+    );
+    let next_rev = applied["rev"].as_u64().expect("apply carries the rev");
+
+    // The tab deletes a flow by OMITTING it; a field-wise merge used to keep `a` on disk.
+    session.result(
+        "config.apply",
+        json!({
+            "rev": next_rev,
+            "sections": {"quest": {"presets": {"b": {"steps": []}}}},
+        }),
+    );
+    let reloaded = session.result("config.reload", json!({}));
+    let presets = &reloaded["config"]["quest"]["presets"];
+    assert!(
+        presets.get("a").is_none(),
+        "the deleted flow must not come back: {presets}"
+    );
+    assert!(presets.get("b").is_some(), "the remaining flow survives");
+}
+
+#[test]
 fn quick_dock_hand_written_preference_loads() {
     // A hand-written preference loads too (this is what a player migrating a setup file sees).
     let hand_written = config_root();

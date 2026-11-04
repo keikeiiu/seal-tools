@@ -1306,26 +1306,7 @@ fn changed_fields(before: Option<&Value>, after: &Value) -> Option<Value> {
 /// Recursive field-wise overlay: objects merge, everything else replaces, and `null` means "not
 /// stated" — the YAML spelling of v2's unset optionals, so it leaves the value below it standing.
 fn merge_overlay(target: &mut Value, overlay: &Value) {
-    match overlay {
-        Value::Object(overlay_object) => match target {
-            Value::Object(target_object) => {
-                for (key, value) in overlay_object {
-                    if value.is_null() {
-                        continue;
-                    }
-                    match target_object.get_mut(key) {
-                        Some(slot) => merge_overlay(slot, value),
-                        None => {
-                            target_object.insert(key.clone(), value.clone());
-                        }
-                    }
-                }
-            }
-            _ => *target = overlay.clone(),
-        },
-        Value::Null => {}
-        _ => *target = overlay.clone(),
-    }
+    crate::layout::merge_with_policy(target, overlay);
 }
 
 /// THE VARIANT RESOLVES THE TITLE, once, here — `window.title` stays the single value every tool

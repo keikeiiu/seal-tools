@@ -65,27 +65,47 @@ pub fn load(root: &Path, base: &Value) -> Result<Loaded, ConfigError> {
     Ok(Loaded { config, warnings })
 }
 
-/// Field-wise merge: objects recurse, everything else replaces, and a stated `null` is silence.
-/// This is the same rule the old three-layer overlay uses, restated here because the loader must not
-/// depend on the writer's private internals.
-fn merge_overlay(target: &mut Value, overlay: &Value) {
-    match (target, overlay) {
-        (Value::Object(target), Value::Object(overlay)) => {
-            for (key, value) in overlay {
-                match target.get_mut(key) {
-                    Some(existing) => merge_overlay(existing, value),
-                    None => {
-                        target.insert(key.clone(), value.clone());
+/// Field-wise merge with the WRITE deletion rule: objects recurse, everything else replaces, `null`
+/// is silence, and the named RECORD MAPS are replaced WHOLE. A tab deletes an entry by omitting it
+/// from `presets`/`sequences`; a field-wise merge would keep the old key and resurrect it on reload
+/// (HW-F1). These are the only maps whose contents are player-owned records rather than a fixed
+/// schema, so only they take the whole-map rule.
+pub fn merge_with_policy(target: &mut Value, overlay: &Value) {
+    merge_at(target, overlay);
+}
+
+const RECORD_MAPS: &[&str] = &["presets", "sequences"];
+
+fn merge_at(target: &mut Value, overlay: &Value) {
+    match overlay {
+        Value::Object(overlay_object) => match target {
+            Value::Object(target_object) => {
+                for (key, value) in overlay_object {
+                    if value.is_null() {
+                        continue;
+                    }
+                    if RECORD_MAPS.contains(&key.as_str()) && value.is_object() {
+                        // Replacement, not merge: an omission inside a record map is a deletion.
+                        target_object.insert(key.clone(), value.clone());
+                        continue;
+                    }
+                    match target_object.get_mut(key) {
+                        Some(existing) => merge_at(existing, value),
+                        None => {
+                            target_object.insert(key.clone(), value.clone());
+                        }
                     }
                 }
             }
-        }
-        (target, overlay) => {
-            if !overlay.is_null() {
-                *target = overlay.clone();
-            }
-        }
+            _ => *target = overlay.clone(),
+        },
+        Value::Null => {}
+        _ => *target = overlay.clone(),
     }
+}
+
+fn merge_overlay(target: &mut Value, overlay: &Value) {
+    merge_with_policy(target, overlay);
 }
 
 /// `.yaml` files in the two layout folders that no registry entry names. A file the migration or a

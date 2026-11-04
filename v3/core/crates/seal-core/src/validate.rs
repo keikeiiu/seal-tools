@@ -123,26 +123,7 @@ pub(crate) fn effective_config(current: &Value, sections: &Map<String, Value>) -
 /// a file detail — a validation that saw different values from the reload would be lying to the
 /// shell.
 fn merge_overlay(target: &mut Value, overlay: &Value) {
-    match overlay {
-        Value::Object(overlay_object) => match target {
-            Value::Object(target_object) => {
-                for (key, value) in overlay_object {
-                    if value.is_null() {
-                        continue;
-                    }
-                    match target_object.get_mut(key) {
-                        Some(slot) => merge_overlay(slot, value),
-                        None => {
-                            target_object.insert(key.clone(), value.clone());
-                        }
-                    }
-                }
-            }
-            _ => *target = overlay.clone(),
-        },
-        Value::Null => {}
-        _ => *target = overlay.clone(),
-    }
+    seal_config::layout::merge_with_policy(target, overlay);
 }
 
 /// The Quest tab's Save gate. Every dangling sequence entry is one line, and the domain's closing
