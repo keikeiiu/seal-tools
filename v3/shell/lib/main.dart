@@ -10,11 +10,13 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 
 import 'app/app.dart';
+import 'app/shell_log.dart';
 import 'protocol/protocol.dart';
 import 'ui/shell_app.dart';
 
@@ -24,10 +26,40 @@ void main() {
     transportFactory: spawnCore,
     shellVersion: protocolClientVersion,
   );
+  _installShellLogging(model);
   runApp(ShellApp(model: model));
   WidgetsBinding.instance.addPostFrameCallback(
     (_) => unawaited(model.connect()),
   );
+}
+
+/// SHELL-F7: a release GUI has no console, so widget/platform exceptions and shell notes go to a
+/// durable file under the core root's `logs/`. Path resolution mirrors [spawnCore]; if the root
+/// cannot be found the in-memory ring still works and the core crash view explains the spawn.
+void _installShellLogging(ShellModel model) {
+  try {
+    const rootOverride = String.fromEnvironment('SEAL_CORE_ROOT');
+    final root = locateCoreRoot(
+      isRelease: kReleaseMode,
+      executablePath: Platform.resolvedExecutable,
+      workingDirectory: Directory.current.path,
+      override: rootOverride,
+    );
+    final fileLog = ShellFileLog(Directory(root.path));
+    model.logs.sink = (origin, text) => fileLog.write(origin.name, text);
+  } catch (_) {
+    // No root (or no writable install folder): keep the ring buffer, surface logging stays best-effort.
+  }
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    model.logs.addShellNote(
+      'shell exception: ${details.exceptionAsString()}\n${details.stack}',
+    );
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    model.logs.addShellNote('shell exception: $error\n$stack');
+    return true;
+  };
 }
 
 /// Spawns `seal-core.exe` exactly as [PROTOCOL.md] §1 describes: a child process, no shell, one
