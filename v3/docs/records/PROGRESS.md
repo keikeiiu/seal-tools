@@ -54,14 +54,18 @@ regression runner landed as `ocr_eval` with the `fixtures/ocr` schema (`6397fe2`
 model-free half of OCR-F15 (`23efff6`) matches one-character substitutions by bounded edit-distance
 windows; HW-F7's FW_VERSION 3 is now pinned in the v2 sketch test too (`e968b10`). CORE-F11's frame
 layer landed in `aedf627`: FrameCache keeps raw PNG bytes plus a once-decoded RGBA image instead of
-base64 `Value`s, so scans/crops no longer re-decode and base64 is re-encoded only for a response.
+base64 `Value`s, so scans/crops no longer re-decode and base64 is re-encoded only for a response. Its
+config half followed in `f38b009`: `SharedConfig` is now an `Arc<RwLock<Arc<Value>>>`, so readers
+clone a pointer and a publish swaps it. OCR-F11 gained a real seeded tuner-panel case and baseline
+regression gating in `d4f624f`/`108e1dd`: normalization ignores segmentation/punctuation, the first
+run records the baseline, and later runs fail only on an exact-rate drop or CER rise >0.01.
 
-**Known gaps in this batch:** the OCR-F11 corpus has the runner/schema but no recorded real-game
-cases yet, and OCR-F15's full CTC/logit scorer still needs retained model logits; CORE-F11's config
-sharing (an `Arc<Value>` mirror) is still not done — only the frame layer; HW-F7's firmware still
-needs a real-board reflash/verification; SHELL-F15's README rewrite stays at publish per CUTOVER.
+**Known gaps in this batch:** OCR-F15's full CTC/logit scorer still needs retained model logits (the
+model-free substitution fallback is in); HW-F7's firmware still needs a real-board reflash and
+verification; SHELL-F15's README rewrite stays at publish per CUTOVER; the OCR corpus has one real
+case and should grow toward the planned ~50.
 
-Verification: Rust fmt/clippy/rustdoc clean; `cargo test --workspace --offline` **95 suites, 1,352
+Verification: Rust fmt/clippy/rustdoc clean; `cargo test --workspace --offline` **95 suites, 1,355
 passed, 0 failed, 6 ignored**. Shell analyze clean and **371/371** tests. The v2 firmware sketch test
 is 4/4. The launcher was rebuilt and restarted on the new binaries.
 
