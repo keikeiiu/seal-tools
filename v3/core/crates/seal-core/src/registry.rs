@@ -157,7 +157,7 @@ impl ProductionRegistry {
         let hwnd = seal_win::window::find_window(&title)
             .ok_or_else(|| seal_domain::tools::shop::window_missing().message)?;
         let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
-        let effects = crate::effects::system_effects(transport, display);
+        let effects = crate::effects::system_effects_for_window(transport, display, title.clone());
         let effects = wrap_dry_run(effects, args, self.logs.clone(), ToolId::Buy);
         Ok(Session {
             tool: Box::new(ShopTool::new(ToolId::Buy, plan)),
@@ -183,7 +183,7 @@ impl ProductionRegistry {
         let hwnd = seal_win::window::find_window(&title)
             .ok_or_else(|| seal_domain::tools::shop::window_missing().message)?;
         let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
-        let effects = crate::effects::system_effects(transport, display);
+        let effects = crate::effects::system_effects_for_window(transport, display, title.clone());
         let effects = wrap_dry_run(effects, args, self.logs.clone(), ToolId::Sell);
         Ok(Session {
             tool: Box::new(ShopTool::new(ToolId::Sell, plan)),
@@ -211,6 +211,7 @@ impl ProductionRegistry {
 
     fn tuner_session(&self) -> Result<Session, String> {
         let config = self.config();
+        let title = crate::win::configured_title(&config).map_err(|error| error.line())?;
         let root = self.store.config_dir().parent().map_or_else(
             || std::path::PathBuf::from("."),
             std::path::Path::to_path_buf,
@@ -228,7 +229,7 @@ impl ProductionRegistry {
             .map_err(|error| error.to_string())?;
         let (source, display) =
             crate::tuner::OcrTunerSource::open(&config, attributes, plan.region, &root)?;
-        let effects = crate::effects::system_effects(transport, display);
+        let effects = crate::effects::system_effects_for_window(transport, display, title.clone());
         let (click_enter_delay, ocr_delay) = crate::tuner::timings(&config);
         let tool = TunerTool::new(
             plan,
@@ -266,7 +267,7 @@ impl ProductionRegistry {
         let hwnd = seal_win::window::find_window(&title)
             .ok_or_else(|| seal_domain::tools::gem::window_missing().message)?;
         let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
-        let effects = crate::effects::system_effects(transport, display);
+        let effects = crate::effects::system_effects_for_window(transport, display, title.clone());
         Ok(Session {
             tool: Box::new(tool),
             effects: Box::new(effects),
@@ -315,7 +316,7 @@ impl ProductionRegistry {
         let hwnd = seal_win::window::find_window(&title)
             .ok_or_else(|| format!("game window not found — is {title:?} running?"))?;
         let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
-        let effects = crate::effects::system_effects(transport, display);
+        let effects = crate::effects::system_effects_for_window(transport, display, title.clone());
         Ok(Session {
             tool: Box::new(tool),
             effects: Box::new(effects),
