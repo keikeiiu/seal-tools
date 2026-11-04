@@ -307,9 +307,24 @@ impl ToolSnapshot {
 /// The writer replaces the current `Arc` under a write lock; a reader takes a READ lock, clones that
 /// `Arc`, and releases the lock before it renders anything. The returned value is immutable, so no
 /// field can be observed mid-update and a slow reader cannot block another reader.
-#[derive(Debug, Clone, Default)]
+/// CORE-F2: the callback the supervisor installs on a running tool's cell.
+type StateObserver = Arc<dyn Fn(Arc<ToolSnapshot>) + Send + Sync>;
+
+#[derive(Clone, Default)]
 pub struct StateCell {
     current: Arc<RwLock<Option<Arc<ToolSnapshot>>>>,
+    /// CORE-F2: an optional observer the supervisor installs so a live status change becomes a
+    /// `state` event instead of only a cell update. `None` for tests and decision-only tools.
+    observer: Arc<RwLock<Option<StateObserver>>>,
+}
+
+impl fmt::Debug for StateCell {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("StateCell")
+            .field("current", &self.read())
+            .finish()
+    }
 }
 
 impl StateCell {
@@ -331,11 +346,33 @@ impl StateCell {
     /// poison keeps the cell readable for every later reader, which is the whole point of publishing
     /// a value rather than exposing state.
     pub fn publish(&self, snapshot: ToolSnapshot) {
-        let mut current = self
-            .current
+        let snapshot = Arc::new(snapshot);
+        {
+            let mut current = self
+                .current
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *current = Some(Arc::clone(&snapshot));
+        }
+        // Notify outside the current lock. A slow observer must not block a reader or the next
+        // publisher; the Arc is already immutable (CORE-F2).
+        let observer = self
+            .observer
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if let Some(observer) = observer {
+            observer(snapshot);
+        }
+    }
+
+    /// Install the live-state observer. The supervisor calls this before the run loop starts; a
+    /// later `publish` sends one `state` event per update. CORE-F2.
+    pub fn observe(&self, observer: Arc<dyn Fn(Arc<ToolSnapshot>) + Send + Sync>) {
+        *self
+            .observer
             .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *current = Some(Arc::new(snapshot));
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(observer);
     }
 
     /// The current snapshot, or `None` before the first publish. The returned `Arc` is immutable:

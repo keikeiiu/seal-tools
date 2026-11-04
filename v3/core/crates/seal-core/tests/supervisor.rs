@@ -346,8 +346,8 @@ fn a_start_runs_to_done_and_publishes_the_reason() {
     let seen = until_finished(&events);
     assert_eq!(
         seen.iter().filter_map(state_phase).collect::<Vec<_>>(),
-        vec!["starting", "running", "idle"],
-        "the card opens, runs, then reads the final state"
+        vec!["starting", "running", "running", "idle"],
+        "the card opens, publishes a live running update, then reads the final state"
     );
     let last_state = seen
         .iter()
@@ -398,7 +398,7 @@ fn a_stop_publishes_stopping_then_a_cancelled_finish() {
 
     let seen = until_finished(&events);
     let phases: Vec<&str> = seen.iter().filter_map(state_phase).collect();
-    assert_eq!(phases, vec!["stopping", "idle"]);
+    assert_eq!(phases, vec!["running", "stopping", "idle"]);
     let finished = seen.last().expect("finished");
     assert_eq!(finished.data["reason"], "cancelled");
     assert_eq!(finished.data["message"], "Stopped.");
@@ -673,7 +673,11 @@ fn the_supervisor_can_see_the_worker_phases_from_its_own_events() {
         .iter()
         .filter_map(|event| state_phase(event).map(str::to_owned))
         .collect();
-    assert_eq!(phases, vec!["starting", "running", "idle"]);
+    assert_eq!(
+        phases,
+        vec!["starting", "running", "running", "idle"],
+        "the live state event is part of the lifecycle now"
+    );
     assert_eq!(
         ToolPhase::Running.as_str(),
         "running",

@@ -144,6 +144,9 @@ enum WorkerEvent {
         reason: StopReason,
         summary: Option<Value>,
     },
+    /// A live status change inside the run. CORE-F2: the card's message/countdown/rows must update
+    /// during the run, not only when it opens or ends.
+    State(Arc<ToolSnapshot>),
 }
 
 enum Incoming {
@@ -663,6 +666,13 @@ fn handle_worker(
     pending: &mut Option<PendingReply>,
 ) {
     match event {
+        WorkerEvent::State(snapshot) => {
+            // Only a live run may publish; a stale update after Stop would flip Stopping back to
+            // Running (the same guard as Opened).
+            if arbiter.is_running(snapshot.tool) && !arbiter.is_stopping(snapshot.tool) {
+                plumbing.bus.emit(events::state_event(&snapshot));
+            }
+        }
         WorkerEvent::Opened { tool, snapshot } => {
             // A stop may already have been processed between the send and this handling; then the
             // card is Stopping and a stale Running event would be a lie.
@@ -798,6 +808,12 @@ fn worker_body(
     let _ = supervisor.send(Incoming::Worker(WorkerEvent::Opened {
         tool,
         snapshot: running,
+    }));
+    // From here on, every published status change is also a `state` event. Installed AFTER Opened
+    // so a starting card cannot receive a running update before its open. CORE-F2.
+    let state_sender = supervisor.clone();
+    handle.state.observe(Arc::new(move |snapshot| {
+        let _ = state_sender.send(Incoming::Worker(WorkerEvent::State(snapshot)));
     }));
 
     let Session {
