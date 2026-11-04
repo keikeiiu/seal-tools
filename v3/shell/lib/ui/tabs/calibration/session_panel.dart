@@ -137,13 +137,7 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       _status = null;
       _failed = false;
     });
-    try {
-      await widget.host.hideWindow();
-    } catch (_) {}
-    final result = await action();
-    try {
-      await widget.host.showWindow();
-    } catch (_) {}
+    final result = await withHiddenWindow(widget.host, action);
     if (!mounted) return;
     setState(() {
       _busy = false;
@@ -448,13 +442,10 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       _status = null;
       _failed = false;
     });
-    try {
-      await widget.host.hideWindow();
-    } catch (_) {}
-    final result = await widget.model.captureFrame();
-    try {
-      await widget.host.showWindow();
-    } catch (_) {}
+    final result = await withHiddenWindow(
+      widget.host,
+      widget.model.captureFrame,
+    );
     if (!mounted) return;
     setState(() {
       _busy = false;

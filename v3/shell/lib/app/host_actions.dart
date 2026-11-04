@@ -19,7 +19,59 @@ library;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+
+/// Run [body] with the shell hidden, then SHOW it again unconditionally.
+///
+/// This is the one capture lifecycle (SHELL-F8): hide -> wait one composited frame -> command ->
+/// show. The frame matters: the core checks the game is foreground, and DWM may not have removed
+/// the shell yet on the same frame as [HostActions.hideWindow]. A body throw still shows the window
+/// in a `finally`; a hide/show channel error is reported through [onHostError] instead of leaving
+/// the app invisible with no tray affordance.
+Future<T> withHiddenWindow<T>(
+  HostActions host,
+  Future<T> Function() body, {
+  ValueChanged<String>? onHostError,
+}) async {
+  try {
+    await host.hideWindow();
+  } catch (_) {
+    onHostError?.call(
+      'the shell could not hide itself — the game has to be in front for a capture',
+    );
+  }
+  await waitOneFrame();
+  try {
+    return await body();
+  } finally {
+    try {
+      await host.showWindow();
+    } catch (_) {
+      onHostError?.call('the shell could not be shown again — no host channel');
+    }
+  }
+}
+
+/// Wait for the next composited frame, with a 50 ms fallback so a paused engine cannot hang a
+/// capture (the same rule the calibration tab used before the helper existed).
+Future<void> waitOneFrame() async {
+  final waited = Completer<void>();
+  final fallback = Timer(const Duration(milliseconds: 50), () {
+    if (!waited.isCompleted) {
+      waited.complete();
+    }
+  });
+  unawaited(
+    SchedulerBinding.instance.endOfFrame.whenComplete(() {
+      if (!waited.isCompleted) {
+        waited.complete();
+      }
+    }),
+  );
+  await waited.future;
+  fallback.cancel();
+}
 
 /// A rectangle in the shell's LOGICAL screen space.
 ///
