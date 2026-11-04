@@ -332,6 +332,29 @@ void main() {
 
       await core.dispose();
     });
+
+    test(
+      'a stdout close waits for the last stderr line and the exit code',
+      () async {
+        final core = _Core();
+        await core.connect();
+
+        // stdout EOF arrives before stderr's final fatal line (two pipes, no ordering).
+        core.transport.closeIncoming(exit: 2, closeDiagnostics: false);
+        core.transport.emitDiagnostic('seal-core: cannot load config: boom');
+        await core.transport.closeDiagnostics();
+        await pumpEventQueue();
+
+        expect(
+          core.client.stderrTail.last,
+          'seal-core: cannot load config: boom',
+        );
+        expect(core.client.exitCode, 2);
+        expect(core.client.closeReason, 'the core closed its output');
+
+        await core.dispose();
+      },
+    );
   });
 
   group('closing', () {

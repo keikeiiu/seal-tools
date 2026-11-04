@@ -42,6 +42,10 @@ abstract interface class Transport {
   /// Completes the client's pending requests immediately on the first error.
   Stream<Object> get writeFailures;
 
+  /// The process's exit code. stdout and stderr are separate pipes, so a close handler must wait
+  /// for this (and the stderr `done`) before taking the crash tail (SHELL-F4).
+  Future<int> get exitCode;
+
   /// Writes one line; the transport adds the newline.
   void writeLine(String line);
 
@@ -167,7 +171,8 @@ class ProtocolClient {
         .listen(_onMessage, onError: _onStreamError, onDone: _onStreamDone);
     _diagnosticsSubscription = _transport.diagnostics.listen(
       _onDiagnostic,
-      onError: (Object _) {},
+      onError: (Object _) => _completeDiagnostics(),
+      onDone: _completeDiagnostics,
     );
     _writeFailuresSubscription = _transport.writeFailures.listen(
       _onWriteFailure,
@@ -195,6 +200,11 @@ class ProtocolClient {
   bool _closed = false;
   bool _protocolFailure = false;
   String? _closeReason;
+  int? _exitCode;
+
+  /// Completes when the stderr stream ends; a stdout `done` waits for it so the fatal boot line is
+  /// in [stderrTail] before the crash view is built (SHELL-F4).
+  final Completer<void> _diagnosticsDone = Completer<void>();
 
   /// The single termination of the transport; every close path shares it (SHELL-F1).
   Future<void>? _termination;
@@ -210,6 +220,9 @@ class ProtocolClient {
 
   /// The last stderr lines, for the crash view ([PLAN-V3-SHELL.md] §2).
   List<String> get stderrTail => List.unmodifiable(_stderrTail);
+
+  /// The core's exit code once the output has ended; null before that (SHELL-F4).
+  int? get exitCode => _exitCode;
 
   /// The handshake payload, or null before it succeeds.
   HelloResult? get hello => _hello;
@@ -516,7 +529,35 @@ class ProtocolClient {
   }
 
   void _onStreamDone() {
-    _markClosed('the core closed its output');
+    // stdout EOF and stderr EOF are separate pipes. Wait for the exit code and the stderr `done`
+    // (bounded) so a fatal boot-refusal line reaches the crash view (SHELL-F4).
+    unawaited(_closeAfterPipes());
+  }
+
+  Future<void> _closeAfterPipes() async {
+    const wait = Duration(seconds: 1);
+    int? code;
+    try {
+      code = await _transport.exitCode.timeout(wait);
+    } catch (_) {
+      // A process that has not exited within the bound is still a closed connection; the tail we
+      // have is better than none.
+    }
+    try {
+      await _diagnosticsDone.future.timeout(wait);
+    } catch (_) {
+      // Same bound for the stderr side.
+    }
+    if (_closed) {
+      return;
+    }
+    _markClosed('the core closed its output', exitCode: code);
+  }
+
+  void _completeDiagnostics() {
+    if (!_diagnosticsDone.isCompleted) {
+      _diagnosticsDone.complete();
+    }
   }
 
   void _onDiagnostic(String line) {
@@ -533,11 +574,17 @@ class ProtocolClient {
     }
   }
 
-  void _markClosed(String reason, {bool clean = false, bool protocol = false}) {
+  void _markClosed(
+    String reason, {
+    bool clean = false,
+    bool protocol = false,
+    int? exitCode,
+  }) {
     if (_closed) {
       return;
     }
     _closed = true;
+    _exitCode = exitCode ?? _exitCode;
     _closeReason = reason;
     _protocolFailure = protocol;
     _failPending(reason);

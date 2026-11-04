@@ -101,6 +101,10 @@ class ShellModel extends ChangeNotifier {
   bool _closing = false;
   bool _disposed = false;
 
+  /// Set by the first failure of this connection; the crash tail and the handshake catch can both
+  /// notice the same dead pipe, and only one of them may count (SHELL-F4).
+  bool _failureReported = false;
+
   /// The live client, for the wiring and for tests; widgets use the commands below.
   ProtocolClient? get client => _client;
 
@@ -401,6 +405,7 @@ class ShellModel extends ChangeNotifier {
     if (_closing || _disposed) {
       return;
     }
+    _failureReported = false;
     connection.markStarting();
     final Transport transport;
     try {
@@ -1093,6 +1098,8 @@ class ShellModel extends ChangeNotifier {
       return;
     }
     final tail = List<String>.of(client.stderrTail);
+    final exit = client.exitCode;
+    final exitSuffix = exit == null ? '' : ' (exit $exit)';
     logs.captureStderrTail(tail);
     if (client.protocolFailure) {
       // The output could not be understood (an undecodable RESPONSE or a broken write path): report a
@@ -1100,16 +1107,18 @@ class ShellModel extends ChangeNotifier {
       // so a live core is never left running unreferenced (SHELL-F1).
       _fail(
         ConnectionFailure.protocol,
-        client.closeReason ?? 'the core output could not be decoded',
+        '${client.closeReason ?? 'the core output could not be decoded'}$exitSuffix',
         stderrTail: tail,
+        exitCode: exit,
       );
     } else {
       _fail(
         ConnectionFailure.coreExit,
         tail.isEmpty
-            ? 'the core exited'
-            : 'the core exited — last line on stderr: ${tail.last}',
+            ? 'the core exited$exitSuffix'
+            : 'the core exited$exitSuffix — last line on stderr: ${tail.last}',
         stderrTail: tail,
+        exitCode: exit,
       );
     }
     // The last rendered state is deliberately kept (PLAN §2): the crash view replaces the grid but a
@@ -1236,12 +1245,22 @@ class ShellModel extends ChangeNotifier {
     ConnectionFailure failure,
     String message, {
     List<String> stderrTail = const [],
+    int? exitCode,
   }) {
+    if (_failureReported) {
+      return;
+    }
+    _failureReported = true;
     final tail = stderrTail.isEmpty
         ? List<String>.of(_client?.stderrTail ?? const [])
         : stderrTail;
     logs.captureStderrTail(tail);
-    connection.markFailed(failure: failure, message: message, stderrTail: tail);
+    connection.markFailed(
+      failure: failure,
+      message: message,
+      stderrTail: tail,
+      exitCode: exitCode,
+    );
     logs.addShellNote(message);
   }
 
