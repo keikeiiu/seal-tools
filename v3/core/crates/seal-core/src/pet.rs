@@ -1769,7 +1769,7 @@ impl<S: PetSource> PetTool<S> {
             boarding_running: vec![(index, running)],
             ..seal_config::PetRunStatePatch::default()
         });
-        self.message = folded.message.clone();
+        self.message.clone_from(&folded.message);
         let why = match outcome {
             RowOutcome::Reloaded { .. } => "reloaded and boarded".to_owned(),
             RowOutcome::Deferred => "deferred: boarding window did not open".to_owned(),

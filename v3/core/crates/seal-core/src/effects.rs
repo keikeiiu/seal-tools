@@ -78,7 +78,7 @@ impl<T: Transport, C: Cursor, K: Clock> BoardEffects<T, C, K> {
     }
 
     /// Re-measure the display on every placement. Production tool sessions use this with
-    /// [`WindowDisplay`]; tests inject their own provider. TOOL-F3.
+    /// `WindowDisplay`; tests inject their own provider. TOOL-F3.
     #[must_use]
     pub fn with_display_provider(mut self, provider: Box<dyn DisplayProvider>) -> Self {
         self.display_provider = Some(provider);

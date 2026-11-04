@@ -489,13 +489,13 @@ fn crop_grade_area(
 ) -> Option<(u32, u32, Vec<u8>)> {
     let image_width = u32::try_from(image_width).ok()?;
     let image_height = u32::try_from(image_height).ok()?;
-    let region_width = area.x2.saturating_sub(area.x1).max(1) as u32;
-    let region_height = area.y2.saturating_sub(area.y1).max(1) as u32;
+    let region_width = u32::try_from(area.x2.saturating_sub(area.x1).max(1)).ok()?;
+    let region_height = u32::try_from(area.y2.saturating_sub(area.y1).max(1)).ok()?;
     let rect = seal_domain::geometry::Rect::new(
         area.x1,
         area.y1,
-        region_width as i32,
-        region_height as i32,
+        i32::try_from(region_width).ok()?,
+        i32::try_from(region_height).ok()?,
     );
     seal_win::pure::crop_rgba(image_width, image_height, rgba, rect).ok()
 }
