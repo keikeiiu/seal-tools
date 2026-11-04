@@ -7,7 +7,7 @@
 //! grammar does not scale, round, or clamp them — the caller measured them per machine, and the
 //! closed-loop placement computes its own corrections.
 
-use seal_board::command::{BoardCommand, CommandError};
+use seal_board::command::{BoardCommand, CommandError, MOVE_MAX};
 
 #[test]
 fn the_simple_commands_are_one_letter_and_a_newline() {
@@ -41,8 +41,31 @@ fn a_move_keeps_its_raw_counts_exactly() {
     ];
 
     for ((dx, dy), expected) in cases {
-        assert_eq!(BoardCommand::move_by(dx, dy).encode(), expected);
+        assert_eq!(
+            BoardCommand::move_by(dx, dy).expect("in range").encode(),
+            expected
+        );
     }
+}
+
+#[test]
+fn a_move_outside_one_frames_range_is_refused_rather_than_wrapped() {
+    // The sketch parses the pair into 32-bit longs and refuses anything outside ±9999, so a larger
+    // frame used to wrap through the AVR's 16-bit `int` and send the pointer the wrong way (HW-F11).
+    for (dx, dy) in [(10_000, 0), (0, -10_000), (i32::MAX, 0), (0, i32::MIN)] {
+        let error = BoardCommand::move_by(dx, dy).expect_err("outside one frame");
+        assert!(
+            error.to_string().contains("9999"),
+            "the refusal names the range: {error}"
+        );
+    }
+
+    assert_eq!(
+        BoardCommand::move_by(MOVE_MAX, -MOVE_MAX)
+            .expect("the boundary is allowed")
+            .encode(),
+        "D 9999 -9999\n"
+    );
 }
 
 #[test]
@@ -122,7 +145,7 @@ fn every_command_is_exactly_one_newline_terminated_line() {
     let commands = [
         BoardCommand::LeftClick,
         BoardCommand::RightClick,
-        BoardCommand::move_by(-1234, 5678),
+        BoardCommand::move_by(-1234, 5678).expect("in range"),
         BoardCommand::Enter,
         BoardCommand::key('q', false).expect("sendable"),
         BoardCommand::function_key(12, true).expect("F12"),

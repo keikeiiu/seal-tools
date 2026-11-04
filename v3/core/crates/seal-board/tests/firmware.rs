@@ -56,13 +56,13 @@ fn the_silence_says_what_it_means() {
 #[test]
 fn a_mismatch_says_which_way_it_goes() {
     let older = firmware::describe(Some(1));
-    let newer = firmware::describe(Some(3));
+    let newer = firmware::describe(Some(CURRENT_LEVEL + 1));
 
     assert!(older.contains("older"), "{older}");
     assert!(newer.contains("newer"), "{newer}");
-    assert!(firmware::describe(Some(2)).contains("current"));
-    assert!(!firmware::describe(Some(2)).contains("older"));
-    assert!(!firmware::describe(Some(2)).contains("newer"));
+    assert!(firmware::describe(Some(CURRENT_LEVEL)).contains("current"));
+    assert!(!firmware::describe(Some(CURRENT_LEVEL)).contains("older"));
+    assert!(!firmware::describe(Some(CURRENT_LEVEL)).contains("newer"));
 }
 
 #[test]
@@ -74,14 +74,22 @@ fn the_player_facing_summary_never_falls_back_to_the_number() {
         firmware::summary(None).contains("silently do nothing"),
         "the failure is silent, so the sentence must say so"
     );
-    assert!(firmware::summary(Some(2)).contains("Up to date"));
-    assert!(firmware::summary(Some(3)).contains("Newer"));
-    assert!(!firmware::summary(Some(3)).contains("Up to date"));
+    assert!(firmware::summary(Some(CURRENT_LEVEL)).contains("Up to date"));
+    assert!(
+        firmware::summary(Some(2)).contains("failsafe"),
+        "a level-2 board lacks the hung-host release, and the card must say so: {}",
+        firmware::summary(Some(2))
+    );
+    assert!(
+        firmware::summary(Some(CURRENT_LEVEL + 1)).contains("Newer"),
+        "a board past this build is not described as up to date"
+    );
+    assert!(!firmware::summary(Some(CURRENT_LEVEL + 1)).contains("Up to date"));
 }
 
 #[test]
 fn the_levels_are_the_ones_the_sketch_and_domain_agree_on() {
-    assert_eq!(CURRENT_LEVEL, 2, "the sketch's FW_VERSION");
+    assert_eq!(CURRENT_LEVEL, 3, "the sketch's FW_VERSION");
     assert_eq!(DRAG_LEVEL, 2, "the level that added L/l");
     // The domain half-owns the drag rule; the board half must agree with it rather than restate it.
     let drag_level = i32::try_from(DRAG_LEVEL).expect("the drag level fits in an i32");

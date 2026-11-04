@@ -21,6 +21,7 @@
 //   P / U        hold / release the spacebar (auto-pickup)
 //   L / l        hold / release the LEFT MOUSE BUTTON — the two halves of a drag
 //   V            report the firmware's protocol level — the only thing this sketch writes BACK
+//   !            abort the frame in progress ('D'/'Q'/'Z') — peeked, not a command of its own
 //
 // An unrecognised letter is ignored, and so is a K/F/Q/Z frame whose argument is out of range —
 // nothing is guessed at. The launcher validates before sending; this is the second line of defence.
@@ -52,6 +53,12 @@
 // the gap to stop a game coalescing fast events and the same ceiling buys proportionally fewer.
 #define WHEEL_MAX_NOTCHES  400
 
+// ── Move frame ───────────────────────────────
+// The largest raw count ONE 'D' frame may carry. The host refuses a larger frame (MOVE_MAX in
+// seal-board's grammar) and the sketch rejects one too, instead of letting a 16-bit narrowing send
+// the pointer the wrong way (HW-F11). A caller that needs more splits the jump.
+#define MOVE_MAX 9999
+
 // ── Firmware version ─────────────────────────
 // A PROTOCOL LEVEL, not a build counter: it is bumped when the board's BEHAVIOUR changes, so that
 // "does this board have the host-gone release?" has an answer other than a guess. A build number or
@@ -59,6 +66,8 @@
 //
 //   1  the first level that can be reported: has the host-gone release (below) and answers 'V'
 //   2  adds L / l — hold and release the left mouse button, so the host can DRAG
+//   3  a HUNG host releases the held key too (the 3 s silence watchdog), long frames can be aborted
+//      with '!', and 'D' counts are parsed wide and bounded (HW-F7/HW-F11)
 //
 // It starts at 1 rather than counting back over the changes that predate it — no board in the field
 // can report anything at all, so levels 2 and 3 could not exist and could not be told apart. The
@@ -72,26 +81,49 @@
 // jobs — do not mistake the second for the first:
 //
 //   * v2/SealTools.Tests/FirmwareSketchTests.cs pins this number against the command set actually
-//     dispatched below. Add or remove a command without bumping, and the BUILD GOES RED. That is the
-//     guard, and it is the reason the level can be trusted.
+//     dispatched below, and v3's tests/sketch.rs pins the same pair. Change a level and update both
+//     pins in the same commit. That is the guard, and it is the reason the level can be trusted.
 //   * Each level is tagged `fw<n>` at the commit that introduced it — `fw1`, `fw2` — so the history
 //     of what a board could do at each level is browsable instead of dug out with `git log -S`. That
 //     is the RECORD. A tag enforces nothing: you can change this file and never tag it, and no tool
 //     will complain.
-#define FW_VERSION 2
+#define FW_VERSION 3
 
 // ── Held-key failsafe ────────────────────────
 // 'P' presses the spacebar and 'L' presses the left mouse button, and each leaves it held until 'U'
-// or 'l'. If the host disappears while either is down — the launcher crashed or was killed — nothing
-// would ever send the release, and the key or the button would stay down on the host until the device
-// is unplugged. `Serial` is false once the host closes the port (the same signal the usual
-// `while (!Serial)` wait uses), so the loop releases everything when that happens. The app holds the
-// port open for its whole lifetime, so this only fires when it is genuinely gone.
+// or 'l'. If the host disappears while either is down — the launcher crashed, was killed, or is
+// hung — nothing would ever send the release, and the key or the button would stay down on the host
+// until the device is unplugged.
+//
+// Two signals cover it:
+//   * `Serial` goes false once the host closes the port (the same signal the usual `while (!Serial)`
+//     wait uses);
+//   * while something is held, `HOST_SILENCE_MS` with no byte from the host means it is gone even
+//     though the port is still open. The host refreshes `lastRx` every second during a hold (the
+//     Hold Space tool re-sends 'P') and on every move during a drag, so normal operation never goes
+//     quiet for that long (HW-F7).
 //
 // A stuck left button is worse than a stuck spacebar: it follows the real cursor and drops whatever
 // it is over on the next press. Both are covered here for that reason.
 static bool spaceHeld = false;
 static bool leftHeld = false;
+static uint32_t lastRx = 0;
+
+// ── Host silence watchdog ────────────────────
+// Three seconds is the longest the host is ever allowed to be quiet while a key or the button is
+// held; the Hold Space heartbeat is one second (holdspace.rs) and a drag writes a move between
+// 'L' and 'l'. Long enough that a busy host walking a 10 s wheel frame is not mistaken for gone —
+// the frame's own abort check ('!') is what shortens that, not this.
+#define HOST_SILENCE_MS 3000
+
+// Bring every held input up. Also used by the '!'-abort, so an aborted frame cannot leave a drag in
+// progress with the button down.
+void releaseAll() {
+    Keyboard.releaseAll();
+    Mouse.release(MOUSE_LEFT);
+    spaceHeld = false;
+    leftHeld = false;
+}
 
 // ── Bezier human-like mouse movement ─────────
 float cubicBezier(float p0, float p1, float p2, float p3, float t) {
@@ -149,18 +181,34 @@ void setup() {
 void loop() {
     static char buf[32];  // fixed buffer — no heap allocation (avoids String fragmentation)
 
-    // Host gone while something is held: release it rather than leave it stuck down.
-    if (!Serial && (spaceHeld || leftHeld)) {
-        Keyboard.releaseAll();          // covers 'P' and anything else Keyboard.press left down
-        Mouse.release(MOUSE_LEFT);      // covers 'L'
-        spaceHeld = false;
-        leftHeld = false;
+    // Host gone or hung while something is held: release it rather than leave it stuck down.
+    //
+    // The two cheap flags are tested FIRST on purpose. ArduinoCore-avr's `operator bool()` ends in
+    // a `delay(10)` while the port is not ready, and this line runs on every loop pass; asking it
+    // before the flags would add ~10 ms to every command even when nothing is held (HW-F6). With the
+    // flags first the delay is paid only while a key or button is actually down.
+    //
+    // Two ways the host can be gone: the port closed (`!Serial`), or the port is still open but the
+    // process is hung and has sent nothing for HOST_SILENCE_MS (HW-F7).
+    if ((spaceHeld || leftHeld)
+        && (!Serial || (uint32_t)(millis() - lastRx) > HOST_SILENCE_MS)) {
+        releaseAll();
     }
 
     if (Serial.available() > 0) {
         size_t n = Serial.readBytesUntil('\n', buf, sizeof(buf) - 1);
         buf[n] = '\0';
+        // Any byte from the host is proof of life, keepalive or real command alike (HW-F7).
+        lastRx = millis();
         if (n == 0) return;
+        // An overlong frame is SPLIT by the fixed buffer, and its tail would be parsed as a fresh
+        // command whose first byte picks the action (HW-F11). Discard the rest of that line.
+        if (n == sizeof(buf) - 1 && buf[n - 1] != '\n') {
+            while (Serial.available() > 0) {
+                if (Serial.read() == '\n') break;
+            }
+            return;
+        }
 
         char type = buf[0];
 
@@ -175,16 +223,24 @@ void loop() {
             delay(random(50, 150));
             Mouse.release(MOUSE_RIGHT);
         }
-        // Direct move: "D dx dy" — no curves, straight line
+        // Direct move: "D dx dy" — no curves, straight line. The counts are parsed into 32-bit
+        // `long`s and refused outside ±MOVE_MAX: on this AVR `int` is 16 bits, so the old `%d` parse
+        // wrapped a large frame and moved the pointer the WRONG way (HW-F11).
         else if (type == 'D') {
-            int dx = 0, dy = 0;
-            if (sscanf(buf, "D %d %d", &dx, &dy) == 2) {
+            long dx = 0, dy = 0;
+            if (sscanf(buf, "D %ld %ld", &dx, &dy) == 2
+                && dx >= -MOVE_MAX && dx <= MOVE_MAX
+                && dy >= -MOVE_MAX && dy <= MOVE_MAX) {
                 int sx = (dx > 0) ? 1 : -1;
                 int sy = (dy > 0) ? 1 : -1;
-                int ax = abs(dx), ay = abs(dy);
+                long ax = labs(dx), ay = labs(dy);
                 while (ax > 0 || ay > 0) {
-                    int sx2 = (ax > 10) ? 10 : ax;
-                    int sy2 = (ay > 10) ? 10 : ay;
+                    // A long frame must be pre-emptible: '!' (an invalid command, so nothing else
+                    // parses it) stops the walk instead of making Stop wait for the whole move
+                    // (HW-F7). It is discarded here; the next command follows its newline.
+                    if (Serial.peek() == '!') { Serial.read(); break; }
+                    int sx2 = (int)((ax > 10) ? 10 : ax);
+                    int sy2 = (int)((ay > 10) ? 10 : ay);
                     if (sx2 == 0 && sy2 == 0) break;
                     Mouse.move(sx * sx2, sy * sy2);
                     ax -= sx2; ay -= sy2;
@@ -262,6 +318,8 @@ void loop() {
             if (n > WHEEL_MAX_NOTCHES) n = WHEEL_MAX_NOTCHES;
             int notch = (type == 'Q') ? 1 : -1;
             for (int i = 0; i < n; i++) {
+                // A 10 s wheel frame used to block every later command; '!' aborts it (HW-F7).
+                if (Serial.peek() == '!') { Serial.read(); break; }
                 Mouse.move(0, 0, notch);
                 delay(WHEEL_NOTCH_GAP_MS);
             }
