@@ -19,6 +19,24 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-05 (44) — Tuner and Gem share one readable grade ladder
+
+Both tabs rendered the same fixed ladder two different ways: Tuner as `N · G · DG…` text, Gem as a row
+of chips. Neither explained what the selected grade *did*.
+
+- **One component** (`GradeLadder`, `ui/components/grade_ladder.dart`): a read-only `N → G → DG → …`
+  path with arrow connectors and role markers — **target** (flag), **minimum** (shield), **start**
+  (play) — each with a word legend. The active side of the path is highlighted; the role is never
+  colour-only.
+- **Tuner** passes its draft `target_grade` and filter `require_grade`; **Gem** passes its
+  `start_grade`. Existing element keys (`grade-order-<grade>`, `gem-grade-<grade>`) and caption keys are
+  preserved, so the fixed-ladder tests keep proving there is no add/remove control.
+- The ladder scrolls horizontally rather than wrapping at narrow widths, and the old look-tappable
+  chips/plain text are gone.
+
+Verification: new component tests for target/minimum/start roles, Tuner and Gem role integration;
+full shell gate **375/375**, analyze `--fatal-infos` clean, format clean, Windows debug build green.
+
 ## 2026-11-05 (43) — Pet Feeder gets the calmer two-column setup
 
 The Pet tab was the longest single scroll in the app: readiness, rows, queue, add-pet, bag scan, 8×8

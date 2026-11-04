@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:seal_shell/protocol/protocol.dart';
+import 'package:seal_shell/ui/components/grade_ladder.dart';
 import 'package:seal_shell/ui/tabs/tuner_tab.dart';
 import 'package:seal_shell/ui/theme.dart';
 
@@ -267,6 +268,29 @@ void main() {
       tuner.containsKey('target_grade'),
       isFalse,
       reason: 'a cleared Option is OMITTED from the override, not sent as null',
+    );
+  });
+
+  testWidgets('the grade ladder marks the target and the minimum', (
+    tester,
+  ) async {
+    final tuner = _tunerBlock();
+    tuner['target_grade'] = 'G';
+    (tuner['filter'] as Map<String, dynamic>)['require_grade'] = 'DG';
+    await _pumpTuner(tester, tuner: tuner);
+
+    final ladder = tester.widget<GradeLadder>(find.byType(GradeLadder));
+    expect(ladder.target, 'G');
+    expect(ladder.minimum, 'DG');
+    expect(find.text('target'), findsOneWidget);
+    expect(find.text('minimum'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('grade-order-target-legend')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('grade-order-minimum-legend')),
+      findsOneWidget,
     );
   });
 

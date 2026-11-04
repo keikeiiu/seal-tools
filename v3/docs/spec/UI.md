@@ -241,17 +241,20 @@ screen: Save.
 - **Foldable advanced sections.** `FoldableSection` holds diagnostics that are not part of a normal
   run: Tuner (OCR retries, save captures, capture cleanup), Gem (save empty captures), Quest (cursor
   guard). Folded by default; the controls keep their keys.
-- **Tuner** (`spammer`-style panels): Grades (plain-text fixed ladder — the audit's "read-only chips
-  look tappable" fixed), Timing, Springs, Filter (rules/overrides with tonal Add, outlined per-row
-  delete), Advanced (folded); geometry in the aside. The aside also carries the demo's **Last run**
+- **Tuner** (`spammer`-style panels): Grades (the shared **GradeLadder** path `N → G → DG → XG → SG`,
+  read-only; the draft target grade and the filter's `require_grade` render as flag/shield role markers
+  with a word legend, so the static ladder explains the run instead of looking like tappable chips),
+  Timing, Springs, Filter (rules/overrides with tonal Add, outlined per-row delete), Advanced (folded);
+  geometry in the aside. The aside also carries the demo's **Last run**
   panel once a run has finished: the core's `tool.finished` `summary` (Grade, Attempts, Captures saved,
   Stopped by) plus the local `ended_at`; the panel is absent before the first finish and never invents
   a placeholder run.
 - **Spammer**: Presets (editing/active pickers, tonal Add/Rename, outlined Duplicate/Delete; selection
   actions hidden when the preset list is empty) · Keys & cooldowns (opening, priority key rows) ·
   Rotation — combos.
-- **Gem**: Grades, Empty result, Movement; calibrated positions/slots/result area in the aside;
-  save-empty-captures folded.
+- **Gem**: Grades (the same **GradeLadder**, with the start grade marked as a play role and the run
+  direction stated in the legend), Empty result, Movement; calibrated positions/slots/result area in
+  the aside; save-empty-captures folded.
 - **Quest**: Active selection (empty sequence reads as "flow only"), Flows, Sequences; empty lists are
   `EmptyState` with a next action; cursor guard folded.
 - **Buy / Sell are split screens** (`BuySellTab(section: buy|sell)`): Buy edits/saves the `presets`
@@ -401,7 +404,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 372/372; `dart format` clean. Every
+Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 375/375; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,
