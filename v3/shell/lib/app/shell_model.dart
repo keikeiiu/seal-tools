@@ -26,6 +26,7 @@ import 'arduino_details.dart';
 import 'attributes_result.dart';
 import 'calibration_result.dart';
 import 'config.dart';
+import 'config_draft.dart';
 import 'config_json.dart';
 import 'connection.dart';
 import 'core_actions.dart';
@@ -100,6 +101,7 @@ class ShellModel extends ChangeNotifier {
   Future<void>? _connectInFlight;
   bool _closing = false;
   bool _disposed = false;
+  final Set<ConfigDraftGroup> _dirtyDraftGroups = <ConfigDraftGroup>{};
 
   /// Set by the first failure of this connection; the crash tail and the handshake catch can both
   /// notice the same dead pipe, and only one of them may count (SHELL-F4).
@@ -112,6 +114,21 @@ class ShellModel extends ChangeNotifier {
 
   /// True once [shutdown] started; the app is going away and no reconnect is attempted.
   bool get isClosing => _closing;
+
+  /// True when at least one kept-alive config tab has unsaved edits (SHELL-F6). The tabs register
+  /// themselves through [setDraftDirty]; the exit guard uses this before shutting the core down.
+  bool get hasDirtyDrafts => _dirtyDraftGroups.isNotEmpty;
+
+  /// Called by [ConfigTabState] when a tab's draft-group dirty state changes. Only a CHANGE notifies;
+  /// the app bar and the close guard do not need a rebuild per keystroke.
+  void setDraftDirty(ConfigDraftGroup group, bool dirty) {
+    final changed = dirty
+        ? _dirtyDraftGroups.add(group)
+        : _dirtyDraftGroups.remove(group);
+    if (changed) {
+      notifyListeners();
+    }
+  }
 
   /// The persisted always-on-top preference from the merged config mirror
   /// (`settings.ui.always_on_top`, false when the block or field is absent).
