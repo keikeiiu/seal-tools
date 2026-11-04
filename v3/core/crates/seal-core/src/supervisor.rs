@@ -149,6 +149,12 @@ enum Command {
     PendingTimeout {
         generation: u64,
     },
+    /// TOOL-F10: take the game for a multi-click calibration sequence. `Some(line)` refuses because a
+    /// tool already owns it (or another calibration sequence is running).
+    BeginCalibration {
+        reply: Sender<Option<String>>,
+    },
+    EndCalibration,
 }
 
 enum WorkerEvent {
@@ -178,6 +184,20 @@ enum Incoming {
 pub struct Supervisor {
     incoming: Sender<Incoming>,
     join: Option<JoinHandle<()>>,
+}
+
+/// The held calibration lease (TOOL-F10). Dropping sends `EndCalibration`; failures are ignored
+/// because the connection is already gone in that case.
+pub struct CalibrationLease {
+    incoming: Sender<Incoming>,
+}
+
+impl Drop for CalibrationLease {
+    fn drop(&mut self) {
+        let _ = self
+            .incoming
+            .send(Incoming::Command(Command::EndCalibration));
+    }
 }
 
 impl Supervisor {
@@ -278,6 +298,28 @@ impl Supervisor {
             .map_err(|_| "the tool supervisor stopped while checking the game lease".to_owned())
     }
 
+    /// Take the game for a long calibration pointer sequence (TOOL-F10). The returned guard releases
+    /// it on drop; while held, `tool.start`, `GamePort::request` and other pointer actions are
+    /// refused, so a resident feeder wake cannot interleave clicks with the 21-step cycle.
+    ///
+    /// # Errors
+    ///
+    /// Returns the player-facing refusal when a tool (or another calibration sequence) owns the game,
+    /// or when the supervisor is not running.
+    pub fn begin_calibration(&self) -> Result<CalibrationLease, String> {
+        let (reply, answer) = mpsc::channel();
+        self.incoming
+            .send(Incoming::Command(Command::BeginCalibration { reply }))
+            .map_err(|_| "the tool supervisor is not running".to_owned())?;
+        match answer.recv() {
+            Ok(None) => Ok(CalibrationLease {
+                incoming: self.incoming.clone(),
+            }),
+            Ok(Some(line)) => Err(line),
+            Err(_) => Err("the tool supervisor stopped while taking the game".to_owned()),
+        }
+    }
+
     /// Stops every run, waits for the workers to leave up to the shutdown budget, emits
     /// `core.stopping`, then joins the supervisor thread. Must be the last call: the writer can only
     /// finish after the supervisor (the last `EventBus` holder) is gone.
@@ -372,6 +414,9 @@ fn supervise(
     // Bumped for every deferred start. A `PendingTimeout` only acts for the start it was scheduled
     // for, so a timer left over from an earlier one cannot cancel the start waiting now.
     let mut pending_generation: u64 = 0;
+    // TOOL-F10: a multi-click calibration sequence owns the game for its whole run, not just at its
+    // start; this flag is the pseudo-holder the arbiter does not model.
+    let mut calibration = false;
 
     while let Ok(message) = receiver.recv() {
         match message {
@@ -380,6 +425,12 @@ fn supervise(
                     Err(unavailable) => StartReply::Unavailable {
                         line: unavailable.line,
                     },
+                    Ok(()) if calibration => StartReply::Refused(Refusal {
+                        kind: seal_tools::arbiter::RefusalKind::Busy,
+                        line: "a calibration sequence is using the game right now — finish it, \
+                               then try again."
+                            .to_owned(),
+                    }),
                     Ok(()) => match arbiter.start(tool) {
                         Start::Started(handle) => {
                             spawn_worker(
@@ -480,7 +531,15 @@ fn supervise(
                 break;
             }
             Incoming::Command(Command::RequestGame { tool, reply }) => {
-                handle_request_game(tool, reply, &mut arbiter, &bus, &mut pending_reply);
+                if calibration {
+                    let _ = reply.send(Err(
+                        "a calibration sequence is using the game right now — wait for it to \
+                         finish"
+                            .to_owned(),
+                    ));
+                } else {
+                    handle_request_game(tool, reply, &mut arbiter, &bus, &mut pending_reply);
+                }
             }
             Incoming::Command(Command::ReleaseGame { tool }) => {
                 let release = arbiter.release_game(tool);
@@ -504,7 +563,24 @@ fn supervise(
                 let _ = reply.send(arbiter.should_stand_down(ToolId::Spammer));
             }
             Incoming::Command(Command::InputLease { reply }) => {
-                let _ = reply.send(input_lease_line(&arbiter));
+                let _ = reply.send(input_lease_line(&arbiter, calibration));
+            }
+            Incoming::Command(Command::BeginCalibration { reply }) => {
+                let line = if calibration {
+                    Some(
+                        "a calibration sequence is already using the game — wait for it to finish."
+                            .to_owned(),
+                    )
+                } else {
+                    input_lease_line(&arbiter, false)
+                };
+                if line.is_none() {
+                    calibration = true;
+                }
+                let _ = reply.send(line);
+            }
+            Incoming::Command(Command::EndCalibration) => {
+                calibration = false;
             }
             Incoming::Command(Command::PendingTimeout { generation }) => {
                 handle_pending_timeout(
@@ -578,7 +654,13 @@ fn drain_workers(
 /// The line a calibration pointer action gets while a tool owns the game. The foreground run is
 /// checked first (including a run that is still leaving), then the resident feeder's game claim.
 /// The wording is v2's `InputArbiter.Busy` / v3's start-refusal wording.
-fn input_lease_line(arbiter: &Arbiter) -> Option<String> {
+fn input_lease_line(arbiter: &Arbiter, calibration: bool) -> Option<String> {
+    if calibration {
+        return Some(
+            "a calibration sequence is using the game right now — wait for it to finish."
+                .to_owned(),
+        );
+    }
     if let Some(holder) = arbiter
         .running()
         .into_iter()

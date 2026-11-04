@@ -458,6 +458,42 @@ fn a_stop_publishes_stopping_then_a_cancelled_finish() {
 }
 
 #[test]
+fn a_calibration_lease_blocks_tool_starts_and_other_pointer_actions() {
+    let registry = FakeRegistry::new();
+    let (bus, _events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
+
+    let lease = supervisor
+        .begin_calibration()
+        .expect("the game is free before the lease");
+    assert!(
+        supervisor
+            .input_lease()
+            .expect("supervisor answers")
+            .is_some_and(|line| line.contains("calibration")),
+        "a second pointer action sees the calibration holder"
+    );
+    match supervisor.start_tool(ToolId::Tuner, &Value::Null) {
+        StartReply::Refused(refusal) => assert!(
+            refusal.line.contains("calibration"),
+            "the refusal names the calibration holder: {}",
+            refusal.line
+        ),
+        other => panic!("expected a calibration refusal, got {other:?}"),
+    }
+
+    drop(lease);
+    assert!(
+        supervisor
+            .input_lease()
+            .expect("supervisor answers")
+            .is_none(),
+        "dropping the guard releases the game"
+    );
+    supervisor.shutdown("test");
+}
+
+#[test]
 fn a_second_start_is_tool_busy_with_the_arbiters_line() {
     let registry = FakeRegistry::new().with_script(ToolId::Spammer, vec![Decision::wait(30.0)]);
     let (bus, events) = seal_core::events::event_channel();
