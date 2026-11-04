@@ -551,9 +551,11 @@ The one calibration surface for every tool. Section 6 is the full walkthrough: c
 window, choose a **Surface**, optionally a **target instance**, draw the mark, **Save mark**, and read
 the core's stored mark / derived values / artifact below. A **tool tab row** picks what you are
 calibrating: **Buy / Sell**, **Gem Composer**, **Pet Feeder**, **Magic Tuner**, **Tooltip**. The first
-three scope Targets and the editor to that tool; **Magic Tuner** and **Tooltip** open their one-capture
-session directly in the workspace instead of a panel below the stored table. The tab's caption repeats
-the capture behaviour: the shell hides itself for the grab, waits one frame, and reopens.
+three scope Targets and the editor to that tool, and each remembers the frame you captured for it —
+switching tabs restores that tool's capture instead of showing another tool's frame; the capture shelf
+sits directly above the workspace. **Magic Tuner** and **Tooltip** open their one-capture session
+directly in the workspace instead of a panel below the stored table. The tab's caption repeats the
+capture behaviour: the shell hides itself for the grab, waits one frame, and reopens.
 
 ---
 

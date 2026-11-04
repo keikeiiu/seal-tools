@@ -19,6 +19,25 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-04 (37) — each mark tool keeps its own live capture; the shelf moves above the workspace
+
+Continuing the capture-once slice: the tool tab now owns its frame, not just its target list.
+
+- **Per-tool capture memory:** `_toolFrameIds` records which live frame each mark tool captured or
+  selected. Switching tabs restores that tool's frame; a tool with no mapping adopts the newest live
+  shelf frame instead of starting blank, and selecting a shelf frame assigns it to the active tool.
+- **Eviction/refusal hygiene:** when the core's four-frame FIFO evicts a frame, or the core refuses an
+  id as unknown, the tool mapping pointing at it is removed so no tab can offer a dead frame.
+- **Capture shelf moved** from the target-tree column to full width above the mark workspace: the strip
+  sits under the tool tabs, matching the design study's capture-first order. The target-tree column is
+  now only what the tool can calibrate.
+- **Frame provenance visible:** the canvas caption now includes `frame <id>`, so the active frame is
+  unambiguous while the test and the player switch tools.
+- Tests cover Shop→Pet→Shop frame restoration (f1, f2, f1), plus the moved shelf and existing flows.
+
+Verification: `flutter analyze --fatal-infos` clean, `dart format` clean, `flutter test --no-pub`
+**351/351**, Windows debug build green. UI spec and both user guides updated in the same commit.
+
 ## 2026-11-04 (36) — Calibrate gets tool tabs; sessions move into their tool workspace
 
 First implementation slice of the approved capture-once UX (`calibrate-capture-once.html` design

@@ -287,16 +287,19 @@ The page header keeps the display/match chips and the Refresh/Capture actions on
 widths and stacks them under the prose when the window is narrow. A **tool tab row** sits between the
 header and the workspace: **Buy / Sell** (Shop), **Gem Composer**, **Pet Feeder**, **Magic Tuner**,
 **Tooltip**. The three mark tabs scope the target tree and editor to that tool; the two session tabs
-replace the mark workspace with that session's one-capture workspace.
+replace the mark workspace with that session's one-capture workspace. A mark tool also remembers the
+frame it last captured or selected: switching tabs restores that tool's frame, and a tab with no frame
+of its own adopts the newest live shelf frame so it never starts blank while a capture is available.
 
 - **Tool-scoped target tree:** the active mark tool's 17 presentation marks / 34 instances are listed
   (Shop 5/5, Gem 3/9, Pet 9/20), with saved/partial/not-set dots and counts; named-instance kinds expand
   their targets (N/G/DG/Register/Combine, ITEM1–3, row 1–4). Selecting a kind/target drives canvas and
   editor. Switching the kind picker to another tool's kind moves the tool tab with it.
-- **Capture shelf:** at most four frames (the core's FIFO). Each item: label/time, physical size, that
-  capture's **own `DisplayInfo`**, frame id, and an eviction marker on the oldest; a fifth capture
-  evicts the oldest and a save against an evicted id is refused — the screen says so and never
-  auto-recaptures. The hide → one frame → show flow and its status are unchanged.
+- **Capture shelf:** sits above the mark workspace (not in the target-tree column). At most four frames
+  (the core's FIFO). Each item: label/time, physical size, that capture's **own `DisplayInfo`**, frame
+  id, and an eviction marker on the oldest; a fifth capture evicts the oldest and a save against an
+  evicted id is refused — the screen says so and never auto-recaptures. Selecting a shelf frame assigns
+  it to the active tool. The hide → one frame → show flow and its status are unchanged.
 - **Canvas:** fit / 1:1 / zoom ± / pan, zoom % and "1 display px = N physical px"; the selected mark is
   drawn with its label. The typed x/y/(w/h) fields stay authoritative and the mapping function is
   unchanged and single.

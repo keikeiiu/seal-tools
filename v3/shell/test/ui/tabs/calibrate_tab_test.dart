@@ -288,6 +288,45 @@ void main() {
     );
   });
 
+  testWidgets('a mark tool keeps its own capture when the tabs switch', (
+    tester,
+  ) async {
+    var captures = 0;
+    await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'capture' => {'result': _captureAnswer(frameId: 'f${++captures}')},
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+    await _flush(tester);
+
+    String caption() => tester
+        .widget<Text>(find.byKey(const ValueKey('calibrate-frame-caption')))
+        .data!;
+
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+    expect(caption(), contains('frame f1'));
+
+    // Pet has no frame of its own yet, so it adopts the live shelf capture instead of going blank.
+    await _selectTool(tester, 'pet');
+    expect(caption(), contains('frame f1'));
+
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+    expect(caption(), contains('frame f2'));
+
+    // Shop remembers the frame it took, not Pet's newer frame.
+    await _selectTool(tester, 'shop');
+    expect(caption(), contains('frame f1'));
+  });
+
   testWidgets('a capture refusal renders the core line verbatim', (
     tester,
   ) async {

@@ -100,6 +100,11 @@ class _CalibrateTabState extends State<CalibrateTab>
   /// The active tool tab. Mark tools scope the target tree/canvas/editor to one tool; Tuner and
   /// Tooltip replace that workspace with their session panel, so their capture is the tool's own.
   String _tool = calibrationKinds.first.tool;
+
+  /// The frame each mark tool last captured/selected. The session tools keep their capture inside
+  /// their panel; these ids are only consulted while a mark tab is active, so one capture can serve
+  /// every mark for that tool without switching to another tool's frame.
+  final Map<String, String> _toolFrameIds = <String, String>{};
   String? _selectedFrameId;
   int _captureSequence = 0;
 
@@ -134,6 +139,23 @@ class _CalibrateTabState extends State<CalibrateTab>
   StoredCalibrationEnvironment? _savedEnvironment;
 
   String _toolFilter = 'All';
+
+  /// The frame id to show for [tool]. A live per-tool mapping wins; a tool with no mapping adopts
+  /// the newest shelf frame so switching tabs never strands a capture the player just took. Returns
+  /// null only when the shelf is empty.
+  String? _frameIdForTool(String tool) {
+    final mapped = _toolFrameIds[tool];
+    if (mapped != null &&
+        _captures.any((capture) => capture.frameId == mapped)) {
+      return mapped;
+    }
+    if (_captures.isEmpty) {
+      return null;
+    }
+    final fallback = _captures.first.frameId;
+    _toolFrameIds[tool] = fallback;
+    return fallback;
+  }
 
   CalibrationKind get _selected => calibrationKindByName(_kindName);
 
@@ -376,7 +398,13 @@ class _CalibrateTabState extends State<CalibrateTab>
     while (_captures.length > 4) {
       evicted.add(_captures.removeLast());
     }
+    for (final item in evicted) {
+      _toolFrameIds.removeWhere((_, frameId) => frameId == item.frameId);
+    }
     _selectedFrameId = capture.frame.frameId;
+    if (!_sessionTool) {
+      _toolFrameIds[_tool] = capture.frame.frameId;
+    }
     if (evicted.isNotEmpty) {
       final names = evicted
           .map((item) => '${item.label} (id ${item.frameId})')
@@ -483,6 +511,7 @@ class _CalibrateTabState extends State<CalibrateTab>
     setState(() {
       _kindName = name;
       _tool = kind.tool;
+      _selectedFrameId = _frameIdForTool(kind.tool);
       _save = null;
       _emptyChoice = null;
       // Switching kind never carries a target over: the new kind's instances are its own.
@@ -509,6 +538,7 @@ class _CalibrateTabState extends State<CalibrateTab>
     final kind = group.kinds.first;
     setState(() {
       _tool = tool;
+      _selectedFrameId = _frameIdForTool(tool);
       if (_kindName != kind.name) {
         _kindName = kind.name;
         _target = null;
@@ -538,6 +568,7 @@ class _CalibrateTabState extends State<CalibrateTab>
   void _selectTreeTarget(CalibrationKind kind, String target) {
     setState(() {
       _tool = kind.tool;
+      _selectedFrameId = _frameIdForTool(kind.tool);
       if (_kindName != kind.name) {
         _kindName = kind.name;
         _emptyChoice = null;
@@ -557,6 +588,7 @@ class _CalibrateTabState extends State<CalibrateTab>
     }
     setState(() {
       _tool = slot.kind.tool;
+      _selectedFrameId = _frameIdForTool(slot.kind.tool);
       _kindName = slot.kind.name;
       _target = slot.target;
       _save = null;
@@ -673,6 +705,9 @@ class _CalibrateTabState extends State<CalibrateTab>
       }
       if (refusedFrame) {
         _refusedFrameIds.add(capture.frame.frameId);
+        _toolFrameIds.removeWhere(
+          (_, frameId) => frameId == capture.frame.frameId,
+        );
         _shelfNote =
             'The core refused ${capture.label} (id ${capture.frame.frameId}) as an unknown '
             'frame id: it is no longer in the four-frame cache. Capture again — this screen never '
@@ -785,12 +820,14 @@ class _CalibrateTabState extends State<CalibrateTab>
           const SizedBox(height: ShellSpace.md),
           DetectPanel(model: widget.model),
           _buildExternalChangeBanner(),
+          _buildCaptureShelf(theme),
+          const SizedBox(height: ShellSpace.md),
           LayoutBuilder(
             builder: (context, constraints) {
               final wide = constraints.maxWidth >= _workspaceBreakpoint;
               final left = Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [_buildCaptureShelf(theme), _buildTargetTree()],
+                children: [_buildTargetTree()],
               );
               final canvas = _buildCanvasPanel(theme, capture);
               final right = Column(
@@ -1126,7 +1163,10 @@ class _CalibrateTabState extends State<CalibrateTab>
     return CaptureShelfPanel(
       captures: _captures,
       selectedFrameId: _activeCapture?.frameId,
-      onSelect: (frameId) => setState(() => _selectedFrameId = frameId),
+      onSelect: (frameId) => setState(() {
+        _selectedFrameId = frameId;
+        _toolFrameIds[_tool] = frameId;
+      }),
       onCapture: _captureFrame,
       capturing: _capturing,
       refusedFrameIds: _refusedFrameIds,
@@ -1177,7 +1217,8 @@ class _CalibrateTabState extends State<CalibrateTab>
                 child: Text(
                   '${capture.label} · ${capture.sizeLabel} · display '
                   '${formatCalibrationScale(display.scale)}× / '
-                  '${display.physicalClient.w}×${display.physicalClient.h} client',
+                  '${display.physicalClient.w}×${display.physicalClient.h} client · '
+                  'frame ${capture.frame.frameId}',
                   key: const ValueKey('calibrate-frame-caption'),
                   style: ShellText.mono.copyWith(
                     fontSize: 11,
