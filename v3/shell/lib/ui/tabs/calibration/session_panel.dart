@@ -1196,16 +1196,19 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
                 runSpacing: ShellSpace.xs,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  OutlinedButton.icon(
-                    key: const ValueKey('session-tuner-capture'),
-                    onPressed: _busy ? null : _captureTuner,
-                    icon: const Icon(Icons.photo_camera_outlined, size: 16),
-                    label: Text(
-                      captured ? 'Recapture screen' : 'Capture screen',
+                  if (!widget.useSharedCapture)
+                    OutlinedButton.icon(
+                      key: const ValueKey('session-tuner-capture'),
+                      onPressed: _busy ? null : _captureTuner,
+                      icon: const Icon(Icons.photo_camera_outlined, size: 16),
+                      label: Text(
+                        captured ? 'Recapture screen' : 'Capture screen',
+                      ),
                     ),
-                  ),
                   Text(
-                    'Game foreground · full client · tuner status window visible',
+                    widget.useSharedCapture
+                        ? 'Use the shared Capture screen button above.'
+                        : 'Game foreground · full client · tuner status window visible',
                     style: theme.textTheme.labelSmall?.copyWith(
                       fontSize: 9.5,
                       color: colors.onSurfaceVariant,

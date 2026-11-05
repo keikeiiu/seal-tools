@@ -2399,9 +2399,7 @@ void main() {
       await _flush(tester);
       await _selectTool(tester, 'tuner');
 
-      final sessionCapture = find.byKey(
-        const ValueKey('session-tuner-capture'),
-      );
+      final sessionCapture = find.byKey(const ValueKey('calibrate-capture'));
       await tester.ensureVisible(sessionCapture);
       await tester.tap(sessionCapture);
       await _flush(tester);
@@ -2489,7 +2487,7 @@ void main() {
     await _flush(tester);
     await _selectTool(tester, 'tuner');
 
-    final capture = find.byKey(const ValueKey('session-tuner-capture'));
+    final capture = find.byKey(const ValueKey('calibrate-capture'));
     await tester.ensureVisible(capture);
     await tester.tap(capture);
     await _flush(tester);
@@ -2649,7 +2647,7 @@ void main() {
         reason: 'the frame exists only once the session is captured',
       );
 
-      final capture = find.byKey(const ValueKey('session-tuner-capture'));
+      final capture = find.byKey(const ValueKey('calibrate-capture'));
       await tester.ensureVisible(capture);
       await tester.tap(capture);
       await _flush(tester);

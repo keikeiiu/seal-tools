@@ -332,8 +332,9 @@ took it (`Shop · 1`) with the count of targets assigned to it.
   screen; a screen change clears the Check result and disables Save until **Check boxes** runs again,
   and Save sends that screen's `frame_id`. Tooltip reuses the selected screen as the visual background
   for its offset/size fields, but **Capture hover** remains the live cursor-anchor/Test-read action.
-  The sessions' right-side layouts and controls are otherwise unchanged; screen selection itself has
-  no target assignment because each session has one calibration record.
+  The sessions' right-side layouts and controls are otherwise unchanged; the Tuner's private
+  **Capture screen** button is not shown in shared mode because the shared bar above owns capture.
+  Screen selection itself has no target assignment because each session has one calibration record.
 - **Delete a screen:** each Screens tile has a small **× Delete screen** action. It opens two
   confirmations (usage/consequences, then the irreversible confirmation); only the second one calls
   `capture.discard`, removes the tile and clears the session-only assignments that pointed at it.
