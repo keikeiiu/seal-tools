@@ -106,8 +106,112 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
   /// optional spring POINT.
   String _tunerTarget = 'grade';
 
+  /// The saved tuner geometry is loaded into the fields once, so a migrated/kept calibration is
+  /// visible without re-dragging it. The capture is still required to save (`_saveTuner` needs a
+  /// frame); this only restores the derived boxes v2 left behind.
+  bool _tunerPrefilled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.model.config.addListener(_onConfigForTunerPrefill);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _prefillTunerFromConfig();
+    });
+  }
+
+  void _onConfigForTunerPrefill() {
+    if (mounted) _prefillTunerFromConfig();
+  }
+
+  /// v2 stored the DERIVED geometry (region + relative bands), not the three dragged rectangles.
+  /// Invert that derivation so the new session shows the calibration the core is already using.
+  void _prefillTunerFromConfig() {
+    if (_tunerPrefilled) return;
+    final tuner = asJsonMap(widget.model.config.config['tuner']);
+    final ocr = asJsonMap(tuner['ocr']);
+    final region = asJsonMap(ocr['region']);
+    final grade = asJsonMap(ocr['grade_area']);
+    final left = asNumber(region['left'])?.toInt();
+    final top = asNumber(region['top'])?.toInt();
+    final attrX = _band(ocr['attr_x']);
+    final attrY = _band(ocr['attr_y']);
+    final remainingX = _band(ocr['remaining_x']);
+    final remainingY = _band(ocr['remaining_y']);
+    final gradeX1 = asNumber(grade['x1'])?.toInt();
+    final gradeY1 = asNumber(grade['y1'])?.toInt();
+    final gradeX2 = asNumber(grade['x2'])?.toInt();
+    final gradeY2 = asNumber(grade['y2'])?.toInt();
+    if (left == null ||
+        top == null ||
+        attrX == null ||
+        attrY == null ||
+        remainingX == null ||
+        remainingY == null ||
+        gradeX1 == null ||
+        gradeY1 == null ||
+        gradeX2 == null ||
+        gradeY2 == null) {
+      return;
+    }
+    final boxes = <String, (int, int, int, int)>{
+      'grade': (
+        left + gradeX1,
+        top + gradeY1,
+        gradeX2 - gradeX1,
+        gradeY2 - gradeY1,
+      ),
+      'attr': (
+        left + attrX.$1,
+        top + attrY.$1,
+        attrX.$2 - attrX.$1,
+        attrY.$2 - attrY.$1,
+      ),
+      'remaining': (
+        left + remainingX.$1,
+        top + remainingY.$1,
+        remainingX.$2 - remainingX.$1,
+        remainingY.$2 - remainingY.$1,
+      ),
+    };
+    if (boxes.values.any((box) => box.$3 <= 0 || box.$4 <= 0)) return;
+    for (final entry in boxes.entries) {
+      _boxFields['${entry.key}.x']!.text = '${entry.value.$1}';
+      _boxFields['${entry.key}.y']!.text = '${entry.value.$2}';
+      _boxFields['${entry.key}.w']!.text = '${entry.value.$3}';
+      _boxFields['${entry.key}.h']!.text = '${entry.value.$4}';
+    }
+    final rowHeight = asNumber(ocr['row_height'])?.toInt();
+    if (rowHeight != null && rowHeight > 0) {
+      _rowHeight.text = '$rowHeight';
+    }
+    final spring = asJsonList(tuner['spring_point']);
+    if (spring.length >= 2) {
+      final springX = asNumber(spring[0])?.toInt();
+      final springY = asNumber(spring[1])?.toInt();
+      if (springX != null && springY != null) {
+        _springX.text = '$springX';
+        _springY.text = '$springY';
+      }
+    }
+    _tunerPrefilled = true;
+    setState(() {
+      _status = 'Loaded your saved tuner calibration — Capture screen to re-check or save it.';
+    });
+  }
+
+  (int, int)? _band(Object? value) {
+    final list = asJsonList(value);
+    if (list.length < 2) return null;
+    final first = asNumber(list[0])?.toInt();
+    final second = asNumber(list[1])?.toInt();
+    if (first == null || second == null) return null;
+    return (first, second);
+  }
+
   @override
   void dispose() {
+    widget.model.config.removeListener(_onConfigForTunerPrefill);
     for (final controller in [
       _x,
       _y,

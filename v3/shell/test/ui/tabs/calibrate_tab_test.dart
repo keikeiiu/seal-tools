@@ -123,6 +123,7 @@ Future<AppHarness> _pumpCalibrate(
   WidgetTester tester, {
   required _Answer answer,
   HostActions? host,
+  Map<String, dynamic>? config,
 }) async {
   tester.view.physicalSize = const ui.Size(1800, 2600);
   tester.view.devicePixelRatio = 1.0;
@@ -137,6 +138,7 @@ Future<AppHarness> _pumpCalibrate(
   final connecting = harness.connect(
     config: {
       'window': {'title': 'TW_LIVE'},
+      ...?config,
     },
   );
   for (var i = 0; i < 3; i++) {
@@ -2108,6 +2110,61 @@ void main() {
       reason: 'the Test read lines live in their own result card',
     );
   });
+
+  testWidgets(
+    'the tuner session shows a saved calibration instead of blank boxes',
+    (tester) async {
+      await _pumpCalibrate(
+        tester,
+        config: {
+          'tuner': {
+            'ocr': {
+              'region': {'left': 1137, 'top': 796, 'width': 280, 'height': 232},
+              'grade_area': {'x1': 139, 'y1': 0, 'x2': 223, 'y2': 43},
+              'attr_y': [43, 131],
+              'remaining_y': [188, 232],
+              'attr_x': [0, 280],
+              'remaining_x': [155, 218],
+              'row_height': 19,
+            },
+            'spring_point': [1213, 1077],
+          },
+        },
+        answer: (request) => switch (request['cmd']) {
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+      await _flush(tester);
+      await _selectTool(tester, 'tuner');
+
+      String field(String key) =>
+          tester.widget<TextField>(_field(key)).controller!.text;
+      expect(field('session-tuner-grade.x'), '1276');
+      expect(field('session-tuner-grade.y'), '796');
+      expect(field('session-tuner-grade.w'), '84');
+      expect(field('session-tuner-grade.h'), '43');
+      expect(field('session-tuner-attr.x'), '1137');
+      expect(field('session-tuner-attr.y'), '839');
+      expect(field('session-tuner-attr.w'), '280');
+      expect(field('session-tuner-attr.h'), '88');
+      expect(field('session-tuner-remaining.x'), '1292');
+      expect(field('session-tuner-remaining.y'), '984');
+      expect(field('session-tuner-remaining.w'), '63');
+      expect(field('session-tuner-remaining.h'), '44');
+      expect(field('session-tuner-row-height'), '19');
+      expect(field('session-tuner-spring-x'), '1213');
+      expect(field('session-tuner-spring-y'), '1077');
+      expect(
+        find.textContaining('Loaded your saved tuner calibration'),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('the tuner session captures, checks and saves three boxes', (
     tester,
