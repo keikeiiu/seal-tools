@@ -354,9 +354,11 @@ class _CalibrateTabState extends State<CalibrateTab>
       } catch (_) {
         hostNote = 'the shell could not hide itself — the game has to be in front for a capture';
       }
-      // One frame for the hide to be composited before the core checks the foreground window.
+      // One frame for the hide to be composited before the core reads the screen. The shell is
+      // hidden now, so the calibration exemption is used: Windows can still report this hidden
+      // window as the foreground one even though the game is the visible frame.
       await _waitOneFrame();
-      final result = await widget.model.captureFrame();
+      final result = await widget.model.captureFrame(allowCovered: true);
       if (!mounted) {
         return;
       }

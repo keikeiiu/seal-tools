@@ -753,13 +753,19 @@ class ShellModel extends ChangeNotifier {
       _coreAction('pointer.click', (result) => result, args: {'x': x, 'y': y});
 
   /// `capture`: the game client as PNG plus the `DisplayInfo` measurement. The full client is the
-  /// calibration frame; a region is only for the capture command's general use.
-  Future<CoreActionResult<CaptureResult>> captureFrame({Rect? region}) =>
-      _coreAction(
-        'capture',
-        CaptureResult.fromJson,
-        args: region == null ? const {} : {'region': region.toJson()},
-      );
+  /// calibration frame; a region is only for the capture command's general use. `allowCovered` is
+  /// the calibration exemption: the shell hides itself first, but Windows can still report the
+  /// hidden shell as the foreground window, so only the calibration screens ask to skip the gate.
+  Future<CoreActionResult<CaptureResult>> captureFrame({
+    Rect? region,
+    bool allowCovered = false,
+  }) {
+    final args = <String, dynamic>{
+      if (region != null) 'region': region.toJson(),
+      if (allowCovered) 'allow_covered': true,
+    };
+    return _coreAction('capture', CaptureResult.fromJson, args: args);
+  }
 
   /// `calibration.save`: the mark drawn on the captured frame, plus the capture's measured display so
   /// the core records the environment. Refusals (bag-slot pitch disagreement, unknown frame_id, …)
@@ -805,12 +811,14 @@ class ShellModel extends ChangeNotifier {
     required int x,
     required int y,
     int? hoverDelayMs,
+    bool allowCovered = false,
   }) => _coreAction(
     'calibration.tooltip.hover_capture',
     (result) => result,
     args: {
       'point': {'x': x, 'y': y},
       'hover_delay_ms': ?hoverDelayMs,
+      if (allowCovered) 'allow_covered': true,
     },
   );
 
@@ -840,6 +848,7 @@ class ShellModel extends ChangeNotifier {
     required int x,
     required int y,
     int? hoverDelayMs,
+    bool allowCovered = false,
   }) => _coreAction(
     'calibration.tooltip.test',
     (result) => result,
@@ -847,6 +856,7 @@ class ShellModel extends ChangeNotifier {
       'point': {'x': x, 'y': y},
       'hover_delay_ms': ?hoverDelayMs,
       'debug': true,
+      if (allowCovered) 'allow_covered': true,
     },
   );
 

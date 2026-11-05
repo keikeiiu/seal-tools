@@ -2262,11 +2262,15 @@ fn capture_command(state: &mut CoreState, request: &Request) -> Response {
         Ok(region) => region,
         Err(error) => return win_error_response(&request.id, error),
     };
+    let allow_covered = match win::parse_allow_covered(&request.args) {
+        Ok(allow) => allow,
+        Err(error) => return win_error_response(&request.id, error),
+    };
     let title = match win::configured_title(&state.config) {
         Ok(title) => title,
         Err(error) => return win_error_response(&request.id, error),
     };
-    let (frame, display) = match win::capture(&title, region) {
+    let (frame, display) = match win::capture_with(&title, region, allow_covered) {
         Ok(result) => result,
         Err(error) => return win_error_response(&request.id, error),
     };

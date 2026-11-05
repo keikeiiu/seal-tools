@@ -2049,6 +2049,12 @@ void main() {
     expect(hoverArgs['point'], {'x': 0, 'y': 0});
     expect(hoverArgs['hover_delay_ms'], 700);
     expect(
+      hoverArgs['allow_covered'],
+      isTrue,
+      reason:
+          'the shell is hidden, but Windows may still report it as foreground',
+    );
+    expect(
       find.byKey(const ValueKey('session-tooltip-preview')),
       findsOneWidget,
     );
@@ -2226,6 +2232,17 @@ void main() {
     await tester.ensureVisible(capture);
     await tester.tap(capture);
     await _flush(tester);
+
+    final captureArgs =
+        harness.sentMessages.lastWhere(
+              (message) => message['cmd'] == 'capture',
+            )['args']
+            as Map<String, dynamic>;
+    expect(
+      captureArgs['allow_covered'],
+      isTrue,
+      reason: 'the hidden launcher may still be the reported foreground window',
+    );
 
     expect(
       find.byKey(const ValueKey('session-tuner-box-grade')),

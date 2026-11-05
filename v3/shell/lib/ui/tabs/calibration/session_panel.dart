@@ -302,6 +302,7 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       x: _number(_x) ?? 0,
       y: _number(_y) ?? 0,
       hoverDelayMs: _number(_delay),
+      allowCovered: true,
     ),
   );
 
@@ -320,6 +321,7 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       x: _number(_x) ?? 0,
       y: _number(_y) ?? 0,
       hoverDelayMs: _number(_delay),
+      allowCovered: true,
     ),
   );
 
@@ -548,7 +550,7 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
     });
     final result = await withHiddenWindow(
       widget.host,
-      widget.model.captureFrame,
+      () => widget.model.captureFrame(allowCovered: true),
     );
     if (!mounted) return;
     setState(() {

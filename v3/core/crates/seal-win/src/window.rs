@@ -365,8 +365,32 @@ fn screen_size() -> Size {
 /// when the requested region does not fit the client, and [`WinError`] naming the Win32 call that
 /// failed when a GDI resource or the capture itself cannot be created.
 pub fn capture_client_region(hwnd: Hwnd, region: Option<Rect>) -> Result<Captured, WinError> {
+    capture_client_region_checked(hwnd, region, true)
+}
+
+/// Capture without the foreground gate. This exists ONLY for the shell's calibration capture: the
+/// shell hides itself immediately before asking, but Windows can keep the hidden shell as the
+/// foreground window, which makes [`capture_client_region`] refuse even though the game is visible.
+/// A caller that uses this accepts that a genuinely covering window would be photographed; the frame
+/// is shown back to the player, so a wrong calibration picture is visible and recoverable.
+///
+/// # Errors
+///
+/// Same as [`capture_client_region`] except that [`WinError::NotForeground`] is never returned.
+pub fn capture_client_region_ungated(
+    hwnd: Hwnd,
+    region: Option<Rect>,
+) -> Result<Captured, WinError> {
+    capture_client_region_checked(hwnd, region, false)
+}
+
+fn capture_client_region_checked(
+    hwnd: Hwnd,
+    region: Option<Rect>,
+    require_foreground: bool,
+) -> Result<Captured, WinError> {
     let display = measure(hwnd)?;
-    if !is_foreground(hwnd) {
+    if require_foreground && !is_foreground(hwnd) {
         return Err(WinError::NotForeground);
     }
     let client = display.physical_client;

@@ -150,20 +150,41 @@ pub fn measure(title: &str) -> Result<Value, CommandError> {
 /// Returns the command error when the window cannot be found, measured or captured. A capture that
 /// never sees the game in front returns [`CommandError::NotForeground`] once the deadline expires.
 pub fn capture(title: &str, region: Option<Rect>) -> Result<(Value, Value), CommandError> {
+    capture_with(title, region, false)
+}
+
+/// A capture with the calibration exemption: when `allow_covered` is true the foreground gate is
+/// skipped. The shell hides itself first, but Windows can still report the hidden shell as the
+/// foreground window; only the calibration commands pass this, and the returned frame is shown to
+/// the player before anything is saved. Tool scans always use the gated [`capture`].
+///
+/// # Errors
+///
+/// Same as [`capture`], except that a not-foreground window is captured instead of refused.
+pub fn capture_with(
+    title: &str,
+    region: Option<Rect>,
+    allow_covered: bool,
+) -> Result<(Value, Value), CommandError> {
     let hwnd = locate(title)?;
     let display = window::measure(hwnd).map_err(CommandError::from)?;
-    let started = Instant::now();
-    let captured = capture_waiting(
-        FOREGROUND_WAIT,
-        || window::capture_client_region(hwnd, region),
-        || {
-            // Best effort: the answer says only whether Windows accepted the request, and a refusal
-            // is exactly what the deadline below handles, so it is deliberately discarded.
-            let _ = window::activate(hwnd);
-        },
-        || started.elapsed(),
-        std::thread::sleep,
-    )?;
+    let captured = if allow_covered {
+        window::capture_client_region_ungated(hwnd, region).map_err(CommandError::from)?
+    } else {
+        let started = Instant::now();
+        capture_waiting(
+            FOREGROUND_WAIT,
+            || window::capture_client_region(hwnd, region),
+            || {
+                // Best effort: the answer says only whether Windows accepted the request, and a
+                // refusal is exactly what the deadline below handles, so it is deliberately
+                // discarded.
+                let _ = window::activate(hwnd);
+            },
+            || started.elapsed(),
+            std::thread::sleep,
+        )?
+    };
     let data = base64::engine::general_purpose::STANDARD.encode(&captured.png);
     let frame = json!({
         "format": "png",
@@ -256,6 +277,22 @@ pub fn parse_region(args: &Value) -> Result<Option<Rect>, CommandError> {
     };
     let rect = Rect::new(number("x")?, number("y")?, number("w")?, number("h")?);
     Ok(Some(rect))
+}
+
+/// The `allow_covered` argument of `capture`: absent/false keeps the foreground gate. Only the
+/// shell's calibration capture sends true, after it has hidden itself.
+///
+/// # Errors
+///
+/// Returns a bad request when the argument is present but not a boolean.
+pub fn parse_allow_covered(args: &Value) -> Result<bool, CommandError> {
+    match args.get("allow_covered") {
+        None => Ok(false),
+        Some(Value::Bool(allow)) => Ok(*allow),
+        Some(_) => Err(CommandError::BadRequest(
+            "allow_covered must be a boolean".to_owned(),
+        )),
+    }
 }
 
 /// One cached capture: the frame metadata without the multi-megabyte base64 payload, the decoded PNG
@@ -410,6 +447,16 @@ mod tests {
         );
         assert!(matches!(
             parse_region(&json!({"region": {"x": 1}})),
+            Err(CommandError::BadRequest(_))
+        ));
+    }
+
+    #[test]
+    fn allow_covered_is_absent_false_or_refused_when_malformed() {
+        assert!(!parse_allow_covered(&json!({})).expect("absent"));
+        assert!(parse_allow_covered(&json!({"allow_covered": true})).expect("bool"));
+        assert!(matches!(
+            parse_allow_covered(&json!({"allow_covered": "yes"})),
             Err(CommandError::BadRequest(_))
         ));
     }

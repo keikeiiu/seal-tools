@@ -141,9 +141,12 @@ a cursor to a pixel v2 never clicked. Pinned by
 - The blit is 1:1 physical, so the capture must be given **physical** rects and must run on the
   aware thread — the result is the full 2865 × 1789 client, not a crop.
 - **The game must be in front.** `CopyFromScreen` reads what is on screen; a covered game would be
-  photographed over. The core asks `GetForegroundWindow` and refuses with `game_not_foreground`
-  ([PROTOCOL.md](PROTOCOL.md) §4/§6); the UI hides itself, waits a frame, then asks, so the
-  calibrator's capture is the game only.
+  photographed over. The core asks `GetForegroundWindow` and normally refuses with
+  `game_not_foreground` ([PROTOCOL.md](PROTOCOL.md) §4/§6). The calibration screens hide the shell
+  first; because Windows can still report the hidden shell as the foreground window, their
+  `capture`/tooltip commands pass `allow_covered:true` and skip that gate for the one frame. The frame
+  is shown back before anything is saved, so a genuinely covered picture is visible and recoverable;
+  tool reads keep the gate.
 - **Frames carry their origin**: the frame is a rectangle of the physical screen, and
   [`Frame`](PROTOCOL.md#3-types) carries `origin` so the shell never has to guess where it came from.
   Frames are PNG+base64; the core retains the last four by `frame_id` (a FIFO cache in `dispatch.rs`),
