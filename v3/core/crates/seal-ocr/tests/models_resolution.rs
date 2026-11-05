@@ -1,11 +1,13 @@
 //! The OCR models-directory resolver (`PROTOCOL.md` §4 release blocker, `CUTOVER.md` finding 6):
 //! env wins or fails, then `<config root>/models`, then `<exe dir>/models`; a candidate counts only
-//! with ALL THREE files. Pure over injected paths, so no machine and no models are needed.
+//! when both REQUIRED models (det + rec) are present. The orientation classifier is OPTIONAL: nothing
+//! loads it, and requiring a never-used file made a working install report `ocr_unavailable`
+//! (OCR-F10). Pure over injected paths, so no machine and no models are needed.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use seal_ocr::pipeline::{MODEL_FILES, resolve_models_dir};
+use seal_ocr::pipeline::{OPTIONAL_MODELS, REQUIRED_MODELS, resolve_models_dir};
 
 struct Scratch {
     root: PathBuf,
@@ -45,10 +47,10 @@ impl Scratch {
         path
     }
 
-    /// A parent directory whose `models` holds all three files.
+    /// A parent directory whose `models` holds both required files.
     fn valid_parent(&self, name: &str) -> PathBuf {
         let parent = self.dir(name);
-        let _ = Self::models(&parent, &MODEL_FILES);
+        let _ = Self::models(&parent, &REQUIRED_MODELS);
         parent
     }
 }
@@ -90,20 +92,40 @@ fn a_set_environment_that_is_not_a_directory_is_an_error_not_a_fallback() {
 }
 
 #[test]
-fn a_set_environment_missing_one_model_is_a_loud_error_not_a_fallback() {
+fn a_set_environment_missing_the_recogniser_is_a_loud_error_not_a_fallback() {
     let scratch = Scratch::new("env-incomplete");
     let root = scratch.valid_parent("root");
     let env_parent = scratch.dir("env");
-    let two = &MODEL_FILES[..2];
-    let env = Scratch::models(&env_parent, two);
+    // The detector alone: the recogniser is what owns the character dictionary, so this is broken.
+    let env = Scratch::models(&env_parent, &[REQUIRED_MODELS[0]]);
 
     let error = resolve_models_dir(Some(&env), Some(&root), None)
         .expect_err("the env var wins or fails; the valid root must not be used");
     assert_eq!(error.reason, "models_dir_missing");
     assert!(
-        error.message.contains(MODEL_FILES[2]) && error.message.contains("never ignored"),
+        error.message.contains(REQUIRED_MODELS[1]) && error.message.contains("never ignored"),
         "the line names the missing file and the rule: {}",
         error.message
+    );
+}
+
+#[test]
+fn a_models_directory_without_the_unused_classifier_resolves() {
+    let scratch = Scratch::new("no-classifier");
+    let parent = scratch.dir("env");
+    let models = Scratch::models(&parent, &REQUIRED_MODELS);
+
+    let resolved = resolve_models_dir(Some(&models), None, None)
+        .expect("the orientation classifier is never loaded, so its file is optional");
+    assert_eq!(resolved, models);
+}
+
+#[test]
+fn the_classifier_is_the_optional_model_file() {
+    assert_eq!(
+        OPTIONAL_MODELS,
+        ["ch_ppocr_mobile_v2.0_cls_infer.onnx"],
+        "the classifier is the only model the pipeline does not load"
     );
 }
 
@@ -160,17 +182,18 @@ fn when_nothing_works_the_line_names_every_attempted_directory() {
 }
 
 #[test]
-fn a_directory_with_two_of_three_models_does_not_count() {
-    let scratch = Scratch::new("two");
+fn a_directory_without_the_recogniser_does_not_count() {
+    let scratch = Scratch::new("one");
     let root = scratch.dir("root");
-    let two = &MODEL_FILES[..2];
-    let _ = Scratch::models(&root, two);
+    // Detector plus the optional classifier is still not a working install.
+    let partial = [REQUIRED_MODELS[0], OPTIONAL_MODELS[0]];
+    let _ = Scratch::models(&root, &partial);
     let exe = scratch.dir("exe");
 
     let error = resolve_models_dir(None, Some(&root), Some(&exe))
-        .expect_err("two of three is a broken install, not a candidate");
+        .expect_err("a missing recogniser is a broken install, not a candidate");
     assert!(
-        error.message.contains(MODEL_FILES[2]),
+        error.message.contains(REQUIRED_MODELS[1]),
         "the missing file is named: {}",
         error.message
     );

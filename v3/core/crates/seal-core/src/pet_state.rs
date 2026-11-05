@@ -83,7 +83,8 @@ impl ConfigPetStateSink {
             .map_err(|error| error.to_string())?;
         let config = self.store.load().map_err(|error| error.to_string())?;
         if let Ok(mut shared) = self.shared.write() {
-            *shared = config.clone();
+            // Move the freshly loaded tree into the shared snapshot; no second copy is made.
+            *shared = Arc::new(config);
         }
         Ok(self.revision.fetch_add(1, Ordering::SeqCst) + 1)
     }
@@ -189,7 +190,7 @@ mod tests {
     fn one_patch_writes_one_event_with_one_new_revision() {
         let (dir, store) = store();
         let (bus, events) = events::event_channel();
-        let shared: SharedConfig = Arc::new(RwLock::new(store.load().unwrap()));
+        let shared: SharedConfig = Arc::new(RwLock::new(Arc::new(store.load().unwrap())));
         let revision = Arc::new(AtomicU64::new(0));
         let sink = ConfigPetStateSink::new(
             store.clone(),
@@ -248,7 +249,7 @@ mod tests {
         .unwrap();
         let store = ConfigStore::new(dir.path());
         let (bus, _events) = events::event_channel();
-        let shared: SharedConfig = Arc::new(RwLock::new(store.load().unwrap()));
+        let shared: SharedConfig = Arc::new(RwLock::new(Arc::new(store.load().unwrap())));
         let sink = ConfigPetStateSink::new(
             store.clone(),
             Arc::new(AtomicU64::new(0)),
@@ -320,7 +321,7 @@ mod tests {
         std::fs::create_dir_all(bad.join("local.yaml")).unwrap();
         let bad_store = ConfigStore::new(&bad);
         let (bus, _events) = events::event_channel();
-        let shared: SharedConfig = Arc::new(RwLock::new(serde_json::Value::Null));
+        let shared: SharedConfig = Arc::new(RwLock::new(Arc::new(serde_json::Value::Null)));
         let logs = Arc::new(Logs::new(dir.path()));
         let sink = ConfigPetStateSink::new(
             bad_store,

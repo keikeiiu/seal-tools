@@ -13,6 +13,12 @@
 //! - **The mouse guard runs before each click and only in `hid` mode.** Both `None`s fail OPEN
 //!   (window or cursor unreadable), which is v2's acknowledged behaviour and is why the guard is a
 //!   domain function with that comment rather than a rule invented here.
+//! - **Every read is logged, and a partial read is never decided on.** The production source writes
+//!   one `logs/ocr_log.jsonl` record per completed capture+OCR pass (v2's per-`ScanOnce` record),
+//!   saves that frame under `logs/captures/` when `tuner.save_captures` is on or on the last retry
+//!   (v2's `forceCapture`), and records a read that is still partial after `tuner.ocr_retries` in
+//!   `logs/ocr_errors.jsonl`. The decision half stops on that partial read instead of counting it as
+//!   a repeat (issue #16's false "same result x3").
 //!
 //! One recorded simplification: a FAILED recentre placement surfaces as the effects' placement line,
 //! not v2's composed "cursor wouldn't re-centre — `<detail>`". The stop still happens and still names
@@ -22,6 +28,7 @@
 use std::collections::VecDeque;
 use std::time::Instant;
 
+use base64::Engine as _;
 use seal_domain::config::FilterConfig;
 use seal_domain::decision::{Decision, StopKind, StopReason};
 use seal_domain::geometry::{DisplayInfo, Point, Rect};
@@ -168,6 +175,12 @@ pub trait TunerSource {
     /// The cursor in the LOGICAL screen space, or `None` when unreadable (the guard fails open).
     fn cursor(&mut self) -> Option<Point> {
         None
+    }
+
+    /// How many OCR captures this source has saved under `logs/captures/` for the run's summary.
+    /// The scripted test source saves none.
+    fn captures_saved(&self) -> usize {
+        0
     }
 }
 
@@ -336,9 +349,9 @@ impl<S: TunerSource + Send> Tool for TunerTool<S> {
         }
     }
 
-    /// `tool.finished.summary` (G11): the last read's grade, the attempt count, captures saved by
-    /// this run (v3's tuner never saves per-attempt captures, so this is 0 rather than a guess) and
-    /// which protocol stop reason ended it (v2's "stopped by", in the wire's own word).
+    /// `tool.finished.summary` (G11): the last read's grade, the attempt count, the OCR captures this
+    /// run saved (the forced frames left for post-mortem study) and which protocol stop reason ended
+    /// it (v2's "stopped by", in the wire's own word).
     fn summary(&self, reason: &StopReason) -> Option<Value> {
         let stopped_by = match reason.kind {
             StopKind::Done => "done",
@@ -349,7 +362,7 @@ impl<S: TunerSource + Send> Tool for TunerTool<S> {
         Some(json!({
             "grade": self.last_read.as_ref().and_then(|read| read.grade.clone()),
             "attempts": self.run.attempt(),
-            "captures_saved": 0,
+            "captures_saved": self.source.captures_saved(),
             "stopped_by": stopped_by,
         }))
     }
@@ -489,6 +502,14 @@ pub struct OcrTunerSource {
     /// for post-mortem study (v2's `forceCapture`).
     retries: u32,
     grade_colors: seal_domain::config::GradeColorsConfig,
+    /// `<root>/logs` writer for the read loop's diagnosis. The opening phase has only the root (the
+    /// supervisor's shared logger is not handed to a tool source), so the source opens its own
+    /// `Logs` over the same files; every write is one append, which is all the file contract needs.
+    logs: crate::logs::Logs,
+    /// `tuner.save_captures`: save every completed read's frame, not only the forced last one.
+    save_captures: bool,
+    /// Captures saved by this run, reported in `tool.finished.summary`.
+    captures_saved: usize,
 }
 
 impl OcrTunerSource {
@@ -522,6 +543,11 @@ impl OcrTunerSource {
             .cloned()
             .and_then(|block| serde_json::from_value(block).ok())
             .unwrap_or_default();
+        let logs = crate::logs::Logs::new(root);
+        let save_captures = config
+            .pointer("/tuner/save_captures")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         Ok((
             Self {
                 title,
@@ -531,30 +557,116 @@ impl OcrTunerSource {
                 pipeline,
                 retries,
                 grade_colors,
+                logs,
+                save_captures,
+                captures_saved: 0,
             },
             display,
         ))
     }
 }
 
-/// v2's `IsConfirmed`: the read is only accepted once the grade, EVERY attribute row and the
-/// remaining count were all recognised. A transient OCR miss/merge is re-captured instead of
-/// advancing the tuner on a half-read.
-pub(crate) fn confirmed_read(read: &TunerRead) -> bool {
-    read.grade.is_some()
-        && read.remaining.is_some()
-        && read.attributes.len() == 3
-        && read.attributes.iter().all(|row| !row.name.is_empty())
+/// One completed capture+OCR pass, plus the `ocr_log.jsonl` record already written for it (kept so
+/// the last partial attempt can also become an `ocr_errors.jsonl` record).
+struct CompletedRead {
+    read: TunerRead,
+    record: Value,
+}
+
+/// What one read's retry policy ends with (v2's `OcrEngine.Scan`).
+enum ReadPolicy {
+    /// The read is complete; the decision half may act on it.
+    Confirmed(TunerRead),
+    /// The retry budget is gone and the read is still partial — issue #16's bad input. The record is
+    /// the last attempt's `ocr_log` line, for `ocr_errors.jsonl`.
+    Unconfirmed { read: TunerRead, record: Value },
+    /// The last attempt failed outright; its line is the stop.
+    Failed(String),
+}
+
+/// The retry policy of one read: re-capture until the read is confirmed, and keep the last partial
+/// attempt for the error log. `read_once(attempt, force_capture)` is one capture+OCR pass and reports
+/// the 1-based attempt number plus whether this is the last one (v2's `forceCapture`). Split from
+/// [`OcrTunerSource`] so the policy is testable without Win32 or the OCR models.
+fn read_policy<F>(retries: u32, mut read_once: F) -> ReadPolicy
+where
+    F: FnMut(u32, bool) -> Result<CompletedRead, String>,
+{
+    for attempt in 1..=retries {
+        let last = attempt == retries;
+        match read_once(attempt, last) {
+            Ok(completed) => {
+                if completed.read.is_confirmed() {
+                    return ReadPolicy::Confirmed(completed.read);
+                }
+                if last {
+                    return ReadPolicy::Unconfirmed {
+                        read: completed.read,
+                        record: completed.record,
+                    };
+                }
+            }
+            Err(error) => {
+                if last {
+                    return ReadPolicy::Failed(error);
+                }
+            }
+        }
+    }
+    ReadPolicy::Failed("the tuner OCR read produced no attempt".to_owned())
+}
+
+/// The `ocr_log.jsonl` record for one completed tuner read: the `ocr.scan` shape
+/// (`timestamp`/`grade`/`remaining`/`attributes`/`lines`/`capture_path`) plus the facts a tuner
+/// diagnosis needs — where the read came from (`source`), which re-capture produced it (`attempt`) and
+/// whether it was complete (`confirmed`).
+fn completed_read_record(
+    read: &TunerRead,
+    lines: &[String],
+    attributes: Option<&[Vec<String>]>,
+    attempt: u32,
+    timestamp: &str,
+    capture_path: Option<&str>,
+) -> Value {
+    json!({
+        "timestamp": timestamp,
+        "source": "tuner",
+        "attempt": attempt,
+        "confirmed": read.is_confirmed(),
+        "grade": read.grade.clone(),
+        "remaining": read.remaining,
+        "attributes": attributes,
+        "lines": lines,
+        "capture_path": capture_path.map_or(Value::Null, |path| Value::String(path.to_owned())),
+    })
 }
 
 impl OcrTunerSource {
+    /// Saves this frame's own PNG bytes (the bytes the OCR saw — never a second capture) and returns
+    /// its root-relative path. v2's `ScanOnce`/`forceCapture`.
+    fn save_capture(&mut self, frame: &Value, timestamp: &str) -> Option<String> {
+        let data = frame.get("data").and_then(Value::as_str)?;
+        let png = base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .ok()?;
+        let path = self
+            .logs
+            .capture(&format!("capture_{timestamp}.png"), &png)?;
+        self.captures_saved += 1;
+        Some(path)
+    }
+
+    /// One capture + OCR pass, logged as one `ocr_log.jsonl` record (v2 wrote one per `ScanOnce`).
+    /// `attempt` is the 1-based re-capture number and `force_capture` is the last attempt (v2's
+    /// `forceCapture`): it saves the frame even when `tuner.save_captures` is off, so a persistently
+    /// partial read still leaves evidence for the next investigation.
     #[allow(
         clippy::cast_sign_loss,
         clippy::cast_possible_wrap,
         clippy::cast_possible_truncation,
         reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
     )]
-    fn read_once(&mut self) -> Result<TunerRead, String> {
+    fn read_once(&mut self, attempt: u32, force_capture: bool) -> Result<CompletedRead, String> {
         let (frame, _display) =
             crate::win::capture(&self.title, Some(self.region)).map_err(|error| error.line())?;
         let (width, height, rgba) = crate::dispatch::frame_rgba(&frame)?;
@@ -594,44 +706,56 @@ impl OcrTunerSource {
         let matcher = seal_domain::ocr::AttrMatcher::new(&self.attributes);
         let attributes =
             matcher.match_attributes(attributes_mode.attributes.as_deref().unwrap_or_default());
-        Ok(TunerRead {
+        let read = TunerRead {
             grade: grade_mode.grade,
             remaining: grade_mode
                 .remaining
                 .and_then(|count| i32::try_from(count).ok()),
             attributes,
-        })
+        };
+        let timestamp = crate::logs::scan_stamp();
+        let capture_path = if self.save_captures || force_capture {
+            self.save_capture(&frame, &timestamp)
+        } else {
+            None
+        };
+        let lines: Vec<String> = scan.lines.iter().map(|line| line.text.clone()).collect();
+        let record = completed_read_record(
+            &read,
+            &lines,
+            attributes_mode.attributes.as_deref(),
+            attempt,
+            &timestamp,
+            capture_path.as_deref(),
+        );
+        self.logs.ocr_line(&record);
+        Ok(CompletedRead { read, record })
     }
 }
 
 impl TunerSource for OcrTunerSource {
     fn read(&mut self) -> Result<TunerRead, String> {
-        let mut last = None;
-        for attempt in 1..=self.retries {
-            match self.read_once() {
-                Ok(read) => {
-                    if confirmed_read(&read) {
-                        return Ok(read);
-                    }
-                    if attempt == self.retries {
-                        // v2's forceCapture: the final unconfirmed attempt leaves a frame behind.
-                        let _ = crate::win::capture(&self.title, Some(self.region));
-                    }
-                    last = Some(Ok(read));
-                }
-                Err(error) => {
-                    if attempt == self.retries {
-                        return Err(error);
-                    }
-                    last = Some(Err(error));
-                }
+        let retries = self.retries;
+        match read_policy(retries, |attempt, force_capture| {
+            self.read_once(attempt, force_capture)
+        }) {
+            ReadPolicy::Confirmed(read) => Ok(read),
+            ReadPolicy::Unconfirmed { read, record } => {
+                // v2's `LogOcrError`: the partial read is diagnosis evidence, and the decision half
+                // refuses it (the fix for issue #16's false STUCK).
+                self.logs.ocr_error(&record);
+                Ok(read)
             }
+            ReadPolicy::Failed(error) => Err(error),
         }
-        last.unwrap_or_else(|| Err("the tuner OCR read produced no attempt".to_owned()))
     }
 
     fn cursor(&mut self) -> Option<Point> {
         seal_win::window::cursor_position()
+    }
+
+    fn captures_saved(&self) -> usize {
+        self.captures_saved
     }
 }
 
@@ -719,20 +843,41 @@ mod tests {
         })
     }
 
-    fn read_target() -> TunerRead {
-        TunerRead {
-            grade: Some("DG".to_owned()),
-            remaining: Some(10),
-            attributes: Vec::new(),
+    fn attr(name: &str, value: i32) -> seal_domain::ocr::MatchedAttr {
+        seal_domain::ocr::MatchedAttr {
+            name: name.to_owned(),
+            category: String::new(),
+            value: Some(value),
+            extra: None,
+            raw: Vec::new(),
         }
     }
 
-    fn read_below_target() -> TunerRead {
+    /// A COMPLETE read: grade, spring count and the three named attribute rows v2's `IsConfirmed`
+    /// requires. The decision half refuses PARTIAL reads, so every run fixture is confirmed.
+    fn confirmed_read(grade: &str, remaining: i32) -> TunerRead {
+        TunerRead {
+            grade: Some(grade.to_owned()),
+            remaining: Some(remaining),
+            attributes: vec![attr("STR", 1), attr("DEX", 1), attr("INT", 1)],
+        }
+    }
+
+    /// A PARTIAL read: one attribute row was lost — issue #16's bad input.
+    fn partial_read() -> TunerRead {
         TunerRead {
             grade: Some("G".to_owned()),
-            remaining: Some(10),
-            attributes: Vec::new(),
+            remaining: Some(9),
+            attributes: vec![attr("STR", 1), attr("DEX", 1)],
         }
+    }
+
+    fn read_target() -> TunerRead {
+        confirmed_read("DG", 10)
+    }
+
+    fn read_below_target() -> TunerRead {
+        confirmed_read("G", 10)
     }
 
     fn plan_of(config: &Value) -> TunerPlan {
@@ -944,27 +1089,139 @@ mod tests {
         );
     }
 
+    /// The `ocr_log.jsonl` record keeps the `ocr.scan` shape and adds the tuner's own facts: which
+    /// re-capture produced the read and whether it was complete.
     #[test]
-    fn a_read_is_confirmed_only_with_grade_every_row_and_remaining() {
-        let row = || seal_domain::ocr::MatchedAttr {
-            name: "STR".to_owned(),
-            category: String::new(),
-            value: Some(1),
-            extra: None,
-            raw: vec!["STR +1".to_owned()],
+    fn a_completed_read_records_the_scan_shape_plus_the_tuner_facts() {
+        let read = confirmed_read("DG", 9);
+        let record = completed_read_record(
+            &read,
+            &["GRADE: DG".to_owned(), "STR +1".to_owned()],
+            Some(&[vec!["STR".to_owned(), "+1".to_owned()]]),
+            2,
+            "20261104_010203_456",
+            Some("logs/captures/capture_20261104_010203_456.png"),
+        );
+
+        // The ocr.scan record's own fields, under the same names.
+        assert_eq!(record["timestamp"], "20261104_010203_456");
+        assert_eq!(record["grade"], "DG");
+        assert_eq!(record["remaining"], 9);
+        assert_eq!(record["lines"][0], "GRADE: DG");
+        assert_eq!(record["attributes"][0][0], "STR");
+        assert_eq!(
+            record["capture_path"],
+            "logs/captures/capture_20261104_010203_456.png"
+        );
+        // The tuner diagnosis facts.
+        assert_eq!(record["source"], "tuner");
+        assert_eq!(record["attempt"], 2);
+        assert_eq!(record["confirmed"], true);
+
+        // A partial read says so, and a missing capture is null rather than absent.
+        let partial =
+            completed_read_record(&partial_read(), &[], None, 3, "20261104_010203_457", None);
+        assert_eq!(partial["confirmed"], false);
+        assert_eq!(partial["attempt"], 3);
+        assert!(partial["capture_path"].is_null());
+    }
+
+    /// A partial last attempt is force-captured (the flag v2's `forceCapture` uses) and its record is
+    /// kept so `read()` can write `ocr_errors.jsonl`.
+    #[test]
+    fn the_last_partial_attempt_is_force_captured_and_kept_for_the_error_log() {
+        let mut seen = Vec::new();
+        let policy = read_policy(3, |attempt, force_capture| {
+            seen.push((attempt, force_capture));
+            Ok(CompletedRead {
+                read: partial_read(),
+                record: json!({"attempt": attempt}),
+            })
+        });
+
+        assert_eq!(
+            seen,
+            vec![(1, false), (2, false), (3, true)],
+            "only the final retry forces the capture"
+        );
+        let ReadPolicy::Unconfirmed { read, record } = policy else {
+            panic!("a partial read is not confirmed");
         };
-        let complete = TunerRead {
-            grade: Some("DG".to_owned()),
-            remaining: Some(100),
-            attributes: vec![row(), row(), row()],
+        assert!(!read.is_confirmed());
+        assert_eq!(record["attempt"], 3, "the LAST attempt is the one kept");
+    }
+
+    #[test]
+    fn a_confirmed_read_ends_the_retries() {
+        let mut seen = Vec::new();
+        let policy = read_policy(3, |attempt, force_capture| {
+            seen.push((attempt, force_capture));
+            Ok(CompletedRead {
+                read: if attempt == 2 {
+                    read_target()
+                } else {
+                    partial_read()
+                },
+                record: json!({"attempt": attempt}),
+            })
+        });
+
+        assert_eq!(seen, vec![(1, false), (2, false)]);
+        let ReadPolicy::Confirmed(read) = policy else {
+            panic!("the second attempt is complete");
         };
-        assert!(confirmed_read(&complete));
-        let mut missing_remaining = complete.clone();
-        missing_remaining.remaining = None;
-        assert!(!confirmed_read(&missing_remaining));
-        let mut two_rows = complete;
-        two_rows.attributes.truncate(2);
-        assert!(!confirmed_read(&two_rows));
+        assert!(read.is_confirmed());
+    }
+
+    #[test]
+    fn a_final_capture_failure_is_the_stop_not_an_earlier_partial_read() {
+        let policy = read_policy(2, |attempt, _force_capture| {
+            if attempt == 1 {
+                Ok(CompletedRead {
+                    read: partial_read(),
+                    record: json!({}),
+                })
+            } else {
+                Err("the game window is not in front".to_owned())
+            }
+        });
+
+        let ReadPolicy::Failed(error) = policy else {
+            panic!("the last attempt's error is the stop");
+        };
+        assert_eq!(error, "the game window is not in front");
+    }
+
+    /// Issue #16 end-to-end: the run used to click again on each partial read and stop as
+    /// "same result x3" on the third. Now the FIRST partial read stops, before a second spring.
+    #[test]
+    fn a_partial_read_stops_with_the_confirming_error_before_another_click() {
+        let reads = vec![Ok(partial_read()), Ok(partial_read()), Ok(partial_read())];
+        let (mut tool, clock) = tool(&config("manual", None), reads, None);
+
+        for _ in 0..START_COUNTDOWN {
+            assert_eq!(tool.decide(), Decision::Wait(1.0));
+            tick(&clock);
+        }
+        assert_eq!(tool.decide(), Decision::ClickHere);
+        assert_eq!(tool.decide(), Decision::Wait(0.4));
+        assert_eq!(tool.decide(), Decision::Enter);
+        assert_eq!(tool.decide(), Decision::Wait(0.8));
+        match tool.decide() {
+            Decision::Stop(reason) => {
+                assert_eq!(reason.kind, StopKind::Error);
+                assert_eq!(
+                    reason.message,
+                    seal_domain::tools::tuner::UNCONFIRMED_READ_MESSAGE
+                );
+                assert!(
+                    !reason.message.contains("STUCK"),
+                    "a partial read must not end as a false STUCK: {}",
+                    reason.message
+                );
+            }
+            other => panic!("expected the confirming stop, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1074,18 +1331,7 @@ mod tests {
             "match_mode": "any",
             "rules": [{"name": "STR", "count": 1}],
         });
-        let read = TunerRead {
-            grade: Some("G".to_owned()),
-            remaining: Some(10),
-            attributes: vec![seal_domain::ocr::MatchedAttr {
-                name: "STR".to_owned(),
-                category: String::new(),
-                value: Some(1),
-                extra: None,
-                raw: vec!["STR +1".to_owned()],
-            }],
-        };
-        let (mut tool, clock) = tool(&config, vec![Ok(read)], None);
+        let (mut tool, clock) = tool(&config, vec![Ok(confirmed_read("G", 10))], None);
 
         for _ in 0..START_COUNTDOWN {
             assert_eq!(tool.decide(), Decision::Wait(1.0));
@@ -1116,18 +1362,7 @@ mod tests {
         // same config spent a third spring.
         let mut config = config("manual", None);
         config["tuner"]["max_retries"] = serde_json::json!(2);
-        let reads = vec![
-            Ok(TunerRead {
-                grade: Some("G".to_owned()),
-                remaining: Some(10),
-                attributes: Vec::new(),
-            }),
-            Ok(TunerRead {
-                grade: Some("N".to_owned()),
-                remaining: Some(10),
-                attributes: Vec::new(),
-            }),
-        ];
+        let reads = vec![Ok(confirmed_read("G", 10)), Ok(confirmed_read("N", 10))];
         let (mut tool, clock) = tool(&config, reads, None);
 
         for _ in 0..START_COUNTDOWN {

@@ -15,7 +15,7 @@ use seal_board::firmware::{CURRENT_LEVEL, DRAG_LEVEL};
 
 /// The sketch's protocol level. Bump the sketch, extend its level table, and update this pin and
 /// `CURRENT_LEVEL` in the same commit — then tag it `fw<n>`.
-const PINNED_LEVEL: u32 = 2;
+const PINNED_LEVEL: u32 = 3;
 
 /// Every command the sketch dispatches, sorted — 20 at level 2.
 const PINNED_COMMANDS: &str = "CDEFHKLPQRSTUVWXZfkl";
@@ -131,8 +131,59 @@ fn the_sketch_still_sends_the_version_reply_this_crate_parses() {
         source.contains("Serial.print(\"V \")"),
         "the V reply's shape is what the host parses"
     );
+    // The flags are tested before `!Serial`: ArduinoCore-avr's `operator bool()` sleeps 10 ms on
+    // every loop pass otherwise, which delays every command even when nothing is held (HW-F6).
     assert!(
-        source.contains("if (!Serial"),
-        "the host-gone release is the failsafe the held-key rule depends on"
+        source.contains("if ((spaceHeld || leftHeld)")
+            && source.contains("(uint32_t)(millis() - lastRx) > HOST_SILENCE_MS"),
+        "the held-key failsafe must cover a HUNG host, not only a closed port (HW-F7)"
+    );
+}
+
+#[test]
+fn a_long_frame_can_be_aborted_and_the_watchdog_keeps_its_budget() {
+    // The board must not need the host to wait out a ten-second wheel frame (HW-F7). This is a
+    // source pin because the behaviour lives on the board.
+    let source = sketch_source();
+
+    assert!(
+        source.contains("#define HOST_SILENCE_MS 3000"),
+        "the watchdog threshold is part of the published behaviour"
+    );
+    assert_eq!(
+        source.matches("Serial.peek() == '!'").count(),
+        2,
+        "both the move walk and the wheel loop must check for the abort byte"
+    );
+    assert!(
+        source.contains("void releaseAll()"),
+        "both failsafe paths release through one function"
+    );
+}
+
+#[test]
+fn the_move_frame_is_parsed_wide_bounded_and_never_split_into_two_commands() {
+    // An AVR `int` is 16 bits: the old `%d` parse wrapped a large frame, and the old fixed buffer
+    // turned an overlong line's tail into a fresh command whose first byte picked the action
+    // (HW-F11). These are source pins because the behaviour lives on the board; the host's own
+    // range refusal is pinned by `tests/command.rs`.
+    let source = sketch_source();
+
+    assert!(
+        source.contains("#define MOVE_MAX 9999"),
+        "the sketch must bound one move frame"
+    );
+    assert!(
+        source.contains("sscanf(buf, \"D %ld %ld\""),
+        "the move counts must be parsed as 32-bit longs, not 16-bit ints"
+    );
+    assert!(
+        source.contains("dx >= -MOVE_MAX && dx <= MOVE_MAX")
+            && source.contains("dy >= -MOVE_MAX && dy <= MOVE_MAX"),
+        "an out-of-range move is refused, never wrapped"
+    );
+    assert!(
+        source.contains("if (n == sizeof(buf) - 1 && buf[n - 1] != '\\n')"),
+        "an overlong line must be discarded to its newline instead of parsed as two commands"
     );
 }

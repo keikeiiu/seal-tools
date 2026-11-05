@@ -108,6 +108,14 @@ void main() {
     expect(find.byKey(const ValueKey('new-gem-grade')), findsNothing);
     expect(find.byKey(const ValueKey('gem-grade-remove-0')), findsNothing);
     expect(find.byKey(const ValueKey('gem-grade-0')), findsNothing);
+    expect(
+      tester
+          .widget<Semantics>(find.byKey(const ValueKey('gem-grade-N-role')))
+          .properties
+          .label,
+      'N · start',
+    );
+    expect(find.text('start'), findsNothing);
 
     await tester.enterText(_field('gem-empty-streak'), '5');
     await tester.pump();

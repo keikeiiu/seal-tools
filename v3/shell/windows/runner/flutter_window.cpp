@@ -3,6 +3,10 @@
 #include <cmath>
 #include <cstdint>
 #include <optional>
+#include <string>
+
+#include <dwmapi.h>
+#include <shellapi.h>
 #include <variant>
 
 #include <flutter/standard_method_codec.h>
@@ -80,6 +84,61 @@ bool CurrentLogicalRect(HWND window, double scale, flutter::EncodableMap* out) {
   return true;
 }
 
+// The install's logs directory: next to the runner executable, never a hard-coded user path. The
+// runner owns this because it is the only process that knows where the app was installed.
+std::wstring InstallLogsDirectory() {
+  wchar_t buffer[32768];
+  const DWORD length = ::GetModuleFileNameW(nullptr, buffer, 32768);
+  if (length == 0 || length >= 32768) {
+    return std::wstring();
+  }
+  std::wstring path(buffer, length);
+  const auto slash = path.find_last_of(L"\\/");
+  if (slash == std::wstring::npos) {
+    return std::wstring();
+  }
+  path.resize(slash + 1);
+  return path + L"logs";
+}
+
+// Open the install logs folder, selecting the last run's file when it exists. A bare file name only:
+// the shell's value is a label like pet.log, never a path this runner should trust.
+bool OpenLogsFolder(const flutter::EncodableMap* arguments) {
+  const std::wstring logs = InstallLogsDirectory();
+  if (logs.empty()) {
+    return false;
+  }
+  ::CreateDirectoryW(logs.c_str(), nullptr);
+
+  std::wstring file;
+  if (arguments != nullptr) {
+    const auto found = arguments->find(flutter::EncodableValue("file"));
+    if (found != arguments->end()) {
+      if (const auto* value = std::get_if<std::string>(&found->second)) {
+        file.assign(value->begin(), value->end());
+      }
+    }
+  }
+  if (file.find_first_of(L"\\/") != std::wstring::npos ||
+      file.find(L"..") != std::wstring::npos) {
+    file.clear();
+  }
+
+  HINSTANCE launched;
+  if (!file.empty()) {
+    const std::wstring target = logs + L"\\" + file;
+    if (::GetFileAttributesW(target.c_str()) != INVALID_FILE_ATTRIBUTES) {
+      const std::wstring parameters = L"/select,\"" + target + L"\"";
+      launched = ::ShellExecuteW(nullptr, L"open", L"explorer.exe",
+                                 parameters.c_str(), nullptr, SW_SHOWNORMAL);
+      return reinterpret_cast<INT_PTR>(launched) > 32;
+    }
+  }
+  launched = ::ShellExecuteW(nullptr, L"open", logs.c_str(), nullptr, nullptr,
+                             SW_SHOWNORMAL);
+  return reinterpret_cast<INT_PTR>(launched) > 32;
+}
+
 }  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -122,6 +181,12 @@ bool FlutterWindow::OnCreate() {
                  result) {
         if (call.method_name() == "hideWindow") {
           ::ShowWindow(GetHandle(), SW_HIDE);
+          // The core grabs the physical screen immediately after this reply. DWM can still hold the
+          // last visible composition for a frame or two, which put the (hidden) shell into the
+          // calibration frame. Flush the composition and spend one presentation interval before
+          // answering, so the hide is really on glass when the capture starts.
+          ::DwmFlush();
+          ::Sleep(30);
           result->Success();
         } else if (call.method_name() == "showWindow") {
           ::ShowWindow(GetHandle(), SW_SHOWNORMAL);
@@ -194,6 +259,16 @@ bool FlutterWindow::OnCreate() {
           }
           SetMiniChrome(*mini);
           result->Success();
+        } else if (call.method_name() == "setTitleBarTheme") {
+          // 0 follows Windows, 1 forces light, 2 forces dark.
+          const auto* mode = std::get_if<int32_t>(call.arguments());
+          if (mode == nullptr || *mode < 0 || *mode > 2) {
+            result->Error("bad_arguments",
+                          "setTitleBarTheme expects 0, 1 or 2");
+            return;
+          }
+          SetTitleBarTheme(*mode);
+          result->Success();
         } else if (call.method_name() == "setWindowRect") {
           const auto* arguments =
               std::get_if<flutter::EncodableMap>(call.arguments());
@@ -222,6 +297,15 @@ bool FlutterWindow::OnCreate() {
         } else if (call.method_name() == "isWindowVisible") {
           result->Success(
               flutter::EncodableValue(::IsWindowVisible(GetHandle()) != 0));
+        } else if (call.method_name() == "openLogsFolder") {
+          const auto* arguments =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (!OpenLogsFolder(arguments)) {
+            result->Error("host_unavailable",
+                          "could not open the logs folder");
+            return;
+          }
+          result->Success();
         } else {
           result->NotImplemented();
         }

@@ -435,3 +435,67 @@ fn a_stop_reason_is_available_for_a_dead_port() {
 
     assert!(stop.message.starts_with("Arduino disconnected — stopped ("));
 }
+
+// ── TOOL-F12: cooldown validation and priority fairness ─────────────────────────────────────
+
+#[test]
+fn a_cooldown_shorter_than_a_tick_is_refused_with_a_named_line() {
+    let zero = plan(&[("q", 0.0), ("w", 1.0)], &[], vec![]);
+    let problems = zero.cooldown_problems();
+    assert_eq!(problems.len(), 1, "only q is unusable: {problems:?}");
+    assert!(problems[0].contains("Spammer key 'q'"), "{problems:?}");
+    assert!(problems[0].contains("at least 0.02 s"), "{problems:?}");
+
+    let negative = plan(&[("q", -3.0)], &[], vec![]);
+    assert_eq!(
+        negative.cooldown_problems().len(),
+        1,
+        "a negative cooldown is due every tick too"
+    );
+
+    assert!(
+        plan(&[("q", 0.02), ("w", 1.0)], &[], vec![])
+            .cooldown_problems()
+            .is_empty(),
+        "one tick is the shortest cooldown that can be honoured"
+    );
+}
+
+/// The starvation case: the top-priority key's cooldown is exactly one tick, so it is due on every
+/// tick. Taking the first due key every tick pressed only that key forever; the walk now starts where
+/// the last press left it, so every key in the order gets a turn once its own cooldown is up.
+#[test]
+fn a_priority_key_that_is_due_every_tick_cannot_starve_the_others() {
+    let rotating = plan(
+        &[("a", 0.02), ("b", 10.0), ("c", 30.0)],
+        &["a", "b", "c"],
+        vec![],
+    );
+    let mut run = SpammerRun::start(&rotating, 0.0);
+
+    let mut fired: Vec<String> = Vec::new();
+    let mut last_press: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
+    // Sixty seconds of 20 ms ticks.
+    for step in 0..3_000 {
+        let now = f64::from(step) * 0.02;
+        for press in run.tick(now).presses {
+            if let Some(previous) = last_press.insert(press.key.clone(), now) {
+                let cooldown = rotating.cooldown(&press.key).expect("a configured key");
+                assert!(
+                    now - previous >= cooldown - 1e-9,
+                    "{} fired {:.3} s after its last press, cooldown {cooldown}",
+                    press.key,
+                    now - previous
+                );
+            }
+            fired.push(press.key);
+        }
+    }
+
+    for key in ["a", "b", "c"] {
+        assert!(
+            fired.iter().any(|pressed| pressed == key),
+            "key '{key}' never fired in a minute of ticks: {fired:?}"
+        );
+    }
+}

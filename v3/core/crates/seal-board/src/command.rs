@@ -8,8 +8,9 @@
 //!
 //! `D dx dy` counts are **RAW HID counts**, measured per machine and never scaled
 //! (`DESIGN.md` §2.1, `MOVE-SETS.md`). [`BoardCommand::move_by`] takes the counts as they are: no
-//! DPI scaling, no rounding, no clamping to a "safe" range — the caller measured them, and the
-//! closed-loop placement (`placement`) computes its own corrections.
+//! DPI scaling, no rounding — but it refuses a frame outside ±[`MOVE_MAX`], because the sketch's
+//! 32-bit parse rejects it too and a silently ignored move is a mis-aimed click waiting to happen
+//! (HW-F11).
 //!
 //! Validation lives here for the arguments the firmware would silently ignore: a bad `K`/`F`/`Q`/`Z`
 //! frame is dropped by the sketch ("nothing is guessed at"), so the host refuses it with a sentence
@@ -81,14 +82,33 @@ impl std::error::Error for CommandError {}
 /// refuses rather than sending a frame the board would quietly truncate.
 pub const WHEEL_MAX_NOTCHES: u16 = 400;
 
+/// The largest raw count ONE move frame may carry, matching the sketch's `MOVE_MAX` (HW-F11). The
+/// sketch parses the pair into 32-bit `long`s and refuses a frame outside this range, so a future
+/// caller can no longer overflow the AVR's 16-bit `int` and send the pointer the wrong way. The
+/// closed-loop placement corrects in ±600 px steps; only a deliberately large jump needs more, and
+/// the caller splits it.
+pub const MOVE_MAX: i32 = 9999;
+
 /// The firmware's F-key table ends at 12 (`seal_mouse.ino` `fkeys[]`: index 1–12).
 pub const FUNCTION_KEY_MAX: u8 = 12;
 
 impl BoardCommand {
-    /// A relative move by raw HID counts. The counts are passed through untouched.
-    #[must_use]
-    pub const fn move_by(dx: i32, dy: i32) -> Self {
-        Self::Move { dx, dy }
+    /// A relative move by raw HID counts, refused outside ±[`MOVE_MAX`].
+    ///
+    /// The counts are passed through untouched otherwise: no DPI scaling, no rounding.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CommandError`] naming the counts when either lies outside ±[`MOVE_MAX`].
+    pub fn move_by(dx: i32, dy: i32) -> Result<Self, CommandError> {
+        let limit = MOVE_MAX.unsigned_abs();
+        if dx.unsigned_abs() > limit || dy.unsigned_abs() > limit {
+            return Err(CommandError::new(format!(
+                "the move ({dx},{dy}) is outside one board frame — the sketch accepts ±{MOVE_MAX} \
+                 raw counts; split a larger jump into several frames."
+            )));
+        }
+        Ok(Self::Move { dx, dy })
     }
 
     /// One printable ASCII character press. The sketch accepts `0x20..=0x7E`; anything else is a

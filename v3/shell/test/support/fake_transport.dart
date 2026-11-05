@@ -14,6 +14,7 @@ class FakeTransport implements Transport {
   final _incoming = StreamController<String>();
   final _diagnostics = StreamController<String>();
   final _writeFailures = StreamController<Object>.broadcast();
+  final _exitCode = Completer<int>();
 
   /// Every line the client wrote, as sent.
   final sent = <String>[];
@@ -35,6 +36,9 @@ class FakeTransport implements Transport {
 
   @override
   Stream<Object> get writeFailures => _writeFailures.stream;
+
+  @override
+  Future<int> get exitCode => _exitCode.future;
 
   /// Simulates a broken stdin (`stdin.done` error on the real transport): the client fails pending
   /// requests at once and terminates the transport (SHELL-F1).
@@ -67,8 +71,21 @@ class FakeTransport implements Transport {
   /// Sends a stderr line.
   void emitDiagnostic(String line) => _diagnostics.add(line);
 
-  /// Closes the incoming stream: the core's output ended.
-  void closeIncoming() => _incoming.close();
+  /// Closes the incoming stream: the core's output ended. The default exit code is 0; pass a code
+  /// to simulate a fatal boot refusal. stderr is closed too by default so the client's crash-tail
+  /// wait finishes immediately; pass `closeDiagnostics: false` to exercise the pipe race.
+  void closeIncoming({int exit = 0, bool closeDiagnostics = true}) {
+    if (!_exitCode.isCompleted) {
+      _exitCode.complete(exit);
+    }
+    unawaited(_incoming.close());
+    if (closeDiagnostics) {
+      unawaited(this.closeDiagnostics());
+    }
+  }
+
+  /// Closes stderr too, so the client's crash-tail wait finishes.
+  Future<void> closeDiagnostics() => _diagnostics.close();
 
   /// Closes both streams, for a full teardown.
   Future<void> dispose() async {

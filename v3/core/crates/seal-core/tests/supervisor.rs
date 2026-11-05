@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use seal_core::logs::Logs;
 use seal_core::registry::{Session, ToolRegistry, Unavailable};
-use seal_core::supervisor::{StartReply, StopReply, Supervisor};
+use seal_core::supervisor::{ShutdownOutcome, StartReply, StopReply, Supervisor};
 use seal_domain::decision::{Decision, Key, StopReason};
 use seal_domain::geometry::Point;
 use seal_proto::Event;
@@ -37,6 +37,43 @@ impl Tool for ScriptedTool {
         } else {
             self.script.remove(0)
         }
+    }
+}
+
+/// CORE-F3: a tool that panics on its first decision. The worker must still report a finish, free
+/// the arbiter slot and let shutdown return.
+struct PanickingTool {
+    id: ToolId,
+}
+
+impl Tool for PanickingTool {
+    fn id(&self) -> ToolId {
+        self.id
+    }
+
+    fn decide(&mut self) -> Decision {
+        panic!("scripted worker panic");
+    }
+}
+
+/// CORE-F8: a worker inside a call the cancellation token cannot reach — a serial write, an OCR
+/// inference. `decide` never returns until the test releases it, so shutdown has to enforce its
+/// deadline instead of waiting for this thread.
+struct StuckTool {
+    id: ToolId,
+    entered: mpsc::Sender<()>,
+    gate: mpsc::Receiver<()>,
+}
+
+impl Tool for StuckTool {
+    fn id(&self) -> ToolId {
+        self.id
+    }
+
+    fn decide(&mut self) -> Decision {
+        let _ = self.entered.send(());
+        let _ = self.gate.recv();
+        Decision::stop(StopReason::done("released"))
     }
 }
 
@@ -96,6 +133,9 @@ impl Tool for PortTool {
         }
     }
 }
+/// The pair that lets a test observe a blocked `decide` and then release it.
+type StuckGate = (mpsc::Sender<()>, mpsc::Receiver<()>);
+
 /// The injected registry: a script per tool, optional unavailability, an optional opening failure,
 /// and an optional gate that holds the opening phase open so a test can stop a start in flight.
 struct FakeRegistry {
@@ -110,6 +150,11 @@ struct FakeRegistry {
     /// once (empty = no gate) and the shared decision log the tests assert on.
     port_tools: Mutex<Vec<ToolId>>,
     release_gates: Mutex<HashMap<ToolId, mpsc::Receiver<()>>>,
+    /// Tools whose worker panics on its first decide (CORE-F3).
+    panicking: Mutex<Vec<ToolId>>,
+    /// Tools whose worker blocks in `decide` until released (CORE-F8), with the pair of channels
+    /// that let the test observe the block and then let the detached worker leave.
+    stuck: Mutex<HashMap<ToolId, StuckGate>>,
     decisions: Arc<Mutex<Vec<ToolId>>>,
 }
 
@@ -124,6 +169,8 @@ impl FakeRegistry {
             start_args: Mutex::new(None),
             port_tools: Mutex::new(Vec::new()),
             release_gates: Mutex::new(HashMap::new()),
+            panicking: Mutex::new(Vec::new()),
+            stuck: Mutex::new(HashMap::new()),
             decisions: Arc::new(Mutex::new(Vec::new())),
         })
     }
@@ -173,6 +220,27 @@ impl FakeRegistry {
             .lock()
             .expect("not poisoned")
             .insert(tool, gate);
+        Arc::clone(self)
+    }
+
+    fn with_panicking_tool(self: &Arc<Self>, tool: ToolId) -> Arc<Self> {
+        self.panicking.lock().expect("not poisoned").push(tool);
+        Arc::clone(self)
+    }
+
+    /// CORE-F8: a tool whose first `decide` blocks until `gate` is released. `entered` tells the test
+    /// the block is real before it asks for a shutdown, so the deadline under test is not raced by a
+    /// stop that arrives before the worker ever decides.
+    fn with_stuck_tool(
+        self: &Arc<Self>,
+        tool: ToolId,
+        entered: mpsc::Sender<()>,
+        gate: mpsc::Receiver<()>,
+    ) -> Arc<Self> {
+        self.stuck
+            .lock()
+            .expect("not poisoned")
+            .insert(tool, (entered, gate));
         Arc::clone(self)
     }
 
@@ -227,13 +295,30 @@ impl ToolRegistry for FakeRegistry {
             .lock()
             .expect("not poisoned")
             .contains(&tool);
+        let panics = {
+            let mut panicking = self.panicking.lock().expect("not poisoned");
+            panicking
+                .iter()
+                .position(|candidate| *candidate == tool)
+                .map(|position| panicking.remove(position))
+                .is_some()
+        };
         let release_gate = self
             .release_gates
             .lock()
             .expect("not poisoned")
             .remove(&tool);
+        let stuck = self.stuck.lock().expect("not poisoned").remove(&tool);
         let decisions = Arc::clone(&self.decisions);
-        let tool = if is_port_tool {
+        let tool = if panics {
+            Box::new(PanickingTool { id: tool }) as Box<dyn Tool + Send>
+        } else if let Some((entered, gate)) = stuck {
+            Box::new(StuckTool {
+                id: tool,
+                entered,
+                gate,
+            }) as Box<dyn Tool + Send>
+        } else if is_port_tool {
             Box::new(PortTool {
                 id: tool,
                 game,
@@ -312,8 +397,8 @@ fn a_start_runs_to_done_and_publishes_the_reason() {
     let seen = until_finished(&events);
     assert_eq!(
         seen.iter().filter_map(state_phase).collect::<Vec<_>>(),
-        vec!["starting", "running", "idle"],
-        "the card opens, runs, then reads the final state"
+        vec!["starting", "running", "running", "idle"],
+        "the card opens, publishes a live running update, then reads the final state"
     );
     let last_state = seen
         .iter()
@@ -364,11 +449,47 @@ fn a_stop_publishes_stopping_then_a_cancelled_finish() {
 
     let seen = until_finished(&events);
     let phases: Vec<&str> = seen.iter().filter_map(state_phase).collect();
-    assert_eq!(phases, vec!["stopping", "idle"]);
+    assert_eq!(phases, vec!["running", "stopping", "idle"]);
     let finished = seen.last().expect("finished");
     assert_eq!(finished.data["reason"], "cancelled");
     assert_eq!(finished.data["message"], "Stopped.");
 
+    supervisor.shutdown("test");
+}
+
+#[test]
+fn a_calibration_lease_blocks_tool_starts_and_other_pointer_actions() {
+    let registry = FakeRegistry::new();
+    let (bus, _events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(registry, bus, Arc::new(Logs::disabled()));
+
+    let lease = supervisor
+        .begin_calibration()
+        .expect("the game is free before the lease");
+    assert!(
+        supervisor
+            .input_lease()
+            .expect("supervisor answers")
+            .is_some_and(|line| line.contains("calibration")),
+        "a second pointer action sees the calibration holder"
+    );
+    match supervisor.start_tool(ToolId::Tuner, &Value::Null) {
+        StartReply::Refused(refusal) => assert!(
+            refusal.line.contains("calibration"),
+            "the refusal names the calibration holder: {}",
+            refusal.line
+        ),
+        other => panic!("expected a calibration refusal, got {other:?}"),
+    }
+
+    drop(lease);
+    assert!(
+        supervisor
+            .input_lease()
+            .expect("supervisor answers")
+            .is_none(),
+        "dropping the guard releases the game"
+    );
     supervisor.shutdown("test");
 }
 
@@ -562,7 +683,11 @@ fn shutdown_stops_a_running_tool_waits_for_it_and_emits_core_stopping() {
         state_phase(event) == Some("running")
     });
 
-    supervisor.shutdown("shutdown");
+    assert_eq!(
+        supervisor.shutdown("shutdown"),
+        ShutdownOutcome::Drained,
+        "a tool that reacts to the stop drains well inside the budget"
+    );
 
     let mut seen = Vec::new();
     while let Ok(event) = events.try_recv() {
@@ -587,6 +712,80 @@ fn shutdown_stops_a_running_tool_waits_for_it_and_emits_core_stopping() {
         Some(&"core.stopping"),
         "the stopping event is the last thing the supervisor says"
     );
+}
+
+/// CORE-F8: a worker blocked where the cancellation token cannot reach it must not keep shutdown
+/// waiting. The supervisor reports the tool, still emits `core.stopping` and returns inside the
+/// budget; the tool is named in `error.log` so the player's report shows which run wedged the core.
+#[test]
+fn shutdown_reports_a_stuck_worker_after_its_budget_and_still_returns() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target")
+        .join(format!("seal5-stuck-shutdown-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let logs = Arc::new(Logs::new(&root));
+
+    let (entered, entered_rx) = mpsc::channel();
+    let (release, gate) = mpsc::channel();
+    let registry = FakeRegistry::new().with_stuck_tool(ToolId::Pet, entered, gate);
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start_with_shutdown_budget(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::clone(&logs),
+        Duration::from_millis(150),
+    );
+
+    assert_eq!(
+        supervisor.start_tool(ToolId::Pet, &Value::Null),
+        StartReply::Started
+    );
+    wait_for(&events, "the run starts", |event| {
+        state_for(event, "pet") == Some("running")
+    });
+    // Deterministic: shut down only once the worker is really inside the blocked decision, so the
+    // deadline (not a stop that arrives first) is what the test measures.
+    entered_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the stuck decision began");
+
+    let started = std::time::Instant::now();
+    let outcome = supervisor.shutdown("shutdown");
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "the shutdown deadline bounded the wait: {elapsed:?}"
+    );
+    assert_eq!(
+        outcome,
+        ShutdownOutcome::Stuck {
+            tools: vec![ToolId::Pet]
+        },
+        "the worker that outlived the budget is reported"
+    );
+
+    let mut seen = Vec::new();
+    while let Ok(event) = events.try_recv() {
+        seen.push(event);
+    }
+    assert_eq!(
+        seen.iter()
+            .filter(|event| event.event == "core.stopping")
+            .count(),
+        1,
+        "core.stopping is still emitted exactly once: {seen:?}"
+    );
+
+    let error = std::fs::read_to_string(root.join("logs/error.log")).expect("error.log is written");
+    assert!(
+        error.contains("\"pet\"") && error.contains("did not stop"),
+        "the stuck tool is named in error.log: {error}"
+    );
+
+    // Let the detached worker leave its blocked decision; its Done goes to a supervisor that is
+    // already gone, which is not an error.
+    let _ = release.send(());
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]
@@ -639,7 +838,11 @@ fn the_supervisor_can_see_the_worker_phases_from_its_own_events() {
         .iter()
         .filter_map(|event| state_phase(event).map(str::to_owned))
         .collect();
-    assert_eq!(phases, vec!["starting", "running", "idle"]);
+    assert_eq!(
+        phases,
+        vec!["starting", "running", "running", "idle"],
+        "the live state event is part of the lifecycle now"
+    );
     assert_eq!(
         ToolPhase::Running.as_str(),
         "running",
@@ -1078,6 +1281,38 @@ fn start_arguments_reach_create_verbatim() {
         Some(args),
         "the validated run arguments are handed to `create` unchanged"
     );
+    supervisor.shutdown("test");
+}
+
+#[test]
+fn a_worker_panic_finishes_with_an_error_and_frees_the_slot() {
+    let registry = FakeRegistry::new().with_panicking_tool(ToolId::Tuner);
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::new(Logs::disabled()),
+    );
+
+    assert_eq!(
+        supervisor.start_tool(ToolId::Tuner, &Value::Null),
+        StartReply::Started
+    );
+    let seen = until_finished(&events);
+    let finished = seen.last().expect("the panicking run finished");
+    assert_eq!(finished.data["tool"], "tuner");
+    assert_eq!(finished.data["reason"], "error");
+    assert_eq!(
+        finished.data["message"], "internal error — see error.log",
+        "the run's exit is the internal-error finish, not a leaked slot"
+    );
+
+    // The arbiter slot really is free: the same tool starts again and completes normally.
+    assert_eq!(
+        supervisor.start_tool(ToolId::Tuner, &Value::Null),
+        StartReply::Started
+    );
+    until_finished(&events);
     supervisor.shutdown("test");
 }
 

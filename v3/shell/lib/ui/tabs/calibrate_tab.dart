@@ -1,6 +1,7 @@
-/// The Calibrate workspace: capture shelf (the core's four-frame FIFO), target tree for every served
-/// mark, canvas with fit/1:1/pan, mark editor with the target/verdict/artifact rules, stored-coordinate
-/// table, reference-image gallery and the session-shaped calibrations that still need protocol work.
+/// The Calibrate workspace: capture shelf (the core's twelve-frame FIFO), target tree for the 17
+/// presentation marks, canvas with fit/1:1/pan, mark editor with the target/verdict/artifact rules,
+/// stored-coordinate table, reference-image gallery and the two multi-mark Sessions (Tuner OCR+spring,
+/// Pet tooltip). The Pet crops/rows session is deliberately absent: it duplicated the nine Pet marks.
 ///
 /// The shell owns presentation only. It sends `capture` and `calibration.save`/`calibration.fetch`
 /// with the mark in CLIENT-RELATIVE PHYSICAL pixels and the capture's own `DisplayInfo`; the core owns
@@ -36,6 +37,7 @@ import 'calibration/calibration_catalog.dart';
 import 'calibration/capture_shelf.dart';
 import 'calibration/detect_panel.dart';
 import 'calibration/reference_gallery.dart';
+import 'calibration/screen_strip.dart';
 import 'calibration/session_panel.dart';
 import 'calibration/stored_marks_table.dart';
 import 'calibration/target_tree.dart';
@@ -46,14 +48,17 @@ import 'calibration_widgets.dart';
 /// in one column instead of squeezing the canvas.
 ///
 /// The breakpoint is CONTENT width, not window width: the default 1280 window leaves ~1064 px beside
-/// the 216 px rail, and that must show the three-column workspace; 980 keeps the canvas usable while
-/// a 1120 window (the enforced minimum) falls back to one column.
+/// the 216 px rail, and the enforced 1120 minimum still leaves ~872; both must show the three-column
+/// workspace, so 850 is the floor.
 const double _captureColumnWidth = 250;
 const double _editorColumnWidth = 340;
-const double _workspaceBreakpoint = 980;
+const double _workspaceBreakpoint = 850;
 
 /// The canvas viewport's height; fit mode contains the frame inside (available width, this).
 const double _canvasHeight = 420;
+
+/// Mirrors `seal_core::win::FrameCache::CAPACITY`; keep the two in sync (PROTOCOL §8).
+const int _captureCapacity = 12;
 
 class CalibrateTab extends StatefulWidget {
   const CalibrateTab({
@@ -81,6 +86,9 @@ class _CalibrateTabState extends State<CalibrateTab>
   final _w = TextEditingController(text: '0');
   final _h = TextEditingController(text: '0');
 
+  final ScrollController _targetsScrollController = ScrollController();
+  final ScrollController _inspectorScrollController = ScrollController();
+
   String _kindName = calibrationKinds.first.name;
 
   /// The NAMED INSTANCE for a targeted kind (PROTOCOL §12.8); null until the player picks one.
@@ -93,8 +101,25 @@ class _CalibrateTabState extends State<CalibrateTab>
   /// question). A fetch never re-seeds a touched draft; a save/revert clears it.
   bool _draftTouched = false;
 
-  /// The captures this screen took, newest first; the core keeps the last four, so 4 is the cap.
+  /// The captures this screen took, newest first. The core keeps twelve live frames; the shell
+  /// mirrors that capacity so its shelf and the `frame_id` a save references cannot drift.
   final List<CalibrationCapture> _captures = <CalibrationCapture>[];
+
+  /// The active tool tab. Mark tools scope the target tree/canvas/editor to one tool; Tuner and
+  /// Tooltip replace that workspace with their session panel, so their capture is the tool's own.
+  String _tool = calibrationKinds.first.tool;
+
+  /// The screen assigned to each MARK TARGET (`kind` or `kind@target`). A capture is never borrowed
+  /// across targets: different tools read different game windows, so a Pet mark must not land on a
+  /// Shop frame. Assignments are session-only; saved marks never store a frame id.
+  final Map<String, String> _targetFrameIds = <String, String>{};
+
+  /// The screen each session (tuner/tooltip) is currently using. Sessions have no per-target
+  /// assignment; they reuse one shared screen and invalidate their Check when it changes.
+  final Map<String, String> _sessionFrameIds = <String, String>{};
+
+  /// The screen currently previewed/selected. On a target change it is reset to that target's
+  /// assigned screen (or null); clicking a screen in the strip previews it without assigning it.
   String? _selectedFrameId;
   int _captureSequence = 0;
 
@@ -112,7 +137,7 @@ class _CalibrateTabState extends State<CalibrateTab>
 
   CoreActionResult<CalibrationSaveResult>? _save;
 
-  /// Stored marks by [calibrationStoredKey] (fetched for all 18 kinds / 35 marks).
+  /// Stored marks by [calibrationStoredKey] (fetched for the 17 presentation marks / 34 instances).
   final Map<String, CalibrationFetchResult> _stored = {};
   final Map<String, String> _storedErrors = {};
 
@@ -130,21 +155,196 @@ class _CalibrateTabState extends State<CalibrateTab>
 
   String _toolFilter = 'All';
 
-  CalibrationKind get _selected => calibrationKindByName(_kindName);
+  /// The live frame id for a target, if its assignment still exists in the shelf.
+  String? _liveFrameForTarget(String kind, String? target) {
+    final mapped = _targetFrameIds[calibrationStoredKey(kind, target)];
+    if (mapped == null) {
+      return null;
+    }
+    return _captures.any((capture) => capture.frameId == mapped)
+        ? mapped
+        : null;
+  }
 
-  String get _currentStoredKey => calibrationStoredKey(_kindName, _target);
-
-  /// The selected capture, or the newest one when the selection was evicted.
-  CalibrationCapture? get _activeCapture {
-    if (_captures.isEmpty) {
+  CalibrationCapture? _captureById(String? frameId) {
+    if (frameId == null) {
       return null;
     }
     for (final capture in _captures) {
-      if (capture.frameId == _selectedFrameId) {
+      if (capture.frameId == frameId) {
         return capture;
       }
     }
-    return _captures.first;
+    return null;
+  }
+
+  /// A mapped frame id only when it is still in the live shelf.
+  String? _liveFrameId(String? frameId) => _captureById(frameId)?.frameId;
+
+  /// The screen assigned to the selected target, when it is still live.
+  CalibrationCapture? get _assignedCapture =>
+      _captureById(_targetFrameIds[_currentStoredKey]);
+
+  /// The assignment target's display name, for the Screens strip / editor.
+  String get _selectedTargetLabel {
+    final kind = _selected;
+    if (kind.isTargeted && _target != null) {
+      return '${kind.label} · $_target';
+    }
+    return kind.label;
+  }
+
+  CalibrationKind get _selected => calibrationKindByName(_kindName);
+
+  bool get _sessionTool => _tool == 'Tuner' || _tool == 'Tooltip';
+
+  /// The session panel id for the two session tools; mark tools never ask for one.
+  String get _sessionId => _tool == 'Tooltip' ? 'tooltip' : 'tuner';
+
+  static const List<({String id, String label})> _toolTabs = [
+    (id: 'Shop', label: 'Buy / Sell'),
+    (id: 'Gem', label: 'Gem Composer'),
+    (id: 'Tuner', label: 'Magic Tuner'),
+    (id: 'Pet', label: 'Pet Feeder'),
+    (id: 'Tooltip', label: 'Tooltip'),
+  ];
+
+  String get _currentStoredKey => calibrationStoredKey(_kindName, _target);
+
+  /// The preview capture, or null when nothing is selected. No fallback to the newest frame: a
+  /// target with no assignment must show the empty canvas instead of another target's screen.
+  CalibrationCapture? get _activeCapture => _captureById(_selectedFrameId);
+
+  /// How many targets currently reference [frameId], for the strip's badge.
+  int _assignmentCount(String frameId) =>
+      _targetFrameIds.values.where((assigned) => assigned == frameId).length;
+
+  /// Assign a live screen to the selected target and make it the preview.
+  void _assignScreen(String? frameId) {
+    if (frameId == null || _captureById(frameId) == null) {
+      return;
+    }
+    setState(() {
+      _targetFrameIds[_currentStoredKey] = frameId;
+      _selectedFrameId = frameId;
+      _save = null;
+    });
+  }
+
+  /// Select a screen for preview only. The editor's explicit action performs the assignment.
+  void _previewScreen(String frameId) {
+    if (_captureById(frameId) == null) {
+      return;
+    }
+    setState(() {
+      _selectedFrameId = frameId;
+      if (_sessionTool) {
+        _sessionFrameIds[_sessionId] = frameId;
+      }
+      _save = null;
+    });
+  }
+
+  /// Explicitly remove a live screen after TWO confirmations. Only the in-memory frame and the
+  /// session-only assignments are removed; saved calibration coordinates are config data and are
+  /// deliberately untouched.
+  Future<void> _discardCapture(String frameId) async {
+    final capture = _captureById(frameId);
+    if (capture == null) {
+      return;
+    }
+    final targetCount = _assignmentCount(frameId);
+    final sessionNames = [
+      for (final entry in _sessionFrameIds.entries)
+        if (entry.value == frameId)
+          entry.key == 'tuner' ? 'Magic Tuner' : 'Tooltip',
+    ];
+    final uses = <String>[
+      if (targetCount > 0) '$targetCount target${targetCount == 1 ? '' : 's'}',
+      ...sessionNames,
+    ];
+    final usageLine = uses.isEmpty
+        ? 'It is not assigned to any target or session.'
+        : 'It is used by ${uses.join(' and ')}.';
+
+    final first = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        key: const ValueKey('calibrate-delete-first'),
+        title: const Text('Delete screen?'),
+        content: Text(
+          '${capture.title}. $usageLine\n\n'
+          'Removing it clears the assignment to this screenshot. '
+          'Saved calibration coordinates are not deleted.',
+        ),
+        actions: [
+          TextButton(
+            key: const ValueKey('calibrate-delete-cancel'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('calibrate-delete-continue'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    if (first != true || !mounted) {
+      return;
+    }
+
+    final second = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        key: const ValueKey('calibrate-delete-second'),
+        title: Text('Delete ${capture.title} permanently?'),
+        content: const Text(
+          'The screenshot is removed from the live cache. '
+          'Saved calibration coordinates are not deleted; only assignments that point at this '
+          'screenshot are cleared.',
+        ),
+        actions: [
+          TextButton(
+            key: const ValueKey('calibrate-delete-keep'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep screen'),
+          ),
+          FilledButton(
+            key: const ValueKey('calibrate-delete-confirm'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete screen'),
+          ),
+        ],
+      ),
+    );
+    if (second != true || !mounted) {
+      return;
+    }
+
+    final result = await widget.model.discardFrame(frameId);
+    if (!mounted) {
+      return;
+    }
+    if (!result.ok) {
+      setState(() {
+        _shelfNote = result.errorLine;
+      });
+      return;
+    }
+    setState(() {
+      _captures.removeWhere((entry) => entry.frameId == frameId);
+      _targetFrameIds.removeWhere((_, assigned) => assigned == frameId);
+      _sessionFrameIds.removeWhere((_, assigned) => assigned == frameId);
+      _refusedFrameIds.remove(frameId);
+      if (_selectedFrameId == frameId) {
+        _selectedFrameId = null;
+      }
+      _shelfNote =
+          'Removed ${capture.title} from the shelf. Saved calibration coordinates were not '
+          'changed.';
+    });
   }
 
   /// The capture's own display environment, as the save will send it.
@@ -166,6 +366,8 @@ class _CalibrateTabState extends State<CalibrateTab>
     _y.dispose();
     _w.dispose();
     _h.dispose();
+    _targetsScrollController.dispose();
+    _inspectorScrollController.dispose();
     super.dispose();
   }
 
@@ -309,9 +511,11 @@ class _CalibrateTabState extends State<CalibrateTab>
       } catch (_) {
         hostNote = 'the shell could not hide itself — the game has to be in front for a capture';
       }
-      // One frame for the hide to be composited before the core checks the foreground window.
+      // One frame for the hide to be composited before the core reads the screen. The shell is
+      // hidden now, so the calibration exemption is used: Windows can still report this hidden
+      // window as the foreground one even though the game is the visible frame.
       await _waitOneFrame();
-      final result = await widget.model.captureFrame();
+      final result = await widget.model.captureFrame(allowCovered: true);
       if (!mounted) {
         return;
       }
@@ -340,9 +544,9 @@ class _CalibrateTabState extends State<CalibrateTab>
     }
   }
 
-  /// Adds a successful capture to the shelf and enforces the core's own capacity: the last FOUR
-  /// frames are kept, so a fifth evicts the oldest (PROTOCOL §8). Eviction is shown, never hidden;
-  /// the evicted frame is dropped, not re-captured.
+  /// Adds a successful capture to the shelf and enforces the core's own capacity (12 live frames).
+  /// An evicted frame's target assignments are dropped with it; the player is told, and the target
+  /// must be reassigned rather than silently saving against a dead id.
   void _recordCapture(proto.CaptureResult capture) {
     _captureSequence += 1;
     _captures.insert(
@@ -352,20 +556,35 @@ class _CalibrateTabState extends State<CalibrateTab>
         display: capture.display,
         sequence: _captureSequence,
         capturedAt: DateTime.now(),
+        tool: _tool,
       ),
     );
     final evicted = <CalibrationCapture>[];
-    while (_captures.length > 4) {
+    while (_captures.length > _captureCapacity) {
       evicted.add(_captures.removeLast());
     }
+    for (final item in evicted) {
+      _targetFrameIds.removeWhere((_, frameId) => frameId == item.frameId);
+    }
     _selectedFrameId = capture.frame.frameId;
+    if (_sessionTool) {
+      _sessionFrameIds[_sessionId] = capture.frame.frameId;
+    }
+    // Capture-as-you-go: a selected target with no screen adopts this one. A target that already
+    // has a screen keeps it; the new screenshot waits in the strip to be assigned explicitly.
+    if (!_sessionTool && (!_selected.isTargeted || _target != null)) {
+      final key = _currentStoredKey;
+      if (!_targetFrameIds.containsKey(key)) {
+        _targetFrameIds[key] = capture.frame.frameId;
+      }
+    }
     if (evicted.isNotEmpty) {
       final names = evicted
           .map((item) => '${item.label} (id ${item.frameId})')
           .join(', ');
       _shelfNote =
-          'The core keeps the last four frames, so $names dropped out of its cache. A save '
-          'needs a live frame id — capture again instead of re-using it.';
+          'The core keeps the last $_captureCapacity frames, so $names dropped out of its '
+          'cache. A target assigned to an evicted screen needs a new capture.';
     }
   }
 
@@ -461,14 +680,49 @@ class _CalibrateTabState extends State<CalibrateTab>
     if (name == null || name == _kindName) {
       return;
     }
+    final kind = calibrationKindByName(name);
     setState(() {
       _kindName = name;
-      _save = null;
-      _emptyChoice = null;
+      _tool = kind.tool;
       // Switching kind never carries a target over: the new kind's instances are its own.
       _target = null;
+      _selectedFrameId = _liveFrameForTarget(name, null) ?? _selectedFrameId;
+      _save = null;
+      _emptyChoice = null;
       _draftTouched = false;
       _seedEditorForSelection();
+    });
+  }
+
+  /// Tool tabs: the mark tools scope the tree/editor to one tool, and the two session tools show
+  /// their own workspace. The tab does not invent a selection: a mark tool lands on that tool's
+  /// first served kind, which the kind picker can then change.
+  void _selectTool(String tool) {
+    if (tool == _tool) {
+      return;
+    }
+    if (tool == 'Tuner' || tool == 'Tooltip') {
+      setState(() {
+        _tool = tool;
+        _selectedFrameId = _liveFrameId(_sessionFrameIds[_sessionId]);
+      });
+      return;
+    }
+    final group = calibrationToolGroups.firstWhere(
+      (group) => group.tool == tool,
+    );
+    final kind = group.kinds.first;
+    setState(() {
+      _tool = tool;
+      if (_kindName != kind.name) {
+        _kindName = kind.name;
+        _target = null;
+        _emptyChoice = null;
+        _draftTouched = false;
+        _save = null;
+        _seedEditorForSelection();
+      }
+      _selectedFrameId = _liveFrameForTarget(_kindName, _target);
     });
   }
 
@@ -477,6 +731,8 @@ class _CalibrateTabState extends State<CalibrateTab>
   void _onTargetChanged(String? target) {
     setState(() {
       _target = target;
+      _selectedFrameId =
+          _liveFrameForTarget(_kindName, target) ?? _selectedFrameId;
       _save = null;
       _draftTouched = false;
       _seedEditorForSelection();
@@ -489,11 +745,14 @@ class _CalibrateTabState extends State<CalibrateTab>
   /// A target-tree instance row: selects its kind and instance in one step.
   void _selectTreeTarget(CalibrationKind kind, String target) {
     setState(() {
+      _tool = kind.tool;
       if (_kindName != kind.name) {
         _kindName = kind.name;
         _emptyChoice = null;
       }
       _target = target;
+      _selectedFrameId =
+          _liveFrameForTarget(kind.name, target) ?? _selectedFrameId;
       _save = null;
       _draftTouched = false;
       _seedEditorForSelection();
@@ -507,8 +766,10 @@ class _CalibrateTabState extends State<CalibrateTab>
       return;
     }
     setState(() {
+      _tool = slot.kind.tool;
       _kindName = slot.kind.name;
       _target = slot.target;
+      _selectedFrameId = _liveFrameForTarget(slot.kind.name, slot.target);
       _save = null;
       _emptyChoice = null;
       _draftTouched = false;
@@ -519,14 +780,17 @@ class _CalibrateTabState extends State<CalibrateTab>
     }
   }
 
-  /// Save stays disabled while any answer the core requires is missing — target, empty verdict — and
-  /// while there is no LIVE frame (an evicted/refused frame needs a new capture; never automatic).
+  /// Save stays disabled while the target has no assigned LIVE frame, while the preview differs
+  /// from the assignment (assign it first), or while any answer the core requires is missing.
   bool get _canSave {
     if (_saving) {
       return false;
     }
-    final capture = _activeCapture;
+    final capture = _assignedCapture;
     if (capture == null || _refusedFrameIds.contains(capture.frameId)) {
+      return false;
+    }
+    if (_selectedFrameId != capture.frameId) {
       return false;
     }
     if (_selected.isTargeted && _target == null) {
@@ -539,11 +803,11 @@ class _CalibrateTabState extends State<CalibrateTab>
   }
 
   Future<void> _saveMark() async {
-    final capture = _activeCapture;
+    final capture = _assignedCapture;
     if (capture == null) {
       setState(() {
         _save = const CoreActionResult.failure(
-          shellNote: 'capture the window first — the mark needs its frame',
+          shellNote: 'assign a live screen to this target first — the mark needs its frame',
         );
       });
       return;
@@ -623,10 +887,13 @@ class _CalibrateTabState extends State<CalibrateTab>
       }
       if (refusedFrame) {
         _refusedFrameIds.add(capture.frame.frameId);
+        _targetFrameIds.removeWhere(
+          (_, frameId) => frameId == capture.frame.frameId,
+        );
         _shelfNote =
             'The core refused ${capture.label} (id ${capture.frame.frameId}) as an unknown '
-            'frame id: it is no longer in the four-frame cache. Capture again — this screen never '
-            're-captures automatically.';
+            'frame id: it is no longer in the $_captureCapacity-frame cache. Capture again — this '
+            'screen never re-captures automatically.';
       }
     });
     if (result.ok) {
@@ -645,7 +912,7 @@ class _CalibrateTabState extends State<CalibrateTab>
     super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
     final theme = Theme.of(context);
     final capture = _activeCapture;
-    return Column(
+    final page = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
@@ -657,67 +924,596 @@ class _CalibrateTabState extends State<CalibrateTab>
           ),
           child: _buildHeader(theme, capture),
         ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            ShellSpace.lg,
+            0,
+            ShellSpace.lg,
+            ShellSpace.sm,
+          ),
+          child: _buildToolTabs(theme),
+        ),
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: ShellSpace.lg),
+          // Keep both workspaces mounted so a Tuner/Tooltip capture and its typed fields survive a
+          // tab switch, and so the mark workspace does not re-seed itself on every return.
+          child: IndexedStack(
+            index: _sessionTool ? 1 : 0,
+            children: [
+              _buildMarkWorkspace(theme, capture),
+              _buildSessionWorkspace(theme),
+            ],
+          ),
+        ),
+      ],
+    );
+    // At the 680 px minimum the page header and the new Screens strip leave too little height for
+    // the fixed panes. Scroll the page as one block there instead of letting a flex overflow; wider
+    // windows keep the fixed cockpit.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxHeight < 760) {
+          return SingleChildScrollView(
+            child: SizedBox(height: 900, child: page),
+          );
+        }
+        return page;
+      },
+    );
+  }
+
+  Widget _buildToolTabs(ThemeData theme) {
+    final colors = theme.colorScheme;
+    return Wrap(
+      spacing: ShellSpace.xs,
+      runSpacing: ShellSpace.xs,
+      children: [
+        for (final tab in _toolTabs)
+          Material(
+            color: tab.id == _tool
+                ? colors.secondaryContainer
+                : colors.surfaceContainerLow,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(ShellRadius.s),
+              side: BorderSide(
+                color: tab.id == _tool ? colors.primary : colors.outlineVariant,
+              ),
+            ),
+            child: InkWell(
+              key: ValueKey('calibrate-tool-${tab.id.toLowerCase()}'),
+              borderRadius: BorderRadius.circular(ShellRadius.s),
+              onTap: () => _selectTool(tab.id),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: ShellSpace.md,
+                  vertical: ShellSpace.xs,
+                ),
+                child: Text(
+                  tab.label,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: tab.id == _tool
+                        ? colors.onSecondaryContainer
+                        : colors.onSurfaceVariant,
+                    fontWeight: tab.id == _tool
+                        ? FontWeight.w600
+                        : FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// The minimum height at which the fixed three-pane workspace still fits under the capture bar and
+  /// Screens strip. Below it the workspace scrolls as one block, so the strip cannot squeeze the
+  /// canvas into an overflow.
+  static const double _fixedWorkspaceMinHeight = 480;
+
+  Widget _buildMarkWorkspace(ThemeData theme, CalibrationCapture? capture) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxHeight < _fixedWorkspaceMinHeight) {
+          return SingleChildScrollView(
+            child: SizedBox(
+              height: _fixedWorkspaceMinHeight + 160,
+              child: _buildMarkWorkspaceFixed(theme, capture),
+            ),
+          );
+        }
+        return _buildMarkWorkspaceFixed(theme, capture);
+      },
+    );
+  }
+
+  Widget _buildMarkWorkspaceFixed(
+    ThemeData theme,
+    CalibrationCapture? capture,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            ShellSpace.lg,
+            0,
+            ShellSpace.lg,
+            ShellSpace.sm,
+          ),
+          child: _buildCaptureBar(theme, capture),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            ShellSpace.lg,
+            0,
+            ShellSpace.lg,
+            ShellSpace.sm,
+          ),
+          child: _buildScreenStrip(theme),
+        ),
+        _buildExternalChangeBanner(),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= _workspaceBreakpoint;
+              final canvasMaxHeight = wide
+                  ? (constraints.maxHeight - 160).clamp(140.0, 520.0).toDouble()
+                  : _canvasHeight;
+              final left = Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [_buildTargetTree()],
+              );
+              final canvas = _buildCanvasPanel(
+                theme,
+                capture,
+                maxHeight: canvasMaxHeight,
+              );
+              final rightNarrow = Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildMarkEditor(theme),
+                  ReferenceGalleryPanel(stored: _stored, gallery: _gallery),
+                ],
+              );
+              final rightWide = Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: Scrollbar(
+                      controller: _inspectorScrollController,
+                      thumbVisibility: true,
+                      child: SingleChildScrollView(
+                        key: const ValueKey('calibrate-inspector-scroll'),
+                        controller: _inspectorScrollController,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildMarkEditor(theme, showActions: false),
+                            ReferenceGalleryPanel(
+                              stored: _stored,
+                              gallery: _gallery,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: ShellSpace.xs),
+                  SurfacePanel(
+                    padding: const EdgeInsets.all(ShellSpace.sm),
+                    child: _buildMarkActionBar(theme),
+                  ),
+                ],
+              );
+              if (!wide) {
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: ShellSpace.lg,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'The three-column workspace needs a little more width. '
+                        'Collapse the sidebar (Ctrl+B) or widen the window.',
+                        key: const ValueKey('calibrate-workspace-width-hint'),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: ShellSpace.sm),
+                      left,
+                      canvas,
+                      rightNarrow,
+                      const SizedBox(height: ShellSpace.lg),
+                    ],
+                  ),
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: ShellSpace.lg),
+                child: SizedBox(
+                  key: const ValueKey('calibrate-workspace-panes'),
+                  height: constraints.maxHeight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: _captureColumnWidth,
+                        child: Scrollbar(
+                          controller: _targetsScrollController,
+                          thumbVisibility: true,
+                          child: SingleChildScrollView(
+                            key: const ValueKey('calibrate-targets-scroll'),
+                            controller: _targetsScrollController,
+                            child: left,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: ShellSpace.lg),
+                      Expanded(child: canvas),
+                      const SizedBox(width: ShellSpace.lg),
+                      SizedBox(width: _editorColumnWidth, child: rightWide),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// One compact row above the workspace: what frame is active and the three things that used to be
+  /// full panels (captures, display/Detect details, stored marks). Keeping them behind dialogs is what
+  /// lets the canvas sit above the fold at 720 px.
+  Widget _buildCaptureStatus(ThemeData theme) {
+    final capture = _captureAttempt;
+    final hostNote = _hostNote;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_capturing)
+          Row(
+            key: const ValueKey('calibrate-capturing'),
+            children: [
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: ShellSpace.sm),
+              Expanded(
+                child: Text(
+                  'Hiding the shell → waiting one frame → capturing the game only → '
+                  'restoring the shell. The show is unconditional.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        if (hostNote != null)
+          Text(
+            hostNote,
+            key: const ValueKey('calibrate-host-note'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        if (capture != null)
+          ActionResultLine(
+            key: const ValueKey('calibrate-capture-result'),
+            label: 'Capture',
+            line: capture.ok
+                ? 'captured frame ${capture.value!.frame.frameId} '
+                      '(${capture.value!.frame.width}×${capture.value!.frame.height} px)'
+                : capture.errorLine,
+            isError: !capture.ok,
+          ),
+        if (capture != null && !capture.ok)
+          Text(
+            'Old captures stay usable. Press Capture to retry — a capture is never retried '
+            'automatically.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        if (_shelfNote != null)
+          Text(
+            _shelfNote!,
+            key: const ValueKey('calibrate-shelf-note'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// The one capture action for the active mark tool. It lives in the capture bar so every tool tab
+  /// has a visible, local capture instead of one shared page-level button.
+  Widget _captureActionButton() {
+    final icon = _capturing
+        ? const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : const Icon(Icons.photo_camera_outlined, size: ShellSize.iconMd);
+    final label = _capturing
+        ? 'Capturing…'
+        : (_captures.isEmpty ? 'Capture screen' : 'Capture again');
+    if (_captures.isEmpty) {
+      return FilledButton.icon(
+        key: const ValueKey('calibrate-capture'),
+        onPressed: _capturing ? null : _captureFrame,
+        icon: icon,
+        label: Text(label),
+      );
+    }
+    return OutlinedButton.icon(
+      key: const ValueKey('calibrate-capture'),
+      onPressed: _capturing ? null : _captureFrame,
+      icon: icon,
+      label: Text(label),
+    );
+  }
+
+  /// Every live capture, newest first. Clicking one only previews it; the editor's Screen row
+  /// performs the assignment. This is what lets the player take all the game screens first.
+  Widget _buildScreenStrip(ThemeData theme) {
+    final counts = <String, int>{
+      for (final capture in _captures)
+        capture.frameId: _assignmentCount(capture.frameId),
+    };
+    final session = _sessionTool;
+    return ScreenStripPanel(
+      captures: _captures,
+      selectedFrameId: _selectedFrameId,
+      assignedFrameId: session
+          ? _selectedFrameId
+          : _targetFrameIds[_currentStoredKey],
+      assignmentCounts: counts,
+      onSelect: _previewScreen,
+      onCapture: _captureFrame,
+      capturing: _capturing,
+      capacity: _captureCapacity,
+      targetLabel: session ? '$_tool session' : _selectedTargetLabel,
+      assignedLabel: session ? 'using' : 'assigned',
+      onDiscard: _discardCapture,
+      refusedFrameIds: _refusedFrameIds,
+    );
+  }
+
+  Widget _buildCaptureBar(ThemeData theme, CalibrationCapture? capture) {
+    final colors = theme.colorScheme;
+    final hasStatus =
+        _captureAttempt != null ||
+        _hostNote != null ||
+        _capturing ||
+        _shelfNote != null;
+    return SurfacePanel(
+      padding: const EdgeInsets.symmetric(
+        horizontal: ShellSpace.sm,
+        vertical: ShellSpace.xs,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.photo_camera_outlined,
+                size: ShellSize.iconMd,
+                color: colors.onSurfaceVariant,
+              ),
+              const SizedBox(width: ShellSpace.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      capture == null
+                          ? 'No capture yet'
+                          : '${capture.label} · ${capture.sizeLabel} · frame ${capture.frame.frameId}',
+                      key: const ValueKey('calibrate-active-capture'),
+                      style: theme.textTheme.labelMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      capture == null
+                          ? 'Capture the game window to start drawing marks.'
+                          : displaySummary(capture.display),
+                      key: const ValueKey('calibrate-active-display'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: ShellSpace.sm),
+              OutlinedButton.icon(
+                key: const ValueKey('calibrate-captures'),
+                onPressed: () => unawaited(_openCapturesDialog()),
+                icon: const Icon(Icons.photo_library_outlined, size: 16),
+                label: Text('Captures ${_captures.length}'),
+              ),
+              const SizedBox(width: ShellSpace.xs),
+              TextButton.icon(
+                key: const ValueKey('calibrate-capture-details'),
+                onPressed: () => unawaited(_openCaptureDetailsDialog()),
+                icon: const Icon(Icons.tune, size: 16),
+                label: const Text('Details'),
+              ),
+              TextButton.icon(
+                key: const ValueKey('calibrate-stored-marks'),
+                onPressed: () => unawaited(_openStoredMarksDialog()),
+                icon: const Icon(Icons.table_chart_outlined, size: 16),
+                label: const Text('Stored marks'),
+              ),
+              const SizedBox(width: ShellSpace.xs),
+              _captureActionButton(),
+            ],
+          ),
+          if (hasStatus) ...[
+            const SizedBox(height: ShellSpace.xs),
+            _buildCaptureStatus(theme),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openCapturesDialog() {
+    return _showCalibrateDialog(
+      title: 'Captures',
+      child: Builder(
+        builder: (context) => _buildCaptureShelf(Theme.of(context)),
+      ),
+    );
+  }
+
+  Future<void> _openCaptureDetailsDialog() {
+    final capture = _activeCapture;
+    return _showCalibrateDialog(
+      title: 'Capture details',
+      child: Builder(
+        builder: (context) {
+          final theme = Theme.of(context);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildDisplayEnvironment(theme, capture),
+              const SizedBox(height: ShellSpace.md),
+              DetectPanel(model: widget.model),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _openStoredMarksDialog() {
+    return _showCalibrateDialog(
+      title: 'Stored marks',
+      width: 980,
+      child: StatefulBuilder(
+        builder: (context, setDialogState) => StoredMarksTablePanel(
+          stored: _stored,
+          storedErrors: _storedErrors,
+          toolFilter: _toolFilter,
+          onToolFilterChanged: (value) {
+            setDialogState(() {});
+            setState(() => _toolFilter = value);
+          },
+          onSelectSlot: (slot) {
+            Navigator.of(context).pop();
+            _selectSlot(slot);
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showCalibrateDialog({
+    required String title,
+    required Widget child,
+    double width = 820,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return Dialog(
+          key: const ValueKey('calibrate-detail-dialog'),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: width, maxHeight: 620),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                _buildDisplayEnvironment(theme, capture),
-                const SizedBox(height: ShellSpace.md),
-                DetectPanel(model: widget.model),
-                _buildExternalChangeBanner(),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final wide = constraints.maxWidth >= _workspaceBreakpoint;
-                    final left = Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [_buildCaptureShelf(theme), _buildTargetTree()],
-                    );
-                    final canvas = _buildCanvasPanel(theme, capture);
-                    final right = Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildMarkEditor(theme),
-                        ReferenceGalleryPanel(
-                          stored: _stored,
-                          gallery: _gallery,
-                        ),
-                      ],
-                    );
-                    if (!wide) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [left, canvas, right],
-                      );
-                    }
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(width: _captureColumnWidth, child: left),
-                        const SizedBox(width: ShellSpace.lg),
-                        Expanded(child: canvas),
-                        const SizedBox(width: ShellSpace.lg),
-                        SizedBox(width: _editorColumnWidth, child: right),
-                      ],
-                    );
-                  },
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    ShellSpace.lg,
+                    ShellSpace.md,
+                    ShellSpace.sm,
+                    ShellSpace.sm,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(title, style: theme.textTheme.titleMedium),
+                      ),
+                      IconButton(
+                        key: const ValueKey('calibrate-detail-close'),
+                        tooltip: 'Close',
+                        icon: const Icon(Icons.close, size: ShellSize.iconSm),
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                      ),
+                    ],
+                  ),
                 ),
-                StoredMarksTablePanel(
-                  stored: _stored,
-                  storedErrors: _storedErrors,
-                  toolFilter: _toolFilter,
-                  onToolFilterChanged: (value) =>
-                      setState(() => _toolFilter = value),
-                  onSelectSlot: _selectSlot,
+                const Divider(height: 1),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(ShellSpace.lg),
+                    child: child,
+                  ),
                 ),
-                const SizedBox(height: ShellSpace.md),
-                SessionCalibrationsPanel(
-                  model: widget.model,
-                  host: widget.host,
-                ),
-                const SizedBox(height: ShellSpace.lg),
               ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSessionWorkspace(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            ShellSpace.lg,
+            0,
+            ShellSpace.lg,
+            ShellSpace.sm,
+          ),
+          child: _buildCaptureBar(theme, _activeCapture),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            ShellSpace.lg,
+            0,
+            ShellSpace.lg,
+            ShellSpace.sm,
+          ),
+          child: _buildScreenStrip(theme),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+              ShellSpace.lg,
+              0,
+              ShellSpace.lg,
+              ShellSpace.lg,
+            ),
+            child: SessionCalibrationsPanel(
+              only: _sessionId,
+              model: widget.model,
+              host: widget.host,
+              useSharedCapture: true,
+              sharedCapture: _activeCapture,
+              onCapture: _captureFrame,
             ),
           ),
         ),
@@ -726,29 +1522,6 @@ class _CalibrateTabState extends State<CalibrateTab>
   }
 
   Widget _buildHeader(ThemeData theme, CalibrationCapture? capture) {
-    final captureLabel = _capturing ? 'Capturing…' : 'Capture';
-    final captureIcon = _capturing
-        ? const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
-        : const Icon(Icons.photo_camera_outlined, size: ShellSize.iconMd);
-    // Save is the screen's only filled action; Capture is filled only while there is no frame yet,
-    // so the two never compete for the eye.
-    final captureButton = _captures.isEmpty
-        ? FilledButton.icon(
-            key: const ValueKey('calibrate-capture'),
-            onPressed: _capturing ? null : _captureFrame,
-            icon: captureIcon,
-            label: Text(captureLabel),
-          )
-        : OutlinedButton.icon(
-            key: const ValueKey('calibrate-capture'),
-            onPressed: _capturing ? null : _captureFrame,
-            icon: captureIcon,
-            label: Text(captureLabel),
-          );
     final storedEnvironment = _storedEnvironment;
     final differences = capture == null
         ? const <String>[]
@@ -823,13 +1596,17 @@ class _CalibrateTabState extends State<CalibrateTab>
               icon: const Icon(Icons.refresh, size: ShellSize.iconMd),
               label: Text(_loadingStored ? 'Refreshing…' : 'Refresh stored'),
             ),
-            captureButton,
           ],
         ),
       ],
     );
     // Demo header: title + prose left, display chips/actions right when there is room; stacked at a
-    // window narrow enough that side-by-side would squeeze the prose.
+    // window narrow enough that side-by-side would squeeze the prose. The session tools own their
+    // capture inside the panel, so they get the heading only — no second capture action in the page
+    // header.
+    if (_sessionTool) {
+      return heading;
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < 900) {
@@ -945,75 +1722,23 @@ class _CalibrateTabState extends State<CalibrateTab>
   }
 
   Widget _buildCaptureShelf(ThemeData theme) {
-    final capture = _captureAttempt;
-    final hostNote = _hostNote;
-    final statusChildren = <Widget>[
-      if (_capturing)
-        Row(
-          key: const ValueKey('calibrate-capturing'),
-          children: [
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            const SizedBox(width: ShellSpace.sm),
-            Expanded(
-              child: Text(
-                'Hiding the shell → waiting one frame → capturing the game only → '
-                'restoring the shell. The show is unconditional.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ],
-        ),
-      if (hostNote != null)
-        Text(
-          hostNote,
-          key: const ValueKey('calibrate-host-note'),
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      if (capture != null)
-        ActionResultLine(
-          key: const ValueKey('calibrate-capture-result'),
-          label: 'Capture',
-          line: capture.ok
-              ? 'captured frame ${capture.value!.frame.frameId} '
-                    '(${capture.value!.frame.width}×${capture.value!.frame.height} px)'
-              : capture.errorLine,
-          isError: !capture.ok,
-        ),
-      if (capture != null && !capture.ok)
-        Text(
-          'Old captures stay usable. Press Capture to retry — a capture is never retried '
-          'automatically.',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-    ];
+    final hasStatus =
+        _captureAttempt != null || _hostNote != null || _capturing;
     return CaptureShelfPanel(
       captures: _captures,
-      selectedFrameId: _activeCapture?.frameId,
-      onSelect: (frameId) => setState(() => _selectedFrameId = frameId),
+      selectedFrameId: _selectedFrameId,
+      onSelect: _previewScreen,
       onCapture: _captureFrame,
       capturing: _capturing,
+      capacity: _captureCapacity,
       refusedFrameIds: _refusedFrameIds,
-      status: statusChildren.isEmpty
-          ? null
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: statusChildren,
-            ),
-      note: _shelfNote,
+      status: hasStatus ? _buildCaptureStatus(theme) : null,
+      note: null,
     );
   }
 
   Widget _buildTargetTree() => TargetTreePanel(
+    tool: _tool,
     selectedKind: _kindName,
     selectedTarget: _target,
     stored: _stored,
@@ -1021,7 +1746,11 @@ class _CalibrateTabState extends State<CalibrateTab>
     onSelectTarget: _selectTreeTarget,
   );
 
-  Widget _buildCanvasPanel(ThemeData theme, CalibrationCapture? capture) {
+  Widget _buildCanvasPanel(
+    ThemeData theme,
+    CalibrationCapture? capture, {
+    double maxHeight = _canvasHeight,
+  }) {
     if (capture == null) {
       return SurfacePanel(
         padding: const EdgeInsets.all(ShellSpace.lg),
@@ -1049,7 +1778,8 @@ class _CalibrateTabState extends State<CalibrateTab>
                 child: Text(
                   '${capture.label} · ${capture.sizeLabel} · display '
                   '${formatCalibrationScale(display.scale)}× / '
-                  '${display.physicalClient.w}×${display.physicalClient.h} client',
+                  '${display.physicalClient.w}×${display.physicalClient.h} client · '
+                  'frame ${capture.frame.frameId}',
                   key: const ValueKey('calibrate-frame-caption'),
                   style: ShellText.mono.copyWith(
                     fontSize: 11,
@@ -1071,7 +1801,9 @@ class _CalibrateTabState extends State<CalibrateTab>
           CalibrationFramePicture(
             key: const ValueKey('calibrate-frame'),
             frame: capture.frame,
-            maxHeight: _canvasHeight,
+            // The capture decoded the PNG once; a drag/zoom rebuild must reuse those bytes (SHELL-F3).
+            bytes: capture.bytes,
+            maxHeight: maxHeight,
             mark: _editorMark(),
             markLabel: _markLabel,
             clientOrigin: Offset(
@@ -1086,15 +1818,14 @@ class _CalibrateTabState extends State<CalibrateTab>
     );
   }
 
-  Widget _buildMarkEditor(ThemeData theme) {
+  Widget _buildMarkEditor(ThemeData theme, {bool showActions = true}) {
     final kind = _selected;
     final stored = _stored[_currentStoredKey];
     final storedError = _storedErrors[_currentStoredKey];
-    final save = _save;
     final capture = _activeCapture;
     final evictionRisk =
         capture != null &&
-        _captures.length >= 4 &&
+        _captures.length >= _captureCapacity &&
         capture.frameId == _captures.last.frameId;
     return SurfacePanel(
       title: 'Mark',
@@ -1175,6 +1906,8 @@ class _CalibrateTabState extends State<CalibrateTab>
             ),
           ],
           const SizedBox(height: ShellSpace.sm),
+          _buildScreenAssignment(theme),
+          const SizedBox(height: ShellSpace.sm),
           Wrap(
             spacing: ShellSpace.sm,
             runSpacing: ShellSpace.sm,
@@ -1190,8 +1923,9 @@ class _CalibrateTabState extends State<CalibrateTab>
           if (evictionRisk) ...[
             const SizedBox(height: ShellSpace.sm),
             Text(
-              'This frame is the oldest of the four and the next capture evicts it. Save this '
-              'mark before capturing again — an evicted frame is refused, never re-captured.',
+              'This frame is the oldest of the $_captureCapacity and the next capture evicts it. '
+              'Save this mark before capturing again — an evicted frame is refused, never '
+              're-captured.',
               key: const ValueKey('calibrate-eviction-risk'),
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.shellColors.warning,
@@ -1244,87 +1978,116 @@ class _CalibrateTabState extends State<CalibrateTab>
             const SizedBox(height: ShellSpace.md),
             _buildArtifactPreview(theme, stored),
           ],
-          const SizedBox(height: ShellSpace.md),
-          Row(
-            children: [
-              OutlinedButton(
-                key: const ValueKey('calibrate-revert'),
-                onPressed: _draftTouched ? _revertDraft : null,
-                child: const Text('Revert'),
-              ),
-              const SizedBox(width: ShellSpace.sm),
-              Expanded(
-                child: FilledButton(
-                  key: const ValueKey('calibrate-save'),
-                  onPressed: _canSave ? _saveMark : null,
-                  child: _saving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Save mark'),
-                ),
-              ),
-            ],
-          ),
-          if (save != null) ...[
-            const SizedBox(height: ShellSpace.sm),
-            ActionResultLine(
-              key: const ValueKey('calibrate-save-result'),
-              label: 'Save',
-              line: save.ok
-                  ? 'saved ${save.value!.kind} at rev ${save.value!.rev} · '
-                        'mark [${save.value!.mark.label}]'
-                  : save.errorLine,
-              isError: !save.ok,
-            ),
-            if (save.ok) ...[
-              if (save.value!.pitchLine != null)
-                ActionResultLine(
-                  key: const ValueKey('calibrate-pitch'),
-                  label: 'Derived',
-                  line: save.value!.pitchLine,
-                ),
-              if (save.value!.artifact != null)
-                ActionResultLine(
-                  key: const ValueKey('calibrate-artifact'),
-                  label: 'Artifact',
-                  line:
-                      '${save.value!.artifact!.file} · '
-                      '${save.value!.artifact!.width}×'
-                      '${save.value!.artifact!.height} px · '
-                      '${save.value!.artifact!.path ?? ''}',
-                ),
-            ],
-            if (!save.ok &&
-                (save.errorLine ?? '').contains('unknown frame_id')) ...[
-              Text(
-                'Capture again to get a live frame id. This screen never re-captures '
-                'automatically.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-              ),
-              const SizedBox(height: ShellSpace.xs),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  key: const ValueKey('calibrate-capture-again'),
-                  onPressed: _capturing ? null : _captureFrame,
-                  icon: const Icon(
-                    Icons.photo_camera_outlined,
-                    size: ShellSize.iconSm,
-                  ),
-                  label: const Text('Capture again'),
-                ),
-              ),
-            ],
+          if (showActions) ...[
+            const SizedBox(height: ShellSpace.md),
+            _buildMarkActionBar(theme),
           ],
           const Divider(height: ShellSpace.xl),
           _buildStoredMarkSection(theme, stored, storedError),
         ],
       ),
+    );
+  }
+
+  /// The screen assignment for the selected target. The dropdown assigns; it never silently changes
+  /// on a preview click. A screen shared by sibling targets stays visible through the strip's count.
+  Widget _buildScreenAssignment(ThemeData theme) {
+    final colors = theme.colorScheme;
+    final assignedId = _targetFrameIds[_currentStoredKey];
+    final assigned = _captureById(assignedId);
+    final preview = _activeCapture;
+    final canAssign = preview != null && preview.frameId != assignedId;
+    final evicted = assignedId != null && assigned == null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InputDecorator(
+          decoration: const InputDecoration(
+            labelText: 'Screen',
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              key: const ValueKey('calibrate-screen'),
+              value: assigned?.frameId,
+              isExpanded: true,
+              isDense: true,
+              hint: Text(
+                _captures.isEmpty
+                    ? 'Capture a screen first'
+                    : (evicted ? 'Choose another screen' : 'Choose a screen'),
+              ),
+              items: [
+                for (final capture in _captures)
+                  DropdownMenuItem(
+                    key: ValueKey('calibrate-screen-item-${capture.frameId}'),
+                    value: capture.frameId,
+                    child: Text(
+                      '${capture.title}  ·  frame ${capture.frameId}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: _captures.isEmpty ? null : _assignScreen,
+            ),
+          ),
+        ),
+        const SizedBox(height: ShellSpace.xs),
+        if (evicted)
+          Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, size: 14, color: colors.error),
+              const SizedBox(width: ShellSpace.xs),
+              Expanded(
+                child: Text(
+                  'The assigned screen was evicted — capture again or choose another.',
+                  key: const ValueKey('calibrate-screen-evicted'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.error,
+                  ),
+                ),
+              ),
+            ],
+          )
+        else if (canAssign)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              key: const ValueKey('calibrate-screen-assign'),
+              onPressed: () => _assignScreen(preview.frameId),
+              icon: const Icon(Icons.link, size: 14),
+              label: Text('Use “${preview.title}” for this target'),
+            ),
+          )
+        else if (assigned != null)
+          Row(
+            children: [
+              Icon(
+                Icons.check_circle_outline,
+                size: 14,
+                color: theme.shellColors.success,
+              ),
+              const SizedBox(width: ShellSpace.xs),
+              Expanded(
+                child: Text(
+                  'assigned · ${assigned.title}',
+                  key: const ValueKey('calibrate-screen-assigned'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.shellColors.success,
+                  ),
+                ),
+              ),
+            ],
+          )
+        else
+          Text(
+            'Every target needs its own live screen. Screens and assignments are session-only.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+      ],
     );
   }
 
@@ -1360,6 +2123,94 @@ class _CalibrateTabState extends State<CalibrateTab>
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
+      ],
+    );
+  }
+
+  /// Revert + Save and their result lines. In the fixed inspector this row is pinned below the
+  /// scrolling fields, so Save stays visible while the canvas is fixed. The narrow layout keeps
+  /// the same block inside the mark panel.
+  Widget _buildMarkActionBar(ThemeData theme) {
+    final save = _save;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            OutlinedButton(
+              key: const ValueKey('calibrate-revert'),
+              onPressed: _draftTouched ? _revertDraft : null,
+              child: const Text('Revert'),
+            ),
+            const SizedBox(width: ShellSpace.sm),
+            Expanded(
+              child: FilledButton(
+                key: const ValueKey('calibrate-save'),
+                onPressed: _canSave ? _saveMark : null,
+                child: _saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save mark'),
+              ),
+            ),
+          ],
+        ),
+        if (save != null) ...[
+          const SizedBox(height: ShellSpace.sm),
+          ActionResultLine(
+            key: const ValueKey('calibrate-save-result'),
+            label: 'Save',
+            line: save.ok
+                ? 'saved ${save.value!.kind} at rev ${save.value!.rev} · '
+                      'mark [${save.value!.mark.label}]'
+                : save.errorLine,
+            isError: !save.ok,
+          ),
+          if (save.ok) ...[
+            if (save.value!.pitchLine != null)
+              ActionResultLine(
+                key: const ValueKey('calibrate-pitch'),
+                label: 'Derived',
+                line: save.value!.pitchLine,
+              ),
+            if (save.value!.artifact != null)
+              ActionResultLine(
+                key: const ValueKey('calibrate-artifact'),
+                label: 'Artifact',
+                line:
+                    '${save.value!.artifact!.file} · '
+                    '${save.value!.artifact!.width}×'
+                    '${save.value!.artifact!.height} px · '
+                    '${save.value!.artifact!.path ?? ''}',
+              ),
+          ],
+          if (!save.ok &&
+              (save.errorLine ?? '').contains('unknown frame_id')) ...[
+            Text(
+              'Capture again to get a live frame id. This screen never re-captures '
+              'automatically.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+            const SizedBox(height: ShellSpace.xs),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                key: const ValueKey('calibrate-capture-again'),
+                onPressed: _capturing ? null : _captureFrame,
+                icon: const Icon(
+                  Icons.photo_camera_outlined,
+                  size: ShellSize.iconSm,
+                ),
+                label: const Text('Capture again'),
+              ),
+            ),
+          ],
+        ],
       ],
     );
   }

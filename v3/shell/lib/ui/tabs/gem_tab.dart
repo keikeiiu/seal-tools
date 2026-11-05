@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app.dart';
 import '../components/foldable_section.dart';
+import '../components/grade_ladder.dart';
 import '../components/info_row.dart';
 import '../components/read_only_panel.dart';
 import '../components/shell_prose.dart';
@@ -96,7 +97,6 @@ class _GemTabState extends State<GemTab>
   @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
-    final theme = Theme.of(context);
     final grades = _grades();
     final calibrated = _calibrated();
     final positions = asJsonMap(calibrated['grade_positions']);
@@ -146,25 +146,12 @@ class _GemTabState extends State<GemTab>
           EditorSection(
             title: 'Grades',
             children: [
-              Text(
-                'Fixed grade ladder (read-only):',
-                key: const ValueKey('gem-grades-caption'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: ShellSpace.xs),
-              Wrap(
-                spacing: ShellSpace.xs,
-                runSpacing: ShellSpace.xs,
-                children: [
-                  for (final grade in grades)
-                    Chip(
-                      key: ValueKey('gem-grade-$grade'),
-                      label: Text(grade),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                ],
+              GradeLadder(
+                grades: grades,
+                keyPrefix: 'gem-grade',
+                caption: 'Fixed grade ladder',
+                captionKey: const ValueKey('gem-grades-caption'),
+                start: _startGrade(),
               ),
               const SizedBox(height: ShellSpace.md),
               DraftDropdownField(

@@ -9,7 +9,9 @@
 //! call site meets it: pointer validity/alignment/lifetime, buffer sizes and element counts, handle
 //! validity and null handling, thread context, and what a failure means. A handle is an opaque
 //! value here, never a pointer, so a stale or null `HWND` can only make the API fail — it cannot
-//! make the Rust side unsound — and every failure path releases the GDI handles it acquired.
+//! make the Rust side unsound. The capture path's GDI handles are owned by the small RAII guards
+//! below (`ScreenDc`, `MemDc`, `GdiBitmap`, `Selected`), so an early `?` cannot leak one and a new
+//! call between acquire and release cannot be added without its cleanup (HW-F13).
 
 use std::ffi::c_void;
 
@@ -18,14 +20,17 @@ use windows_sys::Win32::Foundation::{BOOL, GetLastError, HWND, LPARAM, POINT, RE
 use windows_sys::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CAPTUREBLT, ClientToScreen,
     CreateCompatibleBitmap, CreateCompatibleDC, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC,
-    GetDIBits, HGDIOBJ, RGBQUAD, ReleaseDC, SRCCOPY, SelectObject,
+    GetDIBits, HBITMAP, HDC, HGDIOBJ, RGBQUAD, ReleaseDC, SRCCOPY, SelectObject,
 };
+use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows_sys::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetThreadDpiAwarenessContext,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetClientRect, GetCursorPos, GetForegroundWindow, GetSystemMetrics, GetWindowRect,
-    GetWindowTextLengthW, GetWindowTextW, IsWindowVisible, SM_CXSCREEN, SM_CYSCREEN,
+    BringWindowToTop, EnumWindows, GetClientRect, GetCursorPos, GetForegroundWindow,
+    GetSystemMetrics, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
+    GetWindowThreadProcessId, IsIconic, IsWindowVisible, SM_CXSCREEN, SM_CYSCREEN, SW_RESTORE,
+    SetForegroundWindow, ShowWindow,
 };
 
 use crate::error::WinError;
@@ -176,6 +181,57 @@ pub fn is_foreground(hwnd: Hwnd) -> bool {
     foreground == hwnd.ptr()
 }
 
+/// Try to put a window in the foreground, and report whether Windows accepted the request.
+///
+/// This is the core's small answer to the app-own-window case: after the player starts a tool, or
+/// the shell collapses to its run bar or re-shows itself, the shell can be the foreground window and
+/// the first gated capture refuses. Windows lets the process the shell started hand the foreground
+/// back to the game — "The calling process was started by the foreground process" is one of the
+/// documented conditions in `SetForegroundWindow`'s Remarks — so the core can nudge the game back in
+/// front itself, without a shell-side window call.
+///
+/// `SetForegroundWindow` alone is refused while another application owns the foreground. The
+/// calibration capture cannot use a covered frame, so the activation briefly attaches this thread's
+/// input state to the foreground thread (the documented `AttachThreadInput` workaround), brings the
+/// target to the top, asks for the foreground, then detaches again. The attachment is bounded to
+/// this call and is released even when Windows refuses the foreground request.
+///
+/// Best effort by contract: a `true` means "the request was accepted", not "the game is now in
+/// front". Callers must still gate every capture on [`is_foreground`]; this never replaces the
+/// pixel-integrity check, it only gives the game a chance to satisfy it.
+#[must_use]
+pub fn activate(hwnd: Hwnd) -> bool {
+    // SAFETY: every call takes an opaque window handle by value or a thread id; none writes through
+    // caller memory. `GetWindowThreadProcessId` writes only to the process-id pointer, which is NULL
+    // here. `AttachThreadInput` is paired with a detach on every path, and the handles are never
+    // dereferenced or retained.
+    unsafe {
+        let target = hwnd.ptr();
+        if GetForegroundWindow() == target {
+            return true;
+        }
+        if IsIconic(target) != 0 {
+            ShowWindow(target, SW_RESTORE);
+        }
+        let foreground = GetForegroundWindow();
+        let foreground_thread = if foreground == 0 {
+            0
+        } else {
+            GetWindowThreadProcessId(foreground, std::ptr::null_mut())
+        };
+        let current = GetCurrentThreadId();
+        let attached = foreground_thread != 0
+            && foreground_thread != current
+            && AttachThreadInput(current, foreground_thread, 1) != 0;
+        BringWindowToTop(target);
+        let accepted = SetForegroundWindow(target) != 0;
+        if attached {
+            AttachThreadInput(current, foreground_thread, 0);
+        }
+        accepted
+    }
+}
+
 /// Measure the window in both DPI spaces: the physical reads run under a THREAD-scoped aware context
 /// (the process stays unaware), then the logical client is read under the restored context. The
 /// scale is the ratio of client WIDTHS — heights truncate at fractional scale, widths do not
@@ -309,8 +365,32 @@ fn screen_size() -> Size {
 /// when the requested region does not fit the client, and [`WinError`] naming the Win32 call that
 /// failed when a GDI resource or the capture itself cannot be created.
 pub fn capture_client_region(hwnd: Hwnd, region: Option<Rect>) -> Result<Captured, WinError> {
+    capture_client_region_checked(hwnd, region, true)
+}
+
+/// Capture without the foreground gate. This exists ONLY for the shell's calibration capture: the
+/// shell hides itself immediately before asking, but Windows can keep the hidden shell as the
+/// foreground window, which makes [`capture_client_region`] refuse even though the game is visible.
+/// A caller that uses this accepts that a genuinely covering window would be photographed; the frame
+/// is shown back to the player, so a wrong calibration picture is visible and recoverable.
+///
+/// # Errors
+///
+/// Same as [`capture_client_region`] except that [`WinError::NotForeground`] is never returned.
+pub fn capture_client_region_ungated(
+    hwnd: Hwnd,
+    region: Option<Rect>,
+) -> Result<Captured, WinError> {
+    capture_client_region_checked(hwnd, region, false)
+}
+
+fn capture_client_region_checked(
+    hwnd: Hwnd,
+    region: Option<Rect>,
+    require_foreground: bool,
+) -> Result<Captured, WinError> {
     let display = measure(hwnd)?;
-    if !is_foreground(hwnd) {
+    if require_foreground && !is_foreground(hwnd) {
         return Err(WinError::NotForeground);
     }
     let client = display.physical_client;
@@ -371,11 +451,87 @@ fn capture_buffer(rect: Rect) -> Result<(Vec<u8>, BITMAPINFO, u32, u32), WinErro
     Ok((pixels, info, width_u32, height_u32))
 }
 
+/// The screen DC from `GetDC(NULL)`, released on drop. A zero handle is released by nobody: the
+/// caller checks it before constructing the guard.
+struct ScreenDc(HDC);
+
+impl Drop for ScreenDc {
+    fn drop(&mut self) {
+        // SAFETY: the handle came from `GetDC(NULL)` and has not been released; this is its one
+        // matching `ReleaseDC`. `ReleaseDC` requires the same `HWND` (null = the screen) that the
+        // `GetDC` used.
+        unsafe { ReleaseDC(0, self.0) };
+    }
+}
+
+/// A memory DC from `CreateCompatibleDC`, deleted on drop.
+struct MemDc(HDC);
+
+impl Drop for MemDc {
+    fn drop(&mut self) {
+        // SAFETY: the handle came from `CreateCompatibleDC` and is not in use by another DC; this is
+        // its one matching `DeleteDC`.
+        unsafe { DeleteDC(self.0) };
+    }
+}
+
+/// A compatible bitmap, deleted on drop. It must not be selected into a DC when this runs: the
+/// `Selected` guard is declared after it, so Rust drops it (and restores the DC) first.
+struct GdiBitmap(HBITMAP);
+
+impl Drop for GdiBitmap {
+    fn drop(&mut self) {
+        // SAFETY: the handle came from `CreateCompatibleBitmap`, is not selected into a DC at drop
+        // time (see the type's doc), and is deleted exactly once here.
+        unsafe { DeleteObject(self.0) };
+    }
+}
+
+/// The object a `SelectObject` displaced. Puts it back on drop, so an early return between selecting
+/// a bitmap and reading its bits cannot leave the DC holding a bitmap `GetDIBits` refuses to read.
+struct Selected {
+    dc: HDC,
+    previous: HGDIOBJ,
+    restored: bool,
+}
+
+impl Selected {
+    fn new(dc: HDC, previous: HGDIOBJ) -> Self {
+        Self {
+            dc,
+            previous,
+            restored: false,
+        }
+    }
+
+    /// Select the previous object back now, and report whether that succeeded. A failed restore
+    /// leaves the DC unusable for `GetDIBits`, so the caller must skip the read.
+    fn restore(&mut self) -> bool {
+        if self.restored {
+            return true;
+        }
+        // SAFETY: `dc` is a live DC and `previous` is the object handle its own `SelectObject` call
+        // returned, so selecting it back is the documented deselect; no caller pointer is involved.
+        let restored = unsafe { SelectObject(self.dc, self.previous) };
+        self.restored = true;
+        restored != 0 && restored != HGDI_ERROR
+    }
+}
+
+impl Drop for Selected {
+    fn drop(&mut self) {
+        // Best effort: a restore that failed during the body has already been reported through
+        // `restore`'s return value, and a second attempt would change nothing.
+        let _ = self.restore();
+    }
+}
+
 /// Blit the validated physical `rect` off the screen into a top-down 32-bpp BGRA buffer, and return
 /// the buffer with its checked `u32` dimensions.
 ///
-/// The GDI handle lifecycle is linear: every failure path releases exactly the handles acquired so
-/// far, in the reverse order of acquisition.
+/// The GDI handles are owned by the guards above and released in reverse declaration order —
+/// restore the DC, delete the bitmap, delete the memory DC, release the screen DC — which is the
+/// order GDI requires (HW-F13). An early `?` cannot leak a handle.
 ///
 /// # Errors
 ///
@@ -385,66 +541,47 @@ fn blit_screen_bgra(rect: Rect) -> Result<(Vec<u8>, u32, u32), WinError> {
     let (mut pixels, mut info, width_u32, height_u32) = capture_buffer(rect)?;
 
     // SAFETY: `GetDC(NULL)` (a null `HWND` means the screen) writes nothing through a caller pointer
-    // and keeps no reference; it returns the screen DC or a null handle, which is checked and
-    // released below.
-    let screen_dc = unsafe { GetDC(0) };
-    if screen_dc == 0 {
+    // and keeps no reference; it returns the screen DC or a null handle, which is checked here.
+    let screen_dc = ScreenDc(unsafe { GetDC(0) });
+    if screen_dc.0 == 0 {
         return Err(WinError::win32("GetDC", last_error()));
     }
 
-    // SAFETY: `screen_dc` is a live DC from `GetDC` above (`CreateCompatibleDC` only reads it and
-    // keeps no reference); a failure returns null, checked below.
-    let mem_dc = unsafe { CreateCompatibleDC(screen_dc) };
-    if mem_dc == 0 {
-        let error = last_error();
-        // SAFETY: `screen_dc` came from `GetDC` above and has not been released, so this is its one
-        // matching `ReleaseDC`.
-        unsafe { ReleaseDC(0, screen_dc) };
-        return Err(WinError::win32("CreateCompatibleDC", error));
+    // SAFETY: `screen_dc` is a live DC (`CreateCompatibleDC` only reads it and keeps no reference);
+    // a failure returns null, checked here.
+    let mem_dc = MemDc(unsafe { CreateCompatibleDC(screen_dc.0) });
+    if mem_dc.0 == 0 {
+        return Err(WinError::win32("CreateCompatibleDC", last_error()));
     }
 
     // SAFETY: `screen_dc` is live and the width/height are positive checked lengths (the client and
-    // region validators reject zero/negative sizes), which is all `CreateCompatibleBitmap` needs;
-    // it keeps no reference and returns null on failure, checked below.
-    let bitmap = unsafe { CreateCompatibleBitmap(screen_dc, rect.w, rect.h) };
-    if bitmap == 0 {
-        let error = last_error();
-        // SAFETY: `mem_dc` and `screen_dc` are live handles from the calls above and neither has
-        // been released; nothing has been selected into `mem_dc` yet.
-        unsafe {
-            DeleteDC(mem_dc);
-            ReleaseDC(0, screen_dc);
-        }
-        return Err(WinError::win32("CreateCompatibleBitmap", error));
+    // region validators reject zero/negative sizes), which is all `CreateCompatibleBitmap` needs; it
+    // keeps no reference and returns null on failure, checked here.
+    let bitmap = GdiBitmap(unsafe { CreateCompatibleBitmap(screen_dc.0, rect.w, rect.h) });
+    if bitmap.0 == 0 {
+        return Err(WinError::win32("CreateCompatibleBitmap", last_error()));
     }
 
     // SAFETY: `mem_dc` is a live memory DC and `bitmap` is a live compatible bitmap, which is the
     // documented use; `SelectObject` writes nothing through a caller pointer and returns the object
-    // it replaced, which is the handle needed to deselect later.
-    let previous = unsafe { SelectObject(mem_dc, bitmap) };
+    // it replaced, which is the handle needed to deselect.
+    let previous = unsafe { SelectObject(mem_dc.0, bitmap.0) };
     if previous == 0 || previous == HGDI_ERROR {
-        let error = last_error();
-        // SAFETY: the selection failed, so `bitmap` is not selected into `mem_dc`; delete the bitmap
-        // and DC, then release the screen DC — exactly the handles acquired so far, each once.
-        unsafe {
-            DeleteObject(bitmap);
-            DeleteDC(mem_dc);
-            ReleaseDC(0, screen_dc);
-        }
-        return Err(WinError::win32("SelectObject", error));
+        return Err(WinError::win32("SelectObject", last_error()));
     }
+    let mut selected = Selected::new(mem_dc.0, previous);
 
     // SAFETY: both DCs are live and compatible (the bitmap was made for `screen_dc`), the bitmap is
     // selected into `mem_dc`, and the destination/source rectangles are the validated physical
     // client area; `BitBlt` writes only into `mem_dc`'s selected bitmap.
     let copied = unsafe {
         BitBlt(
-            mem_dc,
+            mem_dc.0,
             0,
             0,
             rect.w,
             rect.h,
-            screen_dc,
+            screen_dc.0,
             rect.x,
             rect.y,
             SRCCOPY | CAPTUREBLT,
@@ -457,11 +594,8 @@ fn blit_screen_bgra(rect: Rect) -> Result<(Vec<u8>, u32, u32), WinError> {
     // Remarks), so the previous object is selected back BEFORE the bits are requested. If that
     // deselect fails the DC state is unusable for GetDIBits, so the read is skipped rather than
     // issued against the violated contract.
-    // SAFETY: `previous` is the live object handle `SelectObject` returned above and `mem_dc` is
-    // still live, so selecting it back is the documented deselect call; it writes nothing through a
-    // caller pointer.
-    let restored = unsafe { SelectObject(mem_dc, previous) };
-    let select_error = (restored == 0 || restored == HGDI_ERROR).then(last_error);
+    let restored = selected.restore();
+    let select_error = (!restored).then(last_error);
 
     let lines = if bitblt_error.is_none() && select_error.is_none() {
         // SAFETY: the bitmap is now deselected and `mem_dc` is the compatible DC, which is
@@ -472,8 +606,8 @@ fn blit_screen_bgra(rect: Rect) -> Result<(Vec<u8>, u32, u32), WinError> {
         // copies at most `height_u32` scan lines.
         unsafe {
             GetDIBits(
-                mem_dc,
-                bitmap,
+                mem_dc.0,
+                bitmap.0,
                 0,
                 height_u32,
                 pixels.as_mut_ptr().cast::<c_void>(),
@@ -486,16 +620,6 @@ fn blit_screen_bgra(rect: Rect) -> Result<(Vec<u8>, u32, u32), WinError> {
     };
     let dibits_error =
         (lines == 0 && bitblt_error.is_none() && select_error.is_none()).then(last_error);
-
-    // SAFETY: the bitmap is not selected into a DC at this point (the deselect above succeeded, or
-    // the read was skipped because it did not), so deleting it is valid; the memory DC is deleted
-    // next and the screen DC released last, each exactly once. All three are live handles from the
-    // calls above.
-    unsafe {
-        DeleteObject(bitmap);
-        DeleteDC(mem_dc);
-        ReleaseDC(0, screen_dc);
-    }
 
     if let Some(error) = bitblt_error {
         return Err(WinError::win32("BitBlt", error));

@@ -36,12 +36,14 @@
 //! so the timeout cannot turn into a response on this protocol; that is reported rather than
 //! papered over.
 
+use std::any::Any;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use seal_domain::decision::{Decision, StopKind, StopReason};
 use seal_tools::arbiter::{Arbiter, GameRelease, GameUse, Refusal, RunHandle, Start, Stop};
@@ -57,6 +59,14 @@ use crate::registry::{Session, ToolRegistry};
 
 /// v2's bounded wait for the pet feeder's reload (`LauncherService`'s 45 s).
 const PENDING_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// How long a shutdown waits for its workers before it gives up on them (CORE-F8). A worker can be
+/// inside a blocking call (a serial write, an OCR inference, a Win32 wait) where the cancellation
+/// token cannot reach it; without a deadline the core would sit in the drain loop forever, holding
+/// the COM port, and the next launch could not open the board. Five seconds is well past a normal
+/// stop (the runner polls the token between decisions) and short enough that a wedged worker is
+/// reported rather than waited on.
+const SHUTDOWN_BUDGET: Duration = Duration::from_secs(5);
 
 /// What `tool.start` answers.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,13 +86,29 @@ pub enum StartReply {
 }
 
 /// What `tool.stop` answers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StopReply {
     /// The token is cancelled and the phase is `stopping`; the `tool.finished` event follows.
     Stopping {
         tool: ToolId,
     },
     NotRunning,
+    /// The supervisor thread is gone — a core bug, not "nothing was running".
+    Internal {
+        line: String,
+    },
+}
+
+/// What a shutdown found on its way out (CORE-F8). The caller exits the process with a non-zero
+/// status when a worker outlived the deadline, so the shell reports a crash instead of a clean exit
+/// produced by a core that is still driving input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShutdownOutcome {
+    /// Every worker left within the budget; `core.stopping` is the last line.
+    Drained,
+    /// The deadline expired with these tools still running. Each was written to `error.log`; the
+    /// supervisor returns anyway so the process can leave.
+    Stuck { tools: Vec<ToolId> },
 }
 
 /// One stashed `request` reply: the tool waiting for the game, and the channel its worker blocks on.
@@ -101,7 +127,7 @@ enum Command {
     },
     Shutdown {
         reason: String,
-        reply: Sender<()>,
+        reply: Sender<ShutdownOutcome>,
     },
     RequestGame {
         tool: ToolId,
@@ -123,6 +149,12 @@ enum Command {
     PendingTimeout {
         generation: u64,
     },
+    /// TOOL-F10: take the game for a multi-click calibration sequence. `Some(line)` refuses because a
+    /// tool already owns it (or another calibration sequence is running).
+    BeginCalibration {
+        reply: Sender<Option<String>>,
+    },
+    EndCalibration,
 }
 
 enum WorkerEvent {
@@ -138,6 +170,9 @@ enum WorkerEvent {
         reason: StopReason,
         summary: Option<Value>,
     },
+    /// A live status change inside the run. CORE-F2: the card's message/countdown/rows must update
+    /// during the run, not only when it opens or ends.
+    State(Arc<ToolSnapshot>),
 }
 
 enum Incoming {
@@ -151,19 +186,54 @@ pub struct Supervisor {
     join: Option<JoinHandle<()>>,
 }
 
+/// The held calibration lease (TOOL-F10). Dropping sends `EndCalibration`; failures are ignored
+/// because the connection is already gone in that case.
+pub struct CalibrationLease {
+    incoming: Sender<Incoming>,
+}
+
+impl Drop for CalibrationLease {
+    fn drop(&mut self) {
+        let _ = self
+            .incoming
+            .send(Incoming::Command(Command::EndCalibration));
+    }
+}
+
 impl Supervisor {
     /// Spawns the supervisor thread. The registry is the production placeholder in the binary and a
     /// fake in the tests; the bus is the single writer's bus in the binary and a test channel in the
     /// tests. The [`GamePort`] handed to every `create` is created here, over this supervisor's own
     /// command channel, so a worker's request is answered by the thread that owns the arbiter.
     pub fn start(registry: Arc<dyn ToolRegistry>, bus: EventBus, logs: Arc<Logs>) -> Self {
+        Self::start_with_shutdown_budget(registry, bus, logs, SHUTDOWN_BUDGET)
+    }
+
+    /// [`Self::start`] with an explicit shutdown deadline (CORE-F8). The supervisor tests use a short
+    /// budget so a worker stuck in a blocking call is provable without waiting the production five
+    /// seconds; production always uses `SHUTDOWN_BUDGET`.
+    pub fn start_with_shutdown_budget(
+        registry: Arc<dyn ToolRegistry>,
+        bus: EventBus,
+        logs: Arc<Logs>,
+        shutdown_budget: Duration,
+    ) -> Self {
         let (incoming, receiver) = mpsc::channel();
         let worker_sender = incoming.clone();
         let port: Arc<dyn GamePort> = Arc::new(SupervisorPort {
             incoming: incoming.clone(),
         });
-        let join =
-            thread::spawn(move || supervise(registry, bus, receiver, worker_sender, port, logs));
+        let join = thread::spawn(move || {
+            supervise(
+                registry,
+                bus,
+                receiver,
+                worker_sender,
+                port,
+                logs,
+                shutdown_budget,
+            );
+        });
         Self {
             incoming,
             join: Some(join),
@@ -199,9 +269,13 @@ impl Supervisor {
             .send(Incoming::Command(Command::Stop { tool, reply }))
             .is_err()
         {
-            return StopReply::NotRunning;
+            return StopReply::Internal {
+                line: "the tool supervisor is not running".to_owned(),
+            };
         }
-        answer.recv().unwrap_or(StopReply::NotRunning)
+        answer.recv().unwrap_or_else(|_| StopReply::Internal {
+            line: "the tool supervisor stopped while stopping".to_owned(),
+        })
     }
 
     /// The per-command input lease for a calibration pointer action
@@ -224,15 +298,41 @@ impl Supervisor {
             .map_err(|_| "the tool supervisor stopped while checking the game lease".to_owned())
     }
 
-    /// Stops every run, waits for the workers to leave, emits `core.stopping`, then joins the
-    /// supervisor thread. Must be the last call: the writer can only finish after the supervisor (the
-    /// last `EventBus` holder) is gone.
-    pub fn shutdown(&mut self, reason: &str) {
+    /// Take the game for a long calibration pointer sequence (TOOL-F10). The returned guard releases
+    /// it on drop; while held, `tool.start`, `GamePort::request` and other pointer actions are
+    /// refused, so a resident feeder wake cannot interleave clicks with the 21-step cycle.
+    ///
+    /// # Errors
+    ///
+    /// Returns the player-facing refusal when a tool (or another calibration sequence) owns the game,
+    /// or when the supervisor is not running.
+    pub fn begin_calibration(&self) -> Result<CalibrationLease, String> {
+        let (reply, answer) = mpsc::channel();
+        self.incoming
+            .send(Incoming::Command(Command::BeginCalibration { reply }))
+            .map_err(|_| "the tool supervisor is not running".to_owned())?;
+        match answer.recv() {
+            Ok(None) => Ok(CalibrationLease {
+                incoming: self.incoming.clone(),
+            }),
+            Ok(Some(line)) => Err(line),
+            Err(_) => Err("the tool supervisor stopped while taking the game".to_owned()),
+        }
+    }
+
+    /// Stops every run, waits for the workers to leave up to the shutdown budget, emits
+    /// `core.stopping`, then joins the supervisor thread. Must be the last call: the writer can only
+    /// finish after the supervisor (the last `EventBus` holder) is gone.
+    ///
+    /// A worker still running when the budget expires is written to `error.log` and reported in the
+    /// returned [`ShutdownOutcome`]; the supervisor thread returns anyway (CORE-F8), so a wedged
+    /// serial/OCR call cannot keep the process alive with the COM port open.
+    pub fn shutdown(&mut self, reason: &str) -> ShutdownOutcome {
         let Some(join) = self.join.take() else {
-            return;
+            return ShutdownOutcome::Drained;
         };
         let (reply, answer) = mpsc::channel();
-        if self
+        let outcome = if self
             .incoming
             .send(Incoming::Command(Command::Shutdown {
                 reason: reason.to_owned(),
@@ -240,15 +340,20 @@ impl Supervisor {
             }))
             .is_ok()
         {
-            let _ = answer.recv();
-        }
+            // The supervisor always answers after its bounded drain; a dead thread is the only way
+            // this can fail, and then there is nothing left to report.
+            answer.recv().unwrap_or(ShutdownOutcome::Drained)
+        } else {
+            ShutdownOutcome::Drained
+        };
         let _ = join.join();
+        outcome
     }
 }
 
 impl Drop for Supervisor {
     fn drop(&mut self) {
-        self.shutdown("dropped");
+        let _ = self.shutdown("dropped");
     }
 }
 
@@ -300,6 +405,7 @@ fn supervise(
     worker_sender: Sender<Incoming>,
     port: Arc<dyn GamePort>,
     logs: Arc<Logs>,
+    shutdown_budget: Duration,
 ) {
     let mut arbiter = Arbiter::new();
     let mut workers: BTreeMap<ToolId, JoinHandle<()>> = BTreeMap::new();
@@ -308,6 +414,9 @@ fn supervise(
     // Bumped for every deferred start. A `PendingTimeout` only acts for the start it was scheduled
     // for, so a timer left over from an earlier one cannot cancel the start waiting now.
     let mut pending_generation: u64 = 0;
+    // TOOL-F10: a multi-click calibration sequence owns the game for its whole run, not just at its
+    // start; this flag is the pseudo-holder the arbiter does not model.
+    let mut calibration = false;
 
     while let Ok(message) = receiver.recv() {
         match message {
@@ -316,6 +425,12 @@ fn supervise(
                     Err(unavailable) => StartReply::Unavailable {
                         line: unavailable.line,
                     },
+                    Ok(()) if calibration => StartReply::Refused(Refusal {
+                        kind: seal_tools::arbiter::RefusalKind::Busy,
+                        line: "a calibration sequence is using the game right now — finish it, \
+                               then try again."
+                            .to_owned(),
+                    }),
                     Ok(()) => match arbiter.start(tool) {
                         Start::Started(handle) => {
                             spawn_worker(
@@ -381,56 +496,50 @@ fn supervise(
                 if let Some((_tool, reply)) = pending_reply.take() {
                     let _ = reply.send(Err(STOPPED_MESSAGE.to_owned()));
                 }
-                while !workers.is_empty() {
-                    match receiver.recv() {
-                        Ok(Incoming::Worker(event)) => handle_worker(
-                            event,
-                            &mut arbiter,
-                            &mut workers,
-                            &Plumbing {
-                                registry: &registry,
-                                worker_sender: &worker_sender,
-                                bus: &bus,
-                                port: &port,
-                                deferred: &deferred_args,
-                                logs: &logs,
-                            },
-                            &mut pending_reply,
-                        ),
-                        Ok(Incoming::Command(Command::RequestGame { tool, reply })) => {
-                            let _ = reply.send(Err(format!(
-                                "\"{tool}\" cannot take the game — the core is shutting down."
-                            )));
-                        }
-                        Ok(Incoming::Command(Command::ReleaseGame { tool })) => {
-                            let release = arbiter.release_game(tool);
-                            handle_game_release(
-                                release,
-                                &mut pending_reply,
-                                &mut workers,
-                                &Plumbing {
-                                    registry: &registry,
-                                    worker_sender: &worker_sender,
-                                    bus: &bus,
-                                    port: &port,
-                                    deferred: &deferred_args,
-                                    logs: &logs,
-                                },
-                            );
-                        }
-                        Ok(Incoming::Command(Command::StandDown { reply })) => {
-                            let _ = reply.send(false);
-                        }
-                        Ok(Incoming::Command(_)) => {}
-                        Err(_) => break,
-                    }
+                // CORE-F8: the drain is bounded. A worker inside a blocking native call cannot see
+                // the cancellation token, and waiting for it forever would keep the process (and the
+                // COM port) alive after the shell asked it to leave.
+                let plumbing = Plumbing {
+                    registry: &registry,
+                    worker_sender: &worker_sender,
+                    bus: &bus,
+                    port: &port,
+                    deferred: &deferred_args,
+                    logs: &logs,
+                };
+                let stuck = drain_workers(
+                    &receiver,
+                    &mut arbiter,
+                    &mut workers,
+                    &plumbing,
+                    &mut pending_reply,
+                    shutdown_budget,
+                );
+                for tool in &stuck {
+                    logs.error_line(&format!(
+                        "shutdown: \"{tool}\" did not stop within {} s — the core is exiting \
+                         without it",
+                        shutdown_budget.as_secs_f64()
+                    ));
                 }
                 bus.emit(events::core_stopping_event(&reason));
-                let _ = reply.send(());
+                let _ = reply.send(if stuck.is_empty() {
+                    ShutdownOutcome::Drained
+                } else {
+                    ShutdownOutcome::Stuck { tools: stuck }
+                });
                 break;
             }
             Incoming::Command(Command::RequestGame { tool, reply }) => {
-                handle_request_game(tool, reply, &mut arbiter, &bus, &mut pending_reply);
+                if calibration {
+                    let _ = reply.send(Err(
+                        "a calibration sequence is using the game right now — wait for it to \
+                         finish"
+                            .to_owned(),
+                    ));
+                } else {
+                    handle_request_game(tool, reply, &mut arbiter, &bus, &mut pending_reply);
+                }
             }
             Incoming::Command(Command::ReleaseGame { tool }) => {
                 let release = arbiter.release_game(tool);
@@ -454,7 +563,24 @@ fn supervise(
                 let _ = reply.send(arbiter.should_stand_down(ToolId::Spammer));
             }
             Incoming::Command(Command::InputLease { reply }) => {
-                let _ = reply.send(input_lease_line(&arbiter));
+                let _ = reply.send(input_lease_line(&arbiter, calibration));
+            }
+            Incoming::Command(Command::BeginCalibration { reply }) => {
+                let line = if calibration {
+                    Some(
+                        "a calibration sequence is already using the game — wait for it to finish."
+                            .to_owned(),
+                    )
+                } else {
+                    input_lease_line(&arbiter, false)
+                };
+                if line.is_none() {
+                    calibration = true;
+                }
+                let _ = reply.send(line);
+            }
+            Incoming::Command(Command::EndCalibration) => {
+                calibration = false;
             }
             Incoming::Command(Command::PendingTimeout { generation }) => {
                 handle_pending_timeout(
@@ -483,10 +609,58 @@ fn supervise(
     }
 }
 
+/// The shutdown drain (CORE-F8): keep handling worker events until every worker has reported `Done`
+/// or the budget expires. Returns the tools that were still running when it gave up — empty means a
+/// clean drain. `recv_timeout` is what makes the deadline real: the old `recv()` could block forever
+/// behind a worker stuck in a serial write or an OCR inference.
+fn drain_workers(
+    receiver: &Receiver<Incoming>,
+    arbiter: &mut Arbiter,
+    workers: &mut BTreeMap<ToolId, JoinHandle<()>>,
+    plumbing: &Plumbing<'_>,
+    pending_reply: &mut Option<PendingReply>,
+    budget: Duration,
+) -> Vec<ToolId> {
+    let deadline = Instant::now() + budget;
+    while !workers.is_empty() {
+        let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+            break;
+        };
+        match receiver.recv_timeout(remaining) {
+            Ok(Incoming::Worker(event)) => {
+                handle_worker(event, arbiter, workers, plumbing, pending_reply);
+            }
+            // A request that arrives on the way out is answered with the shutdown line instead of
+            // being stashed: nothing will be granted once the arbiter is gone.
+            Ok(Incoming::Command(Command::RequestGame { tool, reply })) => {
+                let _ = reply.send(Err(format!(
+                    "\"{tool}\" cannot take the game — the core is shutting down."
+                )));
+            }
+            Ok(Incoming::Command(Command::ReleaseGame { tool })) => {
+                let release = arbiter.release_game(tool);
+                handle_game_release(release, pending_reply, workers, plumbing);
+            }
+            Ok(Incoming::Command(Command::StandDown { reply })) => {
+                let _ = reply.send(false);
+            }
+            Ok(Incoming::Command(_)) => {}
+            Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    workers.keys().copied().collect()
+}
+
 /// The line a calibration pointer action gets while a tool owns the game. The foreground run is
 /// checked first (including a run that is still leaving), then the resident feeder's game claim.
 /// The wording is v2's `InputArbiter.Busy` / v3's start-refusal wording.
-fn input_lease_line(arbiter: &Arbiter) -> Option<String> {
+fn input_lease_line(arbiter: &Arbiter, calibration: bool) -> Option<String> {
+    if calibration {
+        return Some(
+            "a calibration sequence is using the game right now — wait for it to finish."
+                .to_owned(),
+        );
+    }
     if let Some(holder) = arbiter
         .running()
         .into_iter()
@@ -653,6 +827,13 @@ fn handle_worker(
     pending: &mut Option<PendingReply>,
 ) {
     match event {
+        WorkerEvent::State(snapshot) => {
+            // Only a live run may publish; a stale update after Stop would flip Stopping back to
+            // Running (the same guard as Opened).
+            if arbiter.is_running(snapshot.tool) && !arbiter.is_stopping(snapshot.tool) {
+                plumbing.bus.emit(events::state_event(&snapshot));
+            }
+        }
         WorkerEvent::Opened { tool, snapshot } => {
             // A stop may already have been processed between the send and this handling; then the
             // card is Stopping and a stale Running event would be a lie.
@@ -711,7 +892,8 @@ fn spawn_worker(
     workers.insert(tool, join);
 }
 
-/// One run. Sends `Opened` once the session exists, runs the loop, and sends `Done` as its last act.
+/// One run. Panics are contained here: the guard below always sends `Done`, so the supervisor still
+/// gets the worker's exit, frees the slot and lets shutdown finish. CORE-F3.
 #[allow(
     clippy::needless_pass_by_value,
     reason = "the worker thread's owned capture set cannot be borrowed across the spawn"
@@ -725,17 +907,49 @@ fn worker_loop(
     logs: Arc<Logs>,
 ) {
     let tool = handle.tool;
+    let mut done = DoneGuard::new(tool, supervisor.clone());
+    let outcome = catch_unwind(AssertUnwindSafe(|| {
+        worker_body(
+            handle,
+            registry,
+            supervisor,
+            port,
+            args,
+            Arc::clone(&logs),
+            &mut done,
+        );
+    }));
+    if let Err(payload) = outcome {
+        let message = panic_message(payload.as_ref());
+        logs.error_line(&format!("{tool} panicked: {message}"));
+        // `DoneGuard::drop` sends the error `Done` after this scope, even if the panic happened
+        // before the worker could send anything itself.
+    }
+}
+
+/// The body of one run; kept separate so [`worker_loop`] can wrap the whole thing (including the
+/// opening phase) in a catch-unwind. CORE-F3.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "the worker thread's owned capture set cannot be borrowed across the spawn"
+)]
+fn worker_body(
+    handle: RunHandle,
+    registry: Arc<dyn ToolRegistry>,
+    supervisor: Sender<Incoming>,
+    port: Arc<dyn GamePort>,
+    args: Value,
+    logs: Arc<Logs>,
+    done: &mut DoneGuard,
+) {
+    let tool = handle.tool;
     let session: Session = match registry.create(tool, port, &args) {
         Ok(session) => session,
         Err(line) => {
             // An opening failure is a real failure (v2 put those in `error.log`, not among the
             // player-correctable refusals), and the tool's own log has no run to describe yet.
             logs.error_line(&format!("{tool} failed to start: {line}"));
-            let _ = supervisor.send(Incoming::Worker(WorkerEvent::Done {
-                tool,
-                reason: StopReason::error(line),
-                summary: None,
-            }));
+            done.send_done(StopReason::error(line), None);
             return;
         }
     };
@@ -743,11 +957,7 @@ fn worker_loop(
     // A stop that arrived during the opening phase: the run never started, and the exit path still
     // reports it as cancelled (`OPEN.md` §1 item 1).
     if handle.token.is_cancelled() {
-        let _ = supervisor.send(Incoming::Worker(WorkerEvent::Done {
-            tool,
-            reason: StopReason::cancelled(STOPPED_MESSAGE),
-            summary: None,
-        }));
+        done.send_done(StopReason::cancelled(STOPPED_MESSAGE), None);
         return;
     }
 
@@ -760,6 +970,12 @@ fn worker_loop(
         tool,
         snapshot: running,
     }));
+    // From here on, every published status change is also a `state` event. Installed AFTER Opened
+    // so a starting card cannot receive a running update before its open. CORE-F2.
+    let state_sender = supervisor.clone();
+    handle.state.observe(Arc::new(move |snapshot| {
+        let _ = state_sender.send(Incoming::Worker(WorkerEvent::State(snapshot)));
+    }));
 
     let Session {
         tool: inner,
@@ -771,20 +987,67 @@ fn worker_loop(
     logs.tool_finished(tool, &reason);
     // The tool is about to be dropped: its last facts must be captured while it still exists.
     let summary = logged.summary(&reason);
-    let _ = supervisor.send(Incoming::Worker(WorkerEvent::Done {
-        tool,
-        reason,
-        summary,
-    }));
+    done.send_done(reason, summary);
+}
+
+/// Sends exactly one `Done` for this worker. Normal exits call [`DoneGuard::send_done`]; if the
+/// worker panics, `Drop` sends the error finish instead — so a panic can never leak the arbiter slot.
+struct DoneGuard {
+    tool: ToolId,
+    supervisor: Sender<Incoming>,
+    sent: bool,
+}
+
+impl DoneGuard {
+    fn new(tool: ToolId, supervisor: Sender<Incoming>) -> Self {
+        Self {
+            tool,
+            supervisor,
+            sent: false,
+        }
+    }
+
+    fn send_done(&mut self, reason: StopReason, summary: Option<Value>) {
+        if self.sent {
+            return;
+        }
+        self.sent = true;
+        let _ = self.supervisor.send(Incoming::Worker(WorkerEvent::Done {
+            tool: self.tool,
+            reason,
+            summary,
+        }));
+    }
+}
+
+impl Drop for DoneGuard {
+    fn drop(&mut self) {
+        self.send_done(StopReason::error("internal error — see error.log"), None);
+    }
+}
+
+fn panic_message(payload: &(dyn Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_owned()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "unknown panic payload".to_owned()
+    }
 }
 
 /// Wraps one session tool so the worker's `<tool>.log` gets the tool's OWN status words: one line per
 /// CHANGED message (the runner already deduplicates the published status, but a countdown/row change
 /// that leaves the message alone must not duplicate a log line).
+///
+/// CORE-F12: "changed" is judged on the message with its NUMBER RUNS stripped. A card line whose only
+/// difference is a countdown ("reload in 205 min" → "204") or a ticking index would otherwise write
+/// one line per tick; v2's tools logged events, never countdowns. The tool's rich notes
+/// ([`Tool::drain_log_notes`]) still carry the numbers where they matter.
 struct LoggedTool {
     inner: Box<dyn Tool + Send>,
     logs: Arc<Logs>,
-    last_message: RefCell<String>,
+    last_key: RefCell<String>,
 }
 
 impl LoggedTool {
@@ -792,7 +1055,41 @@ impl LoggedTool {
         Self {
             inner,
             logs,
-            last_message: RefCell::new(String::new()),
+            last_key: RefCell::new(String::new()),
+        }
+    }
+}
+
+/// The comparison key for a status message: digits collapse to a single `#` per run, so a countdown
+/// tick is the same line while a real wording change is not.
+fn status_key(message: &str) -> String {
+    let mut key = String::with_capacity(message.len());
+    let mut in_digits = false;
+    for character in message.chars() {
+        if character.is_ascii_digit() {
+            in_digits = true;
+            continue;
+        }
+        if in_digits {
+            key.push('#');
+            in_digits = false;
+        }
+        key.push(character);
+    }
+    if in_digits {
+        key.push('#');
+    }
+    key
+}
+
+impl LoggedTool {
+    /// Write the tool's rich diagnostic notes through the one `Logs` instance. Notes are a file-only
+    /// surface: they never become protocol events and never change a card string.
+    fn flush_log_notes(&mut self) {
+        for note in self.inner.drain_log_notes() {
+            if !note.trim().is_empty() {
+                self.logs.tool_line(self.inner.id(), &note);
+            }
         }
     }
 }
@@ -803,14 +1100,19 @@ impl Tool for LoggedTool {
     }
 
     fn decide(&mut self) -> Decision {
-        self.inner.decide()
+        let decision = self.inner.decide();
+        self.flush_log_notes();
+        decision
     }
 
     fn status(&self) -> ToolStatus {
         let status = self.inner.status();
-        if !status.message.is_empty() && status.message != *self.last_message.borrow() {
-            self.logs.tool_line(self.inner.id(), &status.message);
-            self.last_message.borrow_mut().clone_from(&status.message);
+        if !status.message.is_empty() {
+            let key = status_key(&status.message);
+            if key != *self.last_key.borrow() {
+                self.logs.tool_line(self.inner.id(), &status.message);
+                self.last_key.borrow_mut().clone_from(&key);
+            }
         }
         status
     }
@@ -885,5 +1187,42 @@ mod tests {
                 .is_some_and(|line| line.contains("still using the game")),
             "{event:?}"
         );
+    }
+
+    /// A tool that publishes no status but asks for one rich log note; `LoggedTool` must write it
+    /// through the one file logger after the decision, without any protocol event.
+    struct NoteTool;
+
+    impl Tool for NoteTool {
+        fn id(&self) -> ToolId {
+            ToolId::Pet
+        }
+
+        fn decide(&mut self) -> Decision {
+            Decision::Stop(StopReason::done("done"))
+        }
+
+        fn drain_log_notes(&mut self) -> Vec<String> {
+            vec!["wait: row 1; reload in 205 min; food used 0/4; queue empty".to_owned()]
+        }
+    }
+
+    #[test]
+    fn logged_tool_writes_drained_notes_to_the_per_run_file() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("seal5-note-tool-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let logs = Arc::new(Logs::new(&root));
+        let mut logged = LoggedTool::new(Box::new(NoteTool), Arc::clone(&logs));
+        let decision = logged.decide();
+        assert_eq!(decision, Decision::Stop(StopReason::done("done")));
+        let text = std::fs::read_to_string(root.join("logs/pet.log")).unwrap();
+        assert!(
+            text.contains("wait: row 1; reload in 205 min"),
+            "the note reached logs/pet.log: {text}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

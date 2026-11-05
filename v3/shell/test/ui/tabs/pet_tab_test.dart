@@ -296,6 +296,7 @@ Future<AppHarness> _pumpPet(
   Map<String, dynamic>? pet,
   FakeHost? host,
   Map<String, dynamic> Function(Map<String, dynamic> request)? answer,
+  bool openAdvanced = true,
 }) async {
   tester.view.physicalSize = const ui.Size(1600, 3400);
   tester.view.devicePixelRatio = 1.0;
@@ -346,7 +347,23 @@ Future<AppHarness> _pumpPet(
   // One frame for the first build, one for the decoded `pet.preflight` answer's setState.
   await tester.pump();
   await tester.pump();
+  if (openAdvanced) {
+    await _openPetAdvanced(tester);
+  }
   return harness;
+}
+
+/// The redesign folds timing/threshold and portable-feeding fields into one disclosure; the tests
+/// still exercise every field, so open it for the pre-existing flows.
+Future<void> _openPetAdvanced(WidgetTester tester) async {
+  final advanced = find.byKey(const ValueKey('pet-advanced'));
+  if (advanced.evaluate().isEmpty) {
+    return;
+  }
+  await tester.ensureVisible(advanced);
+  await tester.pump();
+  await tester.tap(advanced);
+  await tester.pumpAndSettle();
 }
 
 Future<void> _flush(WidgetTester tester) async {
@@ -419,6 +436,30 @@ String? _countText(WidgetTester tester) {
 }
 
 void main() {
+  testWidgets('Pet starts in two columns with timing folded away', (
+    tester,
+  ) async {
+    await _pumpPet(tester, pet: _machinePet(), openAdvanced: false);
+
+    final left = tester.getRect(find.byKey(const ValueKey('pet-left-column')));
+    final right = tester.getRect(
+      find.byKey(const ValueKey('pet-right-column')),
+    );
+    expect(
+      left.left,
+      lessThan(right.left),
+      reason: 'rows/queue and food run side by side',
+    );
+    expect(left.top, right.top);
+    expect(find.byKey(const ValueKey('pet-summary-rows')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pet-summary-queue')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pet-summary-next')), findsOneWidget);
+
+    expect(find.byKey(const ValueKey('pet-action-wait')), findsNothing);
+    await _openPetAdvanced(tester);
+    expect(find.byKey(const ValueKey('pet-action-wait')), findsOneWidget);
+  });
+
   testWidgets(
     'the dev shape has no rows, disables food grid, saves settings.pet',
     (tester) async {

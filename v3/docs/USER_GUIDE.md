@@ -26,7 +26,7 @@ runs the v2 firmware keeps working. The firmware zip is there for a new board, n
 3. [First run: configure, then calibrate](#3-first-run-configure-then-calibrate)
 4. [The cards: eight tools and what a run is](#4-the-cards-eight-tools-and-what-a-run-is)
 5. [The tool tabs](#5-the-tool-tabs)
-6. [Calibration: the 18 marks](#6-calibration-the-18-marks)
+6. [Calibration: the 17 marks](#6-calibration-the-17-marks)
 7. [Logs and files](#7-logs-and-files)
 8. [Hotkeys in v3.0](#8-hotkeys-in-v30)
 9. [Typical workflows](#9-typical-workflows)
@@ -198,6 +198,10 @@ the core to:
 Their lines are the core's own, verbatim. Press **Save** when the fields are right; a variant switch is
 resolved, validated, its dictionary loaded, and only then written, so it cannot half-switch.
 
+Setup also has an **Appearance** section: **Follow system**, **Light** or **Dark**. It saves immediately
+(the shell and its title bar switch together), and the choice is kept in the portable config. **Dark**
+is the default, so an existing install keeps its current look until you change it.
+
 ### 3.2 The calibration gate
 
 Tools refuse to start until the marks they use are calibrated. The refusal names the **mark** to save
@@ -303,8 +307,9 @@ refused action.
 The tuner's portable settings; the calibrated geometry block on this tab is **read-only in this wave**
 (it is owned by config until the three-box calibration session lands — section 6.4).
 
-- **Grades** — the **fixed grade order**, read-only (a chip row); the **Target grade** and the
-  **require_grade** half of the filter are selected from it.
+- **Grades** — the **fixed grade order** shown as a read-only path `N → G → DG → XG → SG`; colour
+  marks the roles (primary = target, warning = minimum). The **Target grade** and **Minimum grade**
+  selectors sit directly under the ladder.
 - **Retries and timing** — **Max retries**, **OCR retries**, **Click/enter delay (s)**, **OCR delay
   (s)**, **Save captures** (writes `logs/captures/` PNGs — see section 7). **OCR retries is stored but
   currently unused:** v3.0's reader scans once; the last-retry forced capture is a named not-built item
@@ -327,8 +332,8 @@ housekeeping with no game or board access, so it stays available while a tool ru
 The gem composer's grades and behaviour; the calibrated **Grade positions**, **Resource slots** and
 **Result gem area** are **read-only this wave** (draw them in **Calibrate**).
 
-- **Grades** — the **fixed grade ladder**, read-only (a chip row); the **Start grade** is selected from
-  it.
+- **Grades** — the **fixed grade ladder** shown as a read-only path; the **Start grade** is marked
+  with a play role and the legend states that the run advances right from there.
 - **Empty result** — **Empty mode** (`stop`, `advance_grade`, or `advance_grade_clear` — advance after
   clearing the resource slots first), **Empty streak** (how many consecutive empty reads before acting,
   so one bad read cannot advance a grade), **Colored gap min** and **Save empty captures**.
@@ -396,6 +401,12 @@ The feeder also keeps its own run progress: while it works it saves `food_slots_
 `boarding_running`, so a crash or restart does not resume aiming at used cells or the wrong boarding
 state. The Pet tab's stored values can therefore update while a run is in progress — that is the
 feeder's own progress write, not a player edit.
+
+The page opens with the readiness verdict and a compact summary (rows · queued · food cells · next
+pet), then splits the editors into two columns at wide widths: rows/queue/add-by-icon on the left;
+bag scan, food cells, return slot and food loading on the right. **Timing & read thresholds** and the
+portable **Feeding** fields are folded into one collapsed **Timing & thresholds** section, so the
+common setup stays short. Narrow windows stack the columns.
 
 **Setup so far & Ready to run.** The tab reads the core's preflight on open, on **Refresh
 checklists**, after a successful **Save** and after a successful boarding tick: a **Calibration** list,
@@ -534,9 +545,9 @@ while a tool runs.
 
 ### 5.9 Setup
 
-The window, client variant and board settings, plus **Find window**/**Measure**/**Probe board** and the
-saving **Use detected title** action. See section 3.1 — the same tab is the first-run configuration
-surface.
+The window, client variant and board settings, plus **Find window**/**Measure**/**Probe board**, the
+saving **Use detected title** action, and the **Appearance** choice (Follow system / Light / Dark). See
+section 3.1 — the same tab is the first-run configuration surface.
 
 ### 5.10 Hotkeys
 
@@ -548,37 +559,57 @@ section 8.
 ### 5.11 Calibrate
 
 The one calibration surface for every tool. Section 6 is the full walkthrough: capture the game
-window, choose a **kind**, optionally a **target instance**, draw the mark, **Save mark**, and read the
-core's stored mark / derived values / artifact below. The tab's panel caption repeats the capture
-behaviour: the shell hides itself for the grab, waits one frame, and reopens.
+window, choose a **Surface**, optionally a **target instance**, draw the mark, **Save mark**, and read
+the core's stored mark / derived values / artifact. A **tool tab row** picks what you are calibrating:
+**Buy / Sell**, **Gem Composer**, **Magic Tuner**, **Pet Feeder**, **Tooltip**. The first three scope
+Targets and the editor to that tool, and each remembers the frame you captured for it — switching tabs
+restores that tool's capture instead of showing another tool's frame. A compact **capture bar** above
+the workspace names the active frame and display and opens **Captures**, **Details** (display
+environment + Detect) and **Stored marks**; the canvas stays fixed while the target list and inspector
+scroll independently, with Revert/Save pinned under the inspector. **Magic Tuner** and **Tooltip** open
+their one-capture session directly in the workspace instead of a panel below the stored table. The
+tab's caption repeats the capture behaviour: the shell hides itself for the grab, waits one frame, and
+reopens. The top bar also has a quick appearance menu (Follow system / Light / Dark).
 
 ---
 
-## 6. Calibration: the 18 marks
+## 6. Calibration: the 17 marks
 
 A calibration mark is stored in **physical pixels relative to the game window's CLIENT area** (origin
 = the client's top-left, no title bar), so moving the window does not invalidate it. It is **not**
 scaled by the Windows display scale. The contract and the why are in the repository's
 `v3/docs/spec/CALIBRATION.md`; this section is the operator's view.
 
+> **New to this screen?** [CALIBRATION-GUIDE.md](CALIBRATION-GUIDE.md) is the click-by-click
+> walkthrough: how to capture, **click the capture tile you want to edit**, draw points vs
+> rectangles, and run the two session calibrations.
+
 ### 6.1 Saving a mark
 
 1. Put the game window in front (the game must be the foreground window; the shell hides itself for the
    grab, so the capture is of the game, not of Seal Tools).
-2. **Capture** — the window blinks while Seal Tools hides itself for one frame, captures the full
-   client, and reopens. The frame and the measured display summary appear.
-3. Choose a **Kind** from the grouped list. For a *named-instance* kind choose a **Target instance**
-   too (the list stays empty until you do; Save is disabled until a target is chosen).
-4. Draw on the picture (a click sets a point; a drag sets a rectangle) or type the **x / y / (w / h)**
-   fields — the fields are authoritative and the picture mirrors them.
-5. For **Result gem area** answer the **empty-result question** first: is the result box empty right
+2. In **Calibrate → Captures**, press **Capture the window** — the window blinks while Seal Tools
+   hides itself for one frame, captures the full client, and reopens. A **Frame** tile appears under
+   Captures and the picture appears in the middle. The header's `1 / 4` is the four-frame cache count,
+   not "four captures required"; one live capture is enough.
+3. **Click the capture tile** you want to edit. The newest is selected automatically; clicking an older
+   tile selects that frame, and Save uses the selected frame's id. A tile marked **next capture evicts
+   this one** is the oldest of four — save before capturing again. Clicking the tile only selects the
+   frame; it does not place a mark.
+4. Choose a **Surface** from the grouped list (or click a kind in the Targets tree). For a
+   *named-instance* surface choose a **Target instance** too (the list stays empty until you do; Save
+   is disabled until a target is chosen).
+5. On the large **picture**, a click sets a point and a drag sets a rectangle; or type the
+   **x / y / (w / h)** fields — the fields are authoritative and the picture mirrors them. A drag under
+   4 px is ignored; a click in the letterbox is ignored. See the guide's §5 for zoom/pan details.
+6. For **Result gem area** answer the **empty-result question** first: is the result box empty right
    now? **Save is disabled until you answer.** `empty: true` saves the crop *and* samples the colour
    signature; `empty: false` samples the signature only (a crop of a busy box would poison the strong
    empty test).
-6. **Save mark**. The result line shows the kind, the revision, and the mark; a `bag_grid` also shows
-   its derived pitch, and the result-gem crop appears under **Artifact**. **Refresh stored** re-reads
-   the stored marks.
-7. The **Stored mark** section shows the mark for the selected kind/target (and the target the core
+7. **Save mark**. The result line shows the surface, the revision, and the mark; a `bag_grid` also
+   shows its derived pitch, and the result-gem crop appears under **Artifact**. **Refresh stored**
+   re-reads the stored marks.
+8. The **Stored mark** section shows the mark for the selected surface/target (and the target the core
    echoed), or "Not calibrated yet".
 
 A refusal is the core's sentence, not a silent failure: the bag slot must agree with the bag grid's
@@ -587,7 +618,7 @@ refused, and an unsaved mark writes nothing.
 
 ### 6.2 The kinds, grouped
 
-The picker groups them so 18 entries stay readable. **One tool each:**
+The picker groups them so 17 entries stay readable. **One tool each:**
 
 | Group | Kind | Shape | Used by |
 |---|---|---|---|
@@ -608,7 +639,10 @@ The picker groups them so 18 entries stay readable. **One tool each:**
 | Pet — rows | **Row start/end button** | rect | Pet Feeder — targets "1".."4" |
 | Pet — rows | **Row boarding pet slot** | rect | Pet Feeder — targets "1".."4" |
 | Pet — rows | **Row food strip** | rect | Pet Feeder — targets "1".."4" (divided by the row's stack count) |
-| Tuner | **Spring point** | point | Tuner — only read in `spring_mode: hid` |
+
+**Spring point is not in this table.** It is set inside the **Tuner OCR 3-box + Spring point** session
+(§6.5) together with the three OCR boxes, so one tuner capture covers the whole tuner read. The core
+still serves the old `spring_point` kind for compatibility; the v3.0.9 UI does not ask for it twice.
 
 **Named instances.** A kind that marks a repeated thing takes a **target** — the player-facing instance
 name, not an array index: `pet_page_tab` takes `ITEM1`…`ITEM3`; the three pet-row kinds take row `"1"`…
@@ -629,20 +663,21 @@ never be saved against the wrong instance by accident.
 One answer is not "which is better": it is "what is in the box at the moment you captured". You can
 re-save the same kind later with the box empty to add the crop.
 
-### 6.4 What is not calibratable yet
+### 6.4 Sessions and the remaining non-mark work
 
-These are **not missing marks you can hand-wave**: each needs a different kind of session, and v3.0
-deliberately offers no fake one.
+Only two calibrations need a session, because one mark cannot express them; both are listed inside
+their tool's group in **Targets** and open the **Sessions** panel:
 
-- **The tuner's three-box geometry** — v2 dragged a grade area, an attribute band and a remaining band
-  and the core *derived* the OCR region, the bands and the row height from them. v3.0 has only the
-  **Spring point** kind; there is no `tuner_region`, and the tuner OCR geometry is still configured in
-  `local.yaml` (`tuner.ocr`) until that session exists. The Calibrate tab says so in its tuner note.
-- **The tooltip panel** — a hover offset measured by parking, hovering and capturing cannot be
-  expressed as one frame mark; hand-edited from v2 config.
-- **The pet's reference crops and row entries** — live-screen session features (the close-X crop is
-  even learned by the run), not frame marks. The Pet tab adds queue pets by icon capture, but adding
-  rows and re-capturing the row reference crops needs the pet capture session (section 11).
+- **Tuner OCR 3-box + Spring point** — one capture, three OCR boxes and the optional spring point
+  (§6.5).
+- **Pet tooltip offset + shape** — the hover panel the Pet Feeder reads (§6.6).
+
+The nine Pet marks (menu/feed/close/page points, bag grid/slot, row rects) are normal marks in the
+mark editor above — there is deliberately **no separate Pet crops/rows session**: it duplicated those
+marks. Rows, queue pets and food cells are still edited on the **Pet** tab.
+
+Remaining non-mark work:
+
 - **The sell-slot selection** — not a calibration mark: it is a memory-only bag-cell selection made on
   the **Buy/Sell** tab for the next run (§5.4). It needs the calibrated **Bag grid** to place the
   cells, but has no kind of its own.
@@ -650,6 +685,41 @@ deliberately offers no fake one.
   do not show a "your display moved" result yet. If you change monitor, scale, window size or move to a
   new PC, **recalibrate**; the marks are physical offsets and a proportional transform is deliberately
   not applied (the game UI does not scale linearly).
+
+### 6.5 Tuner OCR 3-box + Spring point session
+
+1. In **Calibrate**, select the **Magic Tuner** tool tab. Set the game to the tuner's status window and
+   press **Capture screen** (or **Recapture screen**) at the top of the card. **This one capture covers
+   the three OCR boxes and the Spring point** — that is v2's one-capture flow. The captured picture
+   then stays on the left while the box cards scroll on the right, so you can drag and edit the
+   matching fields without
+   scrolling between them.
+2. Pick a **Target to drag** chip — **Grade letter** (green), **Attribute rows** (blue), **Remaining
+   count** (amber) or **Spring point** — then drag directly on the picture on the left. Drags fill the
+   selected box and advance grade → attributes → remaining; click a card title or chip to go back. The
+   typed `x / y / w / h` fields are an alternative and stay authoritative. The Spring point is a
+   single click and is optional (only read in `spring_mode: hid`).
+3. Set **row height** only if you want to pin the pitch instead of letting the check measure it.
+4. Press **Check boxes**. The result card reports the derived region, row pitch, grade, remaining
+   count, filter verdict and how many attribute rows matched. Fix the boxes and check again if it
+   is not what the game shows.
+5. Press **Save tuner**. It writes `tuner.ocr` + `tuner.spring_point` and the annotated
+   `calib_tuner.png`; the status line shows the core's revision.
+
+### 6.6 Pet tooltip offset + shape session
+
+1. In **Calibrate**, select the **Tooltip** tool tab. Put the game in front with the item or pet whose
+   hover panel you want to measure. In the **Tooltip offset + shape** card set the **hover x / y** point
+   and delay, then press **Capture hover**. The shell hides itself, the core places the cursor on that
+   point and captures the panel; the picture returns on the left while the hover/offset controls stay
+   on the right.
+2. Drag a box around the panel on the picture (the core requires at least 20×20 px), or type the
+   **offset x / y** and **width / height**. The formula line shows `cursor + offset = panel top-left`;
+   the panel box is drawn over the cursor.
+3. Press **Save tooltip** — it writes the machine `tooltip` block (offset, size, delay).
+4. Press **Test read** to hover again at the same point and read the panel at the saved offset. The
+   **Read result** card lists the OCR lines; the result and its debug crop are also written under
+   `logs/reads/`.
 
 ---
 
@@ -779,7 +849,7 @@ marks are physical client-relative offsets; they do not travel.
 | "No buy preset selected." / "No slots are selected to sell." | Add/choose a buy preset on Buy/Sell (the card's picker). For Sell, mark slots in the **Sell** grid on Buy/Sell (it needs the calibrated **Bag grid**, §5.4), then press **Start** on the Sell card; with no slots marked the card shows this line. The selection is not saved. |
 | "{n} slots selected but the per-run cap is {cap}…" | The selection is larger than **Max slots per run (sell cap)**. Raise the cap on purpose or narrow the selection; the core refuses the start before any click and prints the full line, including the count and the cap. |
 | "The active preset … was not found — pick one in the Spammer tab." | Set **Active preset (runs)** on the Spammer tab. |
-| Pet Feeder refuses on start (a mark or a breeding-row line) | The feeder's marks and rows must exist. Calibrate its `pet_*` kinds; the Pet tab edits the rows the config carries (enabled/stacks) and the food cells, but a new install has no rows yet — migrate a v2 `local.yaml` or edit the block with the repository's `v3/docs/spec/CONFIG.md` open (adding rows needs the pet capture session, section 11). |
+| Pet Feeder refuses on start (a mark or a breeding-row line) | The feeder's marks and rows must exist. Calibrate its `pet_*` kinds in the Calibrate mark editor; the Pet tab edits the rows the config carries (enabled/stacks) and the food cells, but a new install has no rows yet — migrate a v2 `local.yaml` or edit the block with the repository's `v3/docs/spec/CONFIG.md` open. |
 | Hotkeys do not fire in game | Expected in v3.0 — there is no poller (section 8). Use Stop in the shell. |
 | "The window blinks when I press Capture" | Expected: the shell hides itself for one frame so the capture is of the game, then reopens. v2 blinked ~0.3 s; v3 blinks for a frame plus the round-trip. |
 | Need the last run's detail | Read `<root>/logs/<tool>.log` (status strip prints the root); `error.log` and `ocr_errors.jsonl` are beside it. |
@@ -793,15 +863,8 @@ repository's `v3/docs/backlog/OPEN.md`; every item below is "not in 3.0", not "p
 unless the repository says so.
 
 - **Global hotkeys.** No poller; see section 8. Stop and every shell control work.
-- **The tuner three-box calibration session.** Only the spring point is calibratable; `tuner.ocr`
-  geometry is hand-edited from config until the session exists.
-- **The tooltip (hover-panel) two-capture session** — hand-edited from v2 config.
-- **The pet session surface (increment 4+).** The Pet tab edits the setup the machine already carries —
-  rows enabled/stacks, queue add/edit by icon capture, bag food cells, per-page bag scans and the
-  explicit food-scan apply, return slot, load mode and timings — but adding rows, re-capturing the row
-  reference crops/rects, the panel test read and the feedable sweep/queue rebuild still need a live pet
-  capture session (a scan-derived queue rebuild comes later); migrated v2 configs carry the current
-  data.
+- **A separate Pet crops/rows calibration session.** The nine Pet marks are calibrated individually in
+  the mark editor; the Pet tab edits rows/queue/food cells. There is no second Pet session.
 - **The environment check (Detect) surface** — recalibrate manually after a display change.
 - **A single-instance guard.** The protocol's instance lock is specified but not built: do not run two
   copies of Seal Tools at once.

@@ -258,6 +258,31 @@ fn a_garbled_order_matches_through_the_character_containment_fallback() {
     assert_eq!(matched[0].value, None);
 }
 
+/// OCR-F15: a single substitution/confusable character does not keep the whole multiset, so the
+/// containment fallback misses it; the edit-distance fallback still names the attribute.
+#[test]
+fn a_one_character_substitution_matches_through_the_edit_fallback() {
+    let engine = matcher_of(vec![attribute("攻擊力", "atk", &["攻擊力"])]);
+
+    // 力 (power) misread as 利 (profit): one substitution, no containment.
+    let matched = engine.match_attributes(&lines(&[&["攻擊利"]]));
+
+    assert_eq!(matched.len(), 1);
+    assert_eq!(matched[0].name, "攻擊力");
+}
+
+/// A line that is merely close in LENGTH to a short variant is not a match: the edit budget is one
+/// per four characters, so unrelated two-character noise cannot satisfy a two-character dictionary
+/// entry.
+#[test]
+fn unrelated_short_noise_does_not_match_through_the_edit_fallback() {
+    let engine = matcher_of(vec![attribute("力量", "str", &["力量"])]);
+
+    let matched = engine.match_attributes(&lines(&[&["攻擊"]]));
+
+    assert!(matched.is_empty(), "{matched:?}");
+}
+
 /// `normalize` drops `|`, backticks and all whitespace before the fuzzy comparison, because OCR
 /// inserts them inside a word.
 #[test]

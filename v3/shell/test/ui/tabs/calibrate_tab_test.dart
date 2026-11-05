@@ -5,6 +5,7 @@ library;
 
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -77,8 +78,16 @@ class _FakeHost implements HostActions {
   Future<void> setWindowMinSize(int width, int height) async {}
 
   @override
+  Future<void> openLogsFolder({String? highlight}) async {}
+
+  @override
   Future<void> setMiniChrome(bool mini) async {
     // The Calibrate surface never collapses the shell; the model's own fake host covers mini mode.
+  }
+
+  @override
+  Future<void> setTitleBarTheme(int mode) async {
+    // The Calibrate surface never switches the shell theme; the model's own fake host covers it.
   }
 
   @override
@@ -114,6 +123,7 @@ Future<AppHarness> _pumpCalibrate(
   WidgetTester tester, {
   required _Answer answer,
   HostActions? host,
+  Map<String, dynamic>? config,
 }) async {
   tester.view.physicalSize = const ui.Size(1800, 2600);
   tester.view.devicePixelRatio = 1.0;
@@ -128,6 +138,7 @@ Future<AppHarness> _pumpCalibrate(
   final connecting = harness.connect(
     config: {
       'window': {'title': 'TW_LIVE'},
+      ...?config,
     },
   );
   for (var i = 0; i < 3; i++) {
@@ -197,12 +208,54 @@ String _resultText(WidgetTester tester, String key) => tester
 
 Finder _field(String key) => find.byKey(ValueKey(key));
 
+/// Drags on the interactive picture INSIDE one session frame (the shared overlay's gesture surface),
+/// measured from the picture's centre so the converted mark is a real rect.
+Future<void> _dragOnSessionFrame(
+  WidgetTester tester,
+  String frameKey,
+  Offset delta,
+) async {
+  final gestures = find.descendant(
+    of: find.byKey(ValueKey(frameKey)),
+    matching: find.byKey(const ValueKey('calibrate-picture-gestures')),
+  );
+  await tester.ensureVisible(gestures);
+  await tester.pump();
+  final area = tester.getRect(gestures);
+  final gesture = await tester.startGesture(
+    area.center,
+    kind: PointerDeviceKind.mouse,
+    buttons: kPrimaryMouseButton,
+  );
+  await tester.pump();
+  for (var i = 0; i < 4; i++) {
+    await gesture.moveBy(Offset(delta.dx / 4, delta.dy / 4));
+    await tester.pump();
+  }
+  await gesture.up();
+  await _flush(tester);
+}
+
+/// After a target change the captured screen is only a preview; the tests that calibrate and save
+/// now assign it explicitly, exactly as the player must.
+Future<void> _assignPreviewIfAny(WidgetTester tester) async {
+  final assign = find.byKey(const ValueKey('calibrate-screen-assign'));
+  if (assign.evaluate().isEmpty) {
+    return;
+  }
+  await tester.ensureVisible(assign);
+  await tester.pump();
+  await tester.tap(assign);
+  await tester.pumpAndSettle();
+}
+
 /// Opens the kind picker and taps an item by its stable key.
 Future<void> _selectKind(WidgetTester tester, String kind) async {
   await tester.tap(find.byKey(const ValueKey('calibrate-kind')));
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(ValueKey('calibrate-kind-item-$kind')).last);
   await tester.pumpAndSettle();
+  await _assignPreviewIfAny(tester);
 }
 
 Future<void> _selectTarget(WidgetTester tester, String target) async {
@@ -210,6 +263,35 @@ Future<void> _selectTarget(WidgetTester tester, String target) async {
   await tester.pumpAndSettle();
   // The menu is open: the route's copy is the last one in the tree.
   await tester.tap(find.byKey(ValueKey('calibrate-target-item-$target')).last);
+  await tester.pumpAndSettle();
+  await _assignPreviewIfAny(tester);
+}
+
+/// Switches the Calibrate tool tab. Session tools replace the mark workspace with their own panel,
+/// so the session flow tests start here instead of scrolling to a section below the stored table.
+Future<void> _selectTool(WidgetTester tester, String tool) async {
+  await tester.tap(find.byKey(ValueKey('calibrate-tool-$tool')));
+  await tester.pumpAndSettle();
+}
+
+/// The inspector is its own fixed-height scroll pane now, so Save may sit below the fold even though
+/// the canvas is fixed. Bring it into view first, exactly as a player would.
+Future<void> _tapSave(WidgetTester tester) async {
+  final save = find.byKey(const ValueKey('calibrate-save'));
+  await tester.ensureVisible(save);
+  await tester.pump();
+  await tester.tap(save);
+}
+
+/// The display environment and Detect now live in the compact Capture details dialog.
+Future<void> _openCaptureDetails(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('calibrate-capture-details')));
+  await tester.pumpAndSettle();
+}
+
+/// The stored-mark table now lives in its own dialog.
+Future<void> _openStoredMarks(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('calibrate-stored-marks')));
   await tester.pumpAndSettle();
 }
 
@@ -243,11 +325,285 @@ void main() {
     );
     expect(find.byKey(const ValueKey('calibrate-frame')), findsOneWidget);
     expect(find.textContaining('Frame 4×3 px'), findsOneWidget);
+    await _openCaptureDetails(tester);
     expect(
       _resultText(tester, 'calibrate-display'),
       contains('scale 1.5 · monitor DPI 144'),
     );
   });
+
+  testWidgets(
+    'the mark workspace fixes the canvas while the inspector scrolls',
+    (tester) async {
+      await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'capture' => {'result': _captureAnswer()},
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+      await _flush(tester);
+      await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+      await _flush(tester);
+      // Use a realistic 720-class window so the fixed pane actually has less room than the
+      // inspector's content.
+      tester.view.physicalSize = const ui.Size(1800, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      await tester.pump();
+
+      final panes = find.byKey(const ValueKey('calibrate-workspace-panes'));
+      await tester.ensureVisible(panes);
+      await tester.pump();
+      expect(tester.getSize(panes).height, greaterThan(200));
+
+      final frameBefore = tester.getTopLeft(
+        find.byKey(const ValueKey('calibrate-frame')),
+      );
+      final inspector = find.byKey(
+        const ValueKey('calibrate-inspector-scroll'),
+      );
+      await tester.drag(inspector, const Offset(0, -240));
+      await tester.pump();
+      final frameAfter = tester.getTopLeft(
+        find.byKey(const ValueKey('calibrate-frame')),
+      );
+      expect(
+        frameAfter,
+        frameBefore,
+        reason: 'the canvas is fixed; only the inspector pane moved',
+      );
+      final scrollable = tester.state<ScrollableState>(
+        find.descendant(of: inspector, matching: find.byType(Scrollable)).first,
+      );
+      expect(
+        scrollable.position.pixels,
+        greaterThan(0),
+        reason: 'the inspector scrolled inside its fixed pane',
+      );
+    },
+  );
+
+  testWidgets('a mark tool keeps its own capture when the tabs switch', (
+    tester,
+  ) async {
+    var captures = 0;
+    await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'capture' => {'result': _captureAnswer(frameId: 'f${++captures}')},
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+    await _flush(tester);
+
+    String caption() => tester
+        .widget<Text>(find.byKey(const ValueKey('calibrate-frame-caption')))
+        .data!;
+
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+    expect(caption(), contains('frame f1'));
+
+    // A different tool never borrows another tool's screen: no assignment means no canvas frame.
+    await _selectTool(tester, 'pet');
+    expect(find.byKey(const ValueKey('calibrate-frame-caption')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('calibrate-screen-capture')),
+      findsOneWidget,
+      reason: 'each mark tool workspace has its own capture action',
+    );
+    expect(
+      find.byKey(const ValueKey('calibrate-screen-f1')),
+      findsOneWidget,
+      reason: 'the shop screen is still in the shared live shelf, just not assigned here',
+    );
+
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+    expect(caption(), contains('frame f2'));
+
+    // Shop remembers the screen it assigned, not Pet's newer frame.
+    await _selectTool(tester, 'shop');
+    expect(caption(), contains('frame f1'));
+
+    // Gem has no capture yet, so it starts empty too instead of inheriting Shop's frame.
+    await _selectTool(tester, 'gem');
+    expect(find.byKey(const ValueKey('calibrate-frame-caption')), findsNothing);
+    expect(find.byKey(const ValueKey('calibrate-capture')), findsOneWidget);
+  });
+
+  testWidgets('each target saves the screen assigned to it', (tester) async {
+    var captures = 0;
+    final harness = await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'capture' => {'result': _captureAnswer(frameId: 'f${++captures}')},
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        'calibration.save' => {
+          'result': {
+            'rev': 5,
+            'kind': 'scroll_point',
+            'mark': [7, 8],
+            'derived': <String, dynamic>{},
+            'artifact': null,
+          },
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+    await _flush(tester);
+
+    // f1 belongs to the initial bag_grid target; f2 is a second Shop screen for scroll_point.
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+    await _selectKind(tester, 'scroll_point');
+    await _tapSave(tester);
+    await _flush(tester);
+    expect(_saveArgs(harness)['frame_id'], 'f2');
+
+    // Returning to bag_grid restores ITS screen, not the newest one.
+    await _selectKind(tester, 'bag_grid');
+    await _tapSave(tester);
+    await _flush(tester);
+    expect(_saveArgs(harness)['frame_id'], 'f1');
+  });
+
+  testWidgets('the shelf keeps twelve screens and Save needs an assignment', (
+    tester,
+  ) async {
+    var captures = 0;
+    await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'capture' => {'result': _captureAnswer(frameId: 'f${++captures}')},
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+    await _flush(tester);
+    for (var index = 0; index < 13; index += 1) {
+      await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+      await _flush(tester);
+    }
+    expect(find.text('12/12 live'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('calibrate-screen-f1')),
+      findsNothing,
+      reason: 'the thirteenth capture evicts the first',
+    );
+    expect(
+      find.byKey(const ValueKey('calibrate-screen-f13')),
+      findsOneWidget,
+      reason: 'the newest screen stays in the strip',
+    );
+
+    // A new tool target has no assignment; Save must be disabled until one is chosen.
+    await _selectTool(tester, 'gem');
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const ValueKey('calibrate-save')))
+          .onPressed,
+      isNull,
+    );
+  });
+
+  testWidgets(
+    'deleting a screen needs two confirmations and touches no saved mark',
+    (tester) async {
+      final harness = await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'capture' => {'result': _captureAnswer(frameId: 'f1')},
+          'capture.discard' => {
+            'result': {'frame_id': 'f1', 'discarded': true},
+          },
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+              mark: [10, 20, 30, 40],
+            ),
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+      await _flush(tester);
+      await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+      await _flush(tester);
+      expect(
+        tester
+            .widget<ButtonStyleButton>(
+              find.byKey(const ValueKey('calibrate-save')),
+            )
+            .onPressed,
+        isNotNull,
+        reason: 'the first capture auto-assigns to the selected target',
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('calibrate-screen-delete-f1')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('calibrate-delete-first')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('calibrate-delete-continue')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('calibrate-delete-second')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('calibrate-delete-confirm')));
+      await _flush(tester);
+
+      final discard =
+          harness.lastSentWithCmd('capture.discard')!['args']
+              as Map<String, dynamic>;
+      expect(discard['frame_id'], 'f1');
+      expect(
+        find.byKey(const ValueKey('calibrate-screen-f1')),
+        findsNothing,
+        reason: 'the deleted screen leaves the strip',
+      );
+      expect(
+        tester
+            .widget<ButtonStyleButton>(
+              find.byKey(const ValueKey('calibrate-save')),
+            )
+            .onPressed,
+        isNull,
+        reason: 'the target has no assigned screen after the delete',
+      );
+      expect(
+        harness.sentMessages.any(
+          (message) => message['cmd'] == 'calibration.save',
+        ),
+        isFalse,
+        reason: 'delete must not write or remove saved calibration coordinates',
+      );
+    },
+  );
 
   testWidgets('a capture refusal renders the core line verbatim', (
     tester,
@@ -313,7 +669,7 @@ void main() {
       await tester.enterText(_field('calibrate-y'), '20');
       await tester.enterText(_field('calibrate-w'), '240');
       await tester.enterText(_field('calibrate-h'), '240');
-      await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+      await _tapSave(tester);
       await _flush(tester);
 
       final args = _saveArgs(harness);
@@ -366,7 +722,7 @@ void main() {
     await _selectKind(tester, 'scroll_point');
     await tester.enterText(_field('calibrate-x'), '7');
     await tester.enterText(_field('calibrate-y'), '8');
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     final args = _saveArgs(harness);
@@ -407,7 +763,7 @@ void main() {
     await tester.enterText(_field('calibrate-y'), '22');
     await tester.enterText(_field('calibrate-w'), '33');
     await tester.enterText(_field('calibrate-h'), '44');
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     expect(_resultText(tester, 'calibrate-save-result'), contains(line));
@@ -446,7 +802,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
     await _flush(tester);
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     expect(
@@ -606,7 +962,7 @@ void main() {
     expect(int.parse(hText), greaterThan(0));
 
     // The typed fields are authoritative: Save sends what they contain.
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
     expect(_saveArgs(harness)['region'], {
       'x': int.parse(xText),
@@ -686,7 +1042,7 @@ void main() {
     await tester.dragFrom(area.center, const Offset(120, 80));
     await _flush(tester);
     await tester.enterText(_field('calibrate-w'), '55');
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     expect((_saveArgs(harness)['region'] as Map<String, dynamic>)['w'], 55);
@@ -753,7 +1109,6 @@ void main() {
         'Pet — points': ['pet_menu', 'pet_feed', 'pet_close', 'pet_page_tab'],
         'Pet — bag': ['pet_bag_grid', 'pet_bag_slot'],
         'Pet — rows': ['pet_toggle', 'pet_boarding_slot', 'pet_feeder_strip'],
-        'Tuner': ['spring_point'],
       };
       var count = 0;
       for (final entry in groups.entries) {
@@ -770,8 +1125,8 @@ void main() {
       }
       expect(
         count,
-        18,
-        reason: 'seven repaired kinds + eleven named-instance kinds',
+        17,
+        reason: 'spring point moved into the Tuner session, so 17 marks remain',
       );
       expect(
         find.byKey(const ValueKey('calibrate-kind-item-focus_point')),
@@ -827,7 +1182,7 @@ void main() {
     await _selectKind(tester, 'max_button');
     await tester.enterText(_field('calibrate-x'), '10');
     await tester.enterText(_field('calibrate-y'), '20');
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     final args = _saveArgs(harness);
@@ -899,7 +1254,7 @@ void main() {
         isNotNull,
       );
 
-      await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+      await _tapSave(tester);
       await _flush(tester);
 
       final args = _saveArgs(harness);
@@ -947,7 +1302,7 @@ void main() {
       await tester.enterText(_field('calibrate-h'), '30');
       await tester.tap(find.byKey(const ValueKey('calibrate-empty-no')));
       await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+      await _tapSave(tester);
       await _flush(tester);
 
       final args = _saveArgs(harness);
@@ -960,34 +1315,85 @@ void main() {
     },
   );
 
-  testWidgets('the tuner note is present and no tuner save is offered', (
-    tester,
-  ) async {
-    await _pumpCalibrate(
-      tester,
-      answer: (request) => switch (request['cmd']) {
-        'calibration.fetch' => {
-          'result': _fetchAnswer(
-            (request['args'] as Map<String, dynamic>)['kind'] as String,
-          ),
+  testWidgets(
+    'tool tabs scope the workspace to one tool and host the sessions',
+    (tester) async {
+      await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          },
+          _ => {'result': <String, dynamic>{}},
         },
-        _ => {'result': <String, dynamic>{}},
-      },
-    );
+      );
+      await _flush(tester);
 
-    expect(find.byKey(const ValueKey('calibrate-tuner-note')), findsOneWidget);
-    expect(find.textContaining('three-box session'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('calibrate-kind')));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('calibrate-kind-item-tuner_region')),
-      findsNothing,
-    );
-    await tester.tap(
-      find.byKey(const ValueKey('calibrate-kind-item-bag_grid')).last,
-    );
-    await tester.pumpAndSettle();
-  });
+      expect(find.byKey(const ValueKey('calibrate-tool-shop')), findsOneWidget);
+      expect(find.byKey(const ValueKey('calibrate-tool-gem')), findsOneWidget);
+      expect(find.byKey(const ValueKey('calibrate-tool-pet')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('calibrate-tool-tuner')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('calibrate-tool-tooltip')),
+        findsOneWidget,
+      );
+      final tabX = [
+        for (final id in ['shop', 'gem', 'tuner', 'pet', 'tooltip'])
+          tester.getTopLeft(find.byKey(ValueKey('calibrate-tool-$id'))).dx,
+      ];
+      expect(
+        tabX,
+        orderedEquals([...tabX]..sort()),
+        reason: 'the approved order is Buy/Sell, Gem, Tuner, Pet, Tooltip',
+      );
+      expect(find.text('Buy / Sell targets'), findsOneWidget);
+      expect(find.byKey(const ValueKey('calibrate-tuner-note')), findsNothing);
+
+      await _selectTool(tester, 'tuner');
+      expect(
+        find.byKey(const ValueKey('calibrate-tuner-note')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('three-box session'), findsOneWidget);
+      expect(find.text('Buy / Sell targets'), findsNothing);
+
+      await _selectTool(tester, 'tooltip');
+      expect(
+        find.byKey(const ValueKey('calibrate-tooltip-note')),
+        findsOneWidget,
+      );
+
+      await _selectTool(tester, 'pet');
+      expect(find.text('Pet Feeder targets'), findsOneWidget);
+      expect(find.byKey(const ValueKey('calibrate-kind')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('calibrate-tree-pet_menu')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('calibrate-tree-bag_grid')),
+        findsNothing,
+      );
+
+      await _selectTool(tester, 'gem');
+      expect(find.text('Gem Composer targets'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('calibrate-tree-result_gem_area')),
+        findsOneWidget,
+      );
+
+      await _selectTool(tester, 'shop');
+      expect(
+        find.byKey(const ValueKey('calibrate-tree-bag_grid')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('a fetched unknown kind renders its line, not a crash', (
     tester,
@@ -1000,7 +1406,7 @@ void main() {
         }
         final kind =
             (request['args'] as Map<String, dynamic>)['kind'] as String;
-        if (kind == 'spring_point') {
+        if (kind == 'max_button') {
           return {
             'result': {
               'kind': 'pet_menu',
@@ -1014,7 +1420,7 @@ void main() {
       },
     );
 
-    await _selectKind(tester, 'spring_point');
+    await _selectKind(tester, 'max_button');
     final text = tester
         .widget<Text>(find.byKey(const ValueKey('calibrate-stored')))
         .data;
@@ -1053,7 +1459,7 @@ void main() {
     expect(find.byKey(const ValueKey('calibrate-target')), findsNothing);
     await tester.enterText(_field('calibrate-x'), '4');
     await tester.enterText(_field('calibrate-y'), '5');
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     final args = _saveArgs(harness);
@@ -1121,7 +1527,7 @@ void main() {
     await _selectTarget(tester, 'DG');
     await tester.enterText(_field('calibrate-x'), '30');
     await tester.enterText(_field('calibrate-y'), '40');
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     final args = _saveArgs(harness);
@@ -1183,7 +1589,7 @@ void main() {
     await tester.enterText(_field('calibrate-y'), '20');
     await tester.enterText(_field('calibrate-w'), '100');
     await tester.enterText(_field('calibrate-h'), '60');
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     final args = _saveArgs(harness);
@@ -1466,6 +1872,7 @@ void main() {
       },
     );
     await _flush(tester);
+    await _openStoredMarks(tester);
     final copy = find.byKey(const ValueKey('calibrate-copy-yaml'));
     await tester.ensureVisible(copy);
     await tester.pump();
@@ -1515,6 +1922,7 @@ void main() {
       },
     );
     await _flush(tester);
+    await _openCaptureDetails(tester);
 
     expect(find.byKey(const ValueKey('detect-panel')), findsOneWidget);
     expect(find.text('scale 1.5 → 1.25'), findsOneWidget);
@@ -1546,6 +1954,7 @@ void main() {
       },
     );
     await _flush(tester);
+    await _openCaptureDetails(tester);
 
     expect(find.text('game window not open'), findsOneWidget);
     expect(find.byKey(const ValueKey('detect-error')), findsNothing);
@@ -1589,7 +1998,7 @@ void main() {
       await _selectKind(tester, 'max_button');
       await tester.enterText(_field('calibrate-x'), '10');
       await tester.enterText(_field('calibrate-y'), '20');
-      await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+      await _tapSave(tester);
       await _flush(tester);
 
       final args = _saveArgs(harness);
@@ -1598,6 +2007,7 @@ void main() {
         7,
         reason: 'the rev from the fetch travels with the save',
       );
+      await _openCaptureDetails(tester);
       expect(
         tester
             .widget<Text>(
@@ -1645,7 +2055,7 @@ void main() {
               (message['args'] as Map<String, dynamic>)['kind'] == 'max_button',
         )
         .length;
-    await tester.tap(find.byKey(const ValueKey('calibrate-save')));
+    await _tapSave(tester);
     await _flush(tester);
 
     expect(
@@ -1727,6 +2137,32 @@ void main() {
     expect(find.textContaining('10, 20, 30, 40'), findsWidgets);
   });
 
+  testWidgets(
+    'a session tool tab opens its session on screen, not below the fold',
+    (tester) async {
+      await _pumpCalibrate(
+        tester,
+        answer: (_) => {'result': <String, dynamic>{}},
+      );
+      await _flush(tester);
+
+      await _selectTool(tester, 'tuner');
+      final bar = find.byKey(const ValueKey('session-tuner-capture-bar'));
+      expect(bar, findsOneWidget);
+      final top = tester.getTopLeft(bar).dy;
+      final height =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      expect(top, greaterThanOrEqualTo(0));
+      expect(top, lessThan(height), reason: 'the tuner workspace is on screen');
+
+      await _selectTool(tester, 'tooltip');
+      expect(
+        find.byKey(const ValueKey('calibrate-tooltip-note')),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('the tooltip session drives hover, save and test over the core', (
     tester,
   ) async {
@@ -1791,6 +2227,7 @@ void main() {
       },
     );
     await _flush(tester);
+    await _selectTool(tester, 'tooltip');
 
     final hover = find.byKey(const ValueKey('session-tooltip-hover'));
     await tester.ensureVisible(hover);
@@ -1805,8 +2242,32 @@ void main() {
     expect(hoverArgs['point'], {'x': 0, 'y': 0});
     expect(hoverArgs['hover_delay_ms'], 700);
     expect(
+      hoverArgs['allow_covered'],
+      isTrue,
+      reason:
+          'the shell is hidden, but Windows may still report it as foreground',
+    );
+    expect(
       find.byKey(const ValueKey('session-tooltip-preview')),
       findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('session-tooltip-step-hover')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('session-tooltip-step-box')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('session-tooltip-offset-summary')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('calibrate-overlay-tooltip-cursor')),
+      findsOneWidget,
+      reason:
+          'the placed cursor is visible on the picture, not only in a field',
     );
 
     await tester.enterText(
@@ -1842,7 +2303,133 @@ void main() {
     await tester.tap(test);
     await _flush(tester);
     expect(find.text('panel line one'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('session-tooltip-read')),
+      findsOneWidget,
+      reason: 'the Test read lines live in their own result card',
+    );
   });
+
+  testWidgets(
+    'the tuner session shows a saved calibration instead of blank boxes',
+    (tester) async {
+      await _pumpCalibrate(
+        tester,
+        config: {
+          'tuner': {
+            'ocr': {
+              'region': {'left': 1137, 'top': 796, 'width': 280, 'height': 232},
+              'grade_area': {'x1': 139, 'y1': 0, 'x2': 223, 'y2': 43},
+              'attr_y': [43, 131],
+              'remaining_y': [188, 232],
+              'attr_x': [0, 280],
+              'remaining_x': [155, 218],
+              'row_height': 19,
+            },
+            'spring_point': [1213, 1077],
+          },
+        },
+        answer: (request) => switch (request['cmd']) {
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+      await _flush(tester);
+      await _selectTool(tester, 'tuner');
+
+      String field(String key) =>
+          tester.widget<TextField>(_field(key)).controller!.text;
+      expect(field('session-tuner-grade.x'), '1276');
+      expect(field('session-tuner-grade.y'), '796');
+      expect(field('session-tuner-grade.w'), '84');
+      expect(field('session-tuner-grade.h'), '43');
+      expect(field('session-tuner-attr.x'), '1137');
+      expect(field('session-tuner-attr.y'), '839');
+      expect(field('session-tuner-attr.w'), '280');
+      expect(field('session-tuner-attr.h'), '88');
+      expect(field('session-tuner-remaining.x'), '1292');
+      expect(field('session-tuner-remaining.y'), '984');
+      expect(field('session-tuner-remaining.w'), '63');
+      expect(field('session-tuner-remaining.h'), '44');
+      expect(field('session-tuner-row-height'), '19');
+      expect(field('session-tuner-spring-x'), '1213');
+      expect(field('session-tuner-spring-y'), '1077');
+      expect(
+        find.textContaining('Loaded your saved tuner calibration'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'the tuner session reuses the shared screen and a screen switch invalidates its check',
+    (tester) async {
+      var captures = 9;
+      final harness = await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'capture' => {'result': _captureAnswer(frameId: 'f${captures++}')},
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          },
+          'confirmation' => {'result': <String, dynamic>{}},
+          'calibration.tuner.check' => {
+            'result': {
+              'geometry': {
+                'region': {'left': 0, 'top': 0, 'width': 300, 'height': 200},
+              },
+              'measured_row_height': 19,
+              'grade': 'DG',
+              'remaining': 25000,
+              'attributes': <List<String>>[],
+              'matched': <Map<String, dynamic>>[],
+              'filter': {'enabled': true, 'passed': true, 'reason': 'ok'},
+              'warnings': <String>[],
+            },
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+      await _flush(tester);
+      await _selectTool(tester, 'tuner');
+
+      final sessionCapture = find.byKey(const ValueKey('calibrate-capture'));
+      await tester.ensureVisible(sessionCapture);
+      await tester.tap(sessionCapture);
+      await _flush(tester);
+
+      final check = find.byKey(const ValueKey('session-tuner-check'));
+      await tester.ensureVisible(check);
+      await tester.tap(check);
+      await _flush(tester);
+      final checkArgs =
+          harness.sentMessages.lastWhere(
+                (message) => message['cmd'] == 'calibration.tuner.check',
+              )['args']
+              as Map<String, dynamic>;
+      expect(checkArgs['frame_id'], 'f9');
+
+      // Capturing another screen from the shared bar invalidates the Check; Save must wait for a
+      // new Check against the new frame.
+      await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+      await _flush(tester);
+      expect(
+        tester
+            .widget<ButtonStyleButton>(
+              find.byKey(const ValueKey('session-tuner-save')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(find.textContaining('Check boxes again'), findsOneWidget);
+    },
+  );
 
   testWidgets('the tuner session captures, checks and saves three boxes', (
     tester,
@@ -1898,11 +2485,43 @@ void main() {
       },
     );
     await _flush(tester);
+    await _selectTool(tester, 'tuner');
 
-    final capture = find.byKey(const ValueKey('session-tuner-capture'));
+    final capture = find.byKey(const ValueKey('calibrate-capture'));
     await tester.ensureVisible(capture);
     await tester.tap(capture);
     await _flush(tester);
+
+    final captureArgs =
+        harness.sentMessages.lastWhere(
+              (message) => message['cmd'] == 'capture',
+            )['args']
+            as Map<String, dynamic>;
+    expect(
+      captureArgs['allow_covered'],
+      isTrue,
+      reason: 'the hidden launcher may still be the reported foreground window',
+    );
+
+    expect(
+      find.byKey(const ValueKey('session-tuner-box-grade')),
+      findsOneWidget,
+      reason: 'each box has its own card instead of one anonymous field row',
+    );
+    expect(find.byKey(const ValueKey('session-tuner-step-1')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('calibrate-overlay-tuner-attr')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('calibrate-overlay-tuner-remaining')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('calibrate-overlay-tuner-grade')),
+      findsOneWidget,
+      reason: 'the selected box stays drawn, so a drag result cannot disappear',
+    );
 
     final check = find.byKey(const ValueKey('session-tuner-check'));
     await tester.ensureVisible(check);
@@ -1917,6 +2536,22 @@ void main() {
     final boxes = checkArgs['boxes'] as Map<String, dynamic>;
     expect((boxes['grade'] as Map<String, dynamic>)['w'], 100);
     expect(find.byKey(const ValueKey('session-tuner-matched')), findsOneWidget);
+    expect(find.byKey(const ValueKey('session-tuner-summary')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('session-tuner-summary-pitch')),
+        matching: find.text('19 px'),
+      ),
+      findsOneWidget,
+      reason: 'the derived pitch is shown as a result, not only a status line',
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('session-tuner-summary-region')),
+        matching: find.textContaining('300×200'),
+      ),
+      findsOneWidget,
+    );
 
     final save = find.byKey(const ValueKey('session-tuner-save'));
     await tester.ensureVisible(save);
@@ -1931,112 +2566,6 @@ void main() {
     expect(saveArgs['display'], isNotNull);
     expect(saveArgs['display']['dpi_scale'], 1.5);
     expect(find.textContaining('tuner saved'), findsOneWidget);
-  });
-
-  testWidgets('the pet session previews, saves and test-reads one row', (
-    tester,
-  ) async {
-    final harness = await _pumpCalibrate(
-      tester,
-      answer: (request) => switch (request['cmd']) {
-        'capture' => {'result': _captureAnswer(frameId: 'f7')},
-        'calibration.fetch' => {
-          'result': _fetchAnswer(
-            (request['args'] as Map<String, dynamic>)['kind'] as String,
-          ),
-        },
-        'calibration.check' => {
-          'result': {
-            'live': null,
-            'stored': null,
-            'differences': <String>[],
-            'matches': null,
-            'note': 'game window not open',
-          },
-        },
-        'calibration.pet.preview' => {
-          'result': {
-            'rows': [
-              {
-                'slot_boxes': <Map<String, dynamic>>[],
-                'count_regions': <Map<String, dynamic>>[],
-                'problems': <String>[],
-              },
-            ],
-            'bag_centres': <List<int>>[],
-            'problem': null,
-          },
-        },
-        'calibration.pet.save' => {
-          'result': {
-            'rev': 11,
-            'block': {
-              'pet': {'slots': <Map<String, dynamic>>[]},
-            },
-            'artifacts': [
-              {'file': 'calib_pet.png', 'path': 'config/calib_pet.png'},
-            ],
-            'derived': <String, dynamic>{},
-            'warnings': <String>[],
-          },
-        },
-        'calibration.pet.test_read' => {
-          'result': {
-            'rows': [
-              {
-                'row': 1,
-                'slots': [
-                  {'index': 1, 'reads': <Map<String, dynamic>>[], 'count': 123},
-                ],
-              },
-            ],
-            'hidden_ms': 700,
-          },
-        },
-        _ => {'result': <String, dynamic>{}},
-      },
-    );
-    await _flush(tester);
-
-    final capture = find.byKey(const ValueKey('session-pet-capture'));
-    await tester.ensureVisible(capture);
-    await tester.tap(capture);
-    await _flush(tester);
-
-    final preview = find.byKey(const ValueKey('session-pet-preview'));
-    await tester.ensureVisible(preview);
-    await tester.tap(preview);
-    await _flush(tester);
-    final previewArgs =
-        harness.sentMessages.lastWhere(
-              (message) => message['cmd'] == 'calibration.pet.preview',
-            )['args']
-            as Map<String, dynamic>;
-    final draft = previewArgs['draft'] as Map<String, dynamic>;
-    expect((draft['rows'] as List).length, 1);
-    expect(
-      ((draft['rows'] as List).first as Map<String, dynamic>)['stacks'],
-      2,
-    );
-
-    final save = find.byKey(const ValueKey('session-pet-save'));
-    await tester.ensureVisible(save);
-    await tester.tap(save);
-    await _flush(tester);
-    final saveArgs =
-        harness.sentMessages.lastWhere(
-              (message) => message['cmd'] == 'calibration.pet.save',
-            )['args']
-            as Map<String, dynamic>;
-    expect(saveArgs['frame_id'], 'f7');
-    expect(saveArgs['points'], isNotNull);
-    expect(saveArgs['display']['dpi_scale'], 1.5);
-
-    final test = find.byKey(const ValueKey('session-pet-test'));
-    await tester.ensureVisible(test);
-    await tester.tap(test);
-    await _flush(tester);
-    expect(find.textContaining('1 slot(s) read'), findsOneWidget);
   });
 
   testWidgets('the gallery shows the session saves as present, not v2 only', (
@@ -2093,4 +2622,184 @@ void main() {
     expect(find.byKey(const ValueKey('calibrate-gallery-gem')), findsOneWidget);
     expect(find.byKey(const ValueKey('calibrate-gallery-pet')), findsOneWidget);
   });
+
+  testWidgets(
+    'the tuner session renders its frame and drags fill the three boxes in order',
+    (tester) async {
+      final harness = await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'capture' => {'result': _captureAnswer(width: 100, height: 75)},
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+      await _flush(tester);
+      await _selectTool(tester, 'tuner');
+
+      expect(
+        find.byKey(const ValueKey('session-tuner-frame')),
+        findsNothing,
+        reason: 'the frame exists only once the session is captured',
+      );
+
+      final capture = find.byKey(const ValueKey('calibrate-capture'));
+      await tester.ensureVisible(capture);
+      await tester.tap(capture);
+      await _flush(tester);
+
+      expect(
+        find.byKey(const ValueKey('session-tuner-frame')),
+        findsOneWidget,
+        reason: 'the captured frame is rendered so the operator can box it',
+      );
+
+      String fieldText(String key) =>
+          tester.widget<TextField>(_field(key)).controller!.text;
+
+      // The first drag writes GRADE and advances the target to attr (v2's order).
+      await _dragOnSessionFrame(
+        tester,
+        'session-tuner-frame',
+        const Offset(80, 60),
+      );
+      expect(int.parse(fieldText('session-tuner-grade.x')), greaterThan(0));
+      expect(int.parse(fieldText('session-tuner-grade.w')), greaterThan(0));
+      expect(fieldText('session-tuner-attr.x'), '0');
+      expect(fieldText('session-tuner-attr.w'), '100');
+      final attrChip = tester.widget<ChoiceChip>(
+        find.byKey(const ValueKey('session-tuner-target-attr')),
+      );
+      expect(attrChip.selected, isTrue);
+
+      // The second drag writes ATTR, not grade again.
+      await _dragOnSessionFrame(
+        tester,
+        'session-tuner-frame',
+        const Offset(80, 60),
+      );
+      expect(int.parse(fieldText('session-tuner-attr.x')), greaterThan(0));
+      expect(int.parse(fieldText('session-tuner-attr.w')), greaterThan(0));
+      expect(fieldText('session-tuner-remaining.x'), '0');
+
+      // Shared mode requires a fresh Check against the selected screen before Save.
+      final check = find.byKey(const ValueKey('session-tuner-check'));
+      await tester.ensureVisible(check);
+      await tester.tap(check);
+      await _flush(tester);
+
+      // The typed fields stay authoritative: Save sends what the drags wrote.
+      final save = find.byKey(const ValueKey('session-tuner-save'));
+      await tester.ensureVisible(save);
+      await tester.tap(save);
+      await _flush(tester);
+      final saveArgs =
+          harness.sentMessages.lastWhere(
+                (message) => message['cmd'] == 'calibration.tuner.save',
+              )['args']
+              as Map<String, dynamic>;
+      final boxes = saveArgs['boxes'] as Map<String, dynamic>;
+      final grade = boxes['grade'] as Map<String, dynamic>;
+      expect(grade['x'], int.parse(fieldText('session-tuner-grade.x')));
+      expect(grade['w'], int.parse(fieldText('session-tuner-grade.w')));
+      expect(
+        (boxes['attr'] as Map<String, dynamic>)['w'],
+        int.parse(fieldText('session-tuner-attr.w')),
+      );
+    },
+  );
+
+  testWidgets(
+    'a drag on the hovered tooltip picture fills the offset and size fields',
+    (tester) async {
+      final harness = await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'calibration.fetch_all' => {
+            'result': {
+              'rev': 9,
+              'marks': <Map<String, dynamic>>[],
+              'calibration': null,
+              'withdrawn': <Map<String, dynamic>>[],
+            },
+          },
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          },
+          'calibration.tooltip.hover_capture' => {
+            'result': {
+              'frame': {
+                'format': 'png',
+                'width': 100,
+                'height': 75,
+                'origin': {'x': 10, 'y': 20},
+                'data': _tinyPng,
+                'frame_id': 'f2',
+              },
+              'display': _displayJson(),
+              'placed': {'x': 0, 'y': 0},
+              'line': 'hover captured — drag a box around the panel',
+            },
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+      await _flush(tester);
+      await _selectTool(tester, 'tooltip');
+
+      final hover = find.byKey(const ValueKey('session-tooltip-hover'));
+      await tester.ensureVisible(hover);
+      await tester.tap(hover);
+      await _flush(tester);
+      expect(
+        find.byKey(const ValueKey('session-tooltip-preview')),
+        findsOneWidget,
+      );
+
+      await _dragOnSessionFrame(
+        tester,
+        'session-tooltip-preview',
+        const Offset(100, 80),
+      );
+
+      String fieldText(String key) =>
+          tester.widget<TextField>(_field(key)).controller!.text;
+      // The offset is the box minus the point the tool placed the cursor on (0,0 here), so a
+      // left/top drag gives non-negative offsets and a real size.
+      expect(int.parse(fieldText('session-tooltip-offset-x')), greaterThan(0));
+      expect(int.parse(fieldText('session-tooltip-width')), greaterThan(0));
+      expect(int.parse(fieldText('session-tooltip-height')), greaterThan(0));
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('session-tooltip-status')))
+            .data,
+        contains('panel box'),
+      );
+
+      final save = find.byKey(const ValueKey('session-tooltip-save'));
+      await tester.ensureVisible(save);
+      await tester.tap(save);
+      await _flush(tester);
+      final saveArgs =
+          harness.sentMessages.lastWhere(
+                (message) => message['cmd'] == 'calibration.tooltip.save',
+              )['args']
+              as Map<String, dynamic>;
+      expect(
+        saveArgs['offset_x'],
+        int.parse(fieldText('session-tooltip-offset-x')),
+      );
+      expect(saveArgs['width'], int.parse(fieldText('session-tooltip-width')));
+      expect(
+        saveArgs['height'],
+        int.parse(fieldText('session-tooltip-height')),
+      );
+    },
+  );
 }

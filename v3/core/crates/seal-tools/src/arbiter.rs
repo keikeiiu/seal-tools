@@ -441,11 +441,14 @@ impl Arbiter {
 }
 
 fn publish_phase(handle: &RunHandle, phase: ToolPhase) {
-    let current = handle.state.read().map_or_else(
-        || ToolSnapshot::new(handle.tool),
-        |snapshot| (*snapshot).clone(),
-    );
-    handle.state.publish(current.running(phase));
+    // One locked read-modify-write: the old read-then-publish could lose a concurrent status
+    // update, and the cell's phase guard keeps a later Running publish from undoing Stopping.
+    handle.state.update(|current| {
+        current.map_or_else(
+            || ToolSnapshot::new(handle.tool).running(phase),
+            |snapshot| snapshot.clone().running(phase),
+        )
+    });
 }
 
 /// The final snapshot of a run: idle, not running, the reason's message, and (for a failure) the
@@ -459,11 +462,21 @@ fn finish_snapshot(handle: &RunHandle, reason: StopReason) -> Arc<ToolSnapshot> 
         // reason in the message only (the card shows it as the stop line, not an error).
         None
     };
+    let last = handle.state.read();
     let snapshot = Arc::new(
         ToolSnapshot::new(handle.tool)
             .stopped(reason.message)
             .countdown_s(None)
-            .rows(Vec::new())
+            .rows(
+                last.as_ref()
+                    .map(|snapshot| snapshot.rows.clone())
+                    .unwrap_or_default(),
+            )
+            .detail(
+                last.as_ref()
+                    .map(|snapshot| snapshot.detail.clone())
+                    .unwrap_or_default(),
+            )
             .error(error),
     );
     handle.state.publish((*snapshot).clone());

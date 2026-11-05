@@ -358,6 +358,24 @@ pub fn cycle(state: &CoreState, request: &Request) -> Response {
     if let Some(response) = check_input_lease(state, &request.id, request.cmd.as_str()) {
         return response;
     }
+    // TOOL-F10: hold the game for the whole 21-step sequence. A plain lease check can pass while
+    // the resident feeder is merely armed; mid-cycle it would request and drive the same mouse.
+    let _lease = match state.supervisor.as_ref() {
+        Some(supervisor) => match supervisor.begin_calibration() {
+            Ok(lease) => Some(lease),
+            Err(line) => {
+                return Response::err(
+                    &request.id,
+                    Error::new(
+                        "tool_busy",
+                        &line,
+                        json!({"line": line, "command": request.cmd}),
+                    ),
+                );
+            }
+        },
+        None => None,
+    };
     let (mut effects, _display) = match open_effects(config, &request.id) {
         Ok(opened) => opened,
         Err(response) => return *response,

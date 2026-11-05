@@ -137,7 +137,12 @@ class _ShellPageState extends State<ShellPage> {
   }
 
   List<Widget> get _pages => [
-    CardGrid(model: widget.model),
+    // SHELL-F5: the card grid is the only page that renders every tool snapshot; a status/log event
+    // rebuilds it (or Pet/Tuner, which listen themselves) instead of this whole shell.
+    ListenableBuilder(
+      listenable: Listenable.merge([widget.model.tools, widget.model.config]),
+      builder: (context, _) => CardGrid(model: widget.model),
+    ),
     SpammerTab(model: widget.model),
     TunerTab(model: widget.model),
     GemTab(model: widget.model),
@@ -147,7 +152,11 @@ class _ShellPageState extends State<ShellPage> {
     QuestTab(model: widget.model),
     PetTab(model: widget.model),
     AttributesTab(model: widget.model),
-    ArduinoTab(model: widget.model),
+    // The Arduino tab shows the currently active tool from the tool model.
+    ListenableBuilder(
+      listenable: widget.model.tools,
+      builder: (context, _) => ArduinoTab(model: widget.model),
+    ),
     HotkeysTab(model: widget.model),
     SetupTab(model: widget.model),
     CalibrateTab(model: widget.model),
@@ -186,9 +195,16 @@ class _ShellPageState extends State<ShellPage> {
               ),
             ),
             Positioned.fill(
-              child: model.miniMode
-                  ? MiniRunningCard(model: model)
-                  : QuickDock(model: model),
+              child: ListenableBuilder(
+                listenable: Listenable.merge([
+                  model.tools,
+                  model.config,
+                  model.connection,
+                ]),
+                builder: (context, _) => model.miniMode
+                    ? MiniRunningCard(model: model)
+                    : QuickDock(model: model),
+              ),
             ),
           ],
         );
@@ -206,9 +222,12 @@ class _ShellPageState extends State<ShellPage> {
       return Scaffold(
         body: switch (connection.status) {
           ConnectionStatus.failed => CrashView(model: model),
-          _ => _ConnectingView(
-            status: connection.status,
-            stderrTail: model.logs.stderrTail,
+          _ => ListenableBuilder(
+            listenable: model.logs,
+            builder: (context, _) => _ConnectingView(
+              status: connection.status,
+              stderrTail: model.logs.stderrTail,
+            ),
           ),
         },
       );
@@ -228,22 +247,28 @@ class _ShellPageState extends State<ShellPage> {
           autofocus: true,
           child: Column(
             children: [
-              _TopBar(
-                model: model,
-                logsVisible: _logsVisible,
-                railVisible: _railVisible,
-                onToggleLogs: _toggleLogs,
-                onToggleRail: _toggleRail,
-                onTogglePin: () => unawaited(_toggleAlwaysOnTop()),
+              ListenableBuilder(
+                listenable: Listenable.merge([model.logs, model.config]),
+                builder: (context, _) => _TopBar(
+                  model: model,
+                  logsVisible: _logsVisible,
+                  railVisible: _railVisible,
+                  onToggleLogs: _toggleLogs,
+                  onToggleRail: _toggleRail,
+                  onTogglePin: () => unawaited(_toggleAlwaysOnTop()),
+                ),
               ),
               Expanded(
                 child: Row(
                   children: [
                     if (_railVisible)
-                      ShellRail(
-                        selected: _selected,
-                        onSelect: _select,
-                        runningCount: cardRunningCount(model),
+                      ListenableBuilder(
+                        listenable: model.tools,
+                        builder: (context, _) => ShellRail(
+                          selected: _selected,
+                          onSelect: _select,
+                          runningCount: cardRunningCount(model),
+                        ),
                       ),
                     Expanded(
                       child: Column(
@@ -264,9 +289,15 @@ class _ShellPageState extends State<ShellPage> {
                             ),
                           ),
                           if (_logsVisible)
-                            LogDrawer(
-                              entries: model.logs.entries,
-                              onClose: _toggleLogs,
+                            ListenableBuilder(
+                              listenable: model.logs,
+                              builder: (context, _) => LogDrawer(
+                                entries: model.logs.entries,
+                                onClose: _toggleLogs,
+                                onOpenLogsFolder: () =>
+                                    unawaited(model.openLogsFolder()),
+                                lastRunLogName: model.lastRunLogFile,
+                              ),
                             ),
                         ],
                       ),
@@ -274,7 +305,11 @@ class _ShellPageState extends State<ShellPage> {
                   ],
                 ),
               ),
-              StatusStrip(model: model, logsVisible: _logsVisible),
+              ListenableBuilder(
+                listenable: model.config,
+                builder: (context, _) =>
+                    StatusStrip(model: model, logsVisible: _logsVisible),
+              ),
             ],
           ),
         ),
@@ -352,6 +387,34 @@ class _TopBar extends StatelessWidget {
                   icon: const Icon(Icons.picture_in_picture_alt_outlined),
                   onPressed: () => unawaited(model.collapseToMini()),
                 ),
+              PopupMenuButton<ShellThemeMode>(
+                key: const ValueKey('app-bar-theme'),
+                tooltip: 'Appearance: ${model.themeMode.label}',
+                onSelected: (mode) => unawaited(model.setThemeMode(mode)),
+                icon: Icon(switch (model.themeMode) {
+                  ShellThemeMode.system => Icons.brightness_auto_outlined,
+                  ShellThemeMode.light => Icons.light_mode_outlined,
+                  ShellThemeMode.dark => Icons.dark_mode_outlined,
+                }),
+                itemBuilder: (context) => [
+                  for (final mode in ShellThemeMode.values)
+                    PopupMenuItem<ShellThemeMode>(
+                      value: mode,
+                      child: Row(
+                        children: [
+                          Icon(
+                            mode == model.themeMode
+                                ? Icons.check
+                                : Icons.circle_outlined,
+                            size: ShellSize.iconSm,
+                          ),
+                          const SizedBox(width: ShellSpace.sm),
+                          Text(mode.label),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
               TextButton.icon(
                 key: const ValueKey('logs-toggle'),
                 onPressed: onToggleLogs,

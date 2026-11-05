@@ -8,6 +8,7 @@
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use seal_core::events::{
     EventBus, EventWriter, core_stopping_event, event_channel, log_event, state_data, state_event,
@@ -240,4 +241,42 @@ fn the_bus_is_cloneable_and_a_dead_receiver_is_not_an_error() {
 
     clone.emit(log_event("info", "nobody is listening"));
     let _: EventBus = bus;
+}
+
+/// CORE-F8: the shutdown deadline must also bound the writer. `finish()` joins the writer thread,
+/// which only stops once every `EventBus` clone is gone — and a worker stuck past the supervisor's
+/// deadline still holds the registry, whose pet sink holds one. Without a bounded finish the core
+/// would hang here instead of exiting.
+#[test]
+fn finish_within_times_out_when_a_sender_outlives_shutdown() {
+    let buffer = SharedBuffer::default();
+    let (writer, bus) = EventWriter::spawn(Box::new(buffer.clone()));
+
+    let started = std::time::Instant::now();
+    assert!(
+        !writer.finish_within(Duration::from_millis(100)),
+        "a live sender must keep the writer from being declared finished"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "the finish is bounded: {:?}",
+        started.elapsed()
+    );
+
+    // The detached writer thread leaves once the stuck holder is gone; nothing is asserted after
+    // it except that dropping the last sender does not panic the test process.
+    drop(bus);
+}
+
+#[test]
+fn finish_within_reports_a_clean_drain_once_every_sender_is_gone() {
+    let buffer = SharedBuffer::default();
+    let (writer, bus) = EventWriter::spawn(Box::new(buffer.clone()));
+    drop(bus);
+
+    assert!(
+        writer.finish_within(Duration::from_secs(3)),
+        "no senders are left, so the writer drains"
+    );
+    assert!(buffer.text().is_empty(), "nothing was queued");
 }

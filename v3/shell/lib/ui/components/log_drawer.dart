@@ -16,10 +16,24 @@ import '../theme.dart';
 enum _LogFilter { all, errors }
 
 class LogDrawer extends StatefulWidget {
-  const LogDrawer({super.key, required this.entries, this.onClose});
+  const LogDrawer({
+    super.key,
+    required this.entries,
+    this.onClose,
+    this.onOpenLogsFolder,
+    this.lastRunLogName,
+  });
 
   final List<LogEntry> entries;
   final VoidCallback? onClose;
+
+  /// Opens the install's `logs/` folder through the host seam. Null disables the action (e.g. a
+  /// surface with no host).
+  final VoidCallback? onOpenLogsFolder;
+
+  /// The last run's `<tool>.log`, shown in the action's label so the player knows what they will
+  /// find there; null before any run has finished.
+  final String? lastRunLogName;
 
   @override
   State<LogDrawer> createState() => _LogDrawerState();
@@ -73,6 +87,21 @@ class _LogDrawerState extends State<LogDrawer> {
                     onTap: () => setState(() => _filter = _LogFilter.errors),
                   ),
                   const Spacer(),
+                  if (widget.onOpenLogsFolder != null)
+                    TextButton.icon(
+                      key: const ValueKey('open-logs-folder'),
+                      onPressed: widget.onOpenLogsFolder,
+                      icon: const Icon(
+                        Icons.folder_open,
+                        size: ShellSize.iconSm,
+                      ),
+                      label: Text(
+                        widget.lastRunLogName == null
+                            ? 'Open logs folder'
+                            : 'Open logs folder — ${widget.lastRunLogName}',
+                        style: theme.textTheme.labelSmall,
+                      ),
+                    ),
                   if (widget.onClose != null)
                     IconButton(
                       key: const ValueKey('log-close'),

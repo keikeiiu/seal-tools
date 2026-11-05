@@ -12,7 +12,7 @@ use seal_domain::geometry::Point;
 use seal_domain::ocr::MatchedAttr;
 use seal_domain::tools::tuner::{
     GradeCycles, MouseGuard, MouseGuardStep, START_COUNTDOWN, SpringMode, SpringStep,
-    TunerDecision, TunerOutcome, TunerRead, TunerRun, TunerSettings,
+    TunerDecision, TunerOutcome, TunerRead, TunerRun, TunerSettings, UNCONFIRMED_READ_MESSAGE,
 };
 
 fn settings() -> TunerSettings {
@@ -28,11 +28,27 @@ fn settings() -> TunerSettings {
     }
 }
 
+/// A CONFIRMED read: the decision half refuses PARTIAL reads now, so the default fixture carries the
+/// three named attribute rows a real scan produces.
 fn read(grade: Option<&str>, remaining: Option<i32>) -> TunerRead {
     TunerRead {
         grade: grade.map(std::borrow::ToOwned::to_owned),
         remaining,
-        attributes: Vec::new(),
+        attributes: vec![
+            attr("STR", Some(1)),
+            attr("DEX", Some(1)),
+            attr("INT", Some(1)),
+        ],
+    }
+}
+
+/// A PARTIAL read: grade and spring count were read but one attribute row was lost — the issue #16
+/// shape that used to be decided on and counted as a repeat.
+fn partial_read() -> TunerRead {
+    TunerRead {
+        grade: Some("G".to_owned()),
+        remaining: Some(9),
+        attributes: vec![attr("STR", Some(1)), attr("DEX", Some(1))],
     }
 }
 
@@ -157,7 +173,11 @@ fn reaching_the_target_grade_with_no_filter_ends_the_run() {
 /// A read whose attribute satisfies a filter rule: the fixture both filter-passing tests use.
 fn read_matching_the_filter(grade: &str, remaining: i32) -> TunerRead {
     let mut read = read(Some(grade), Some(remaining));
-    read.attributes = vec![attr("增加傷害", Some(1))];
+    read.attributes = vec![
+        attr("增加傷害", Some(1)),
+        attr("STR", Some(1)),
+        attr("DEX", Some(1)),
+    ];
     read
 }
 
@@ -262,7 +282,7 @@ fn the_filter_status_is_the_reason_or_disabled() {
 fn a_total_read_failure_stops_and_does_not_count_as_a_repeat() {
     let mut run = TunerRun::new(settings());
 
-    let stop = stop_of(run.decide(&read(None, None)));
+    let stop = stop_of(run.decide(&TunerRead::default()));
 
     assert_eq!(stop.kind, StopKind::Error);
     assert_eq!(
@@ -270,6 +290,50 @@ fn a_total_read_failure_stops_and_does_not_count_as_a_repeat() {
         "Read failed — nothing recognised in the OCR region."
     );
     assert_eq!(run.consecutive_repeats(), 0);
+}
+
+/// Issue #16: after `tuner.ocr_retries` the core hands the decision half a PARTIAL read; deciding on
+/// it and counting repeats produced "same result x3" while springs were still on the panel. The first
+/// partial read stops with the explicit line, before any repeat is counted.
+#[test]
+fn a_partial_read_stops_with_the_confirming_error_and_never_reaches_the_repeat_detector() {
+    let mut run = TunerRun::new(settings());
+    let partial = partial_read();
+
+    let stop = stop_of(run.decide(&partial));
+
+    assert_eq!(stop.kind, StopKind::Error);
+    assert_eq!(stop.message, UNCONFIRMED_READ_MESSAGE);
+    assert_eq!(
+        run.consecutive_repeats(),
+        0,
+        "a partial read is not a repeat"
+    );
+    // Repeating the SAME partial read cannot build a chain either: every one is refused.
+    for _ in 0..2 {
+        assert_eq!(
+            stop_of(run.decide(&partial)).message,
+            UNCONFIRMED_READ_MESSAGE
+        );
+    }
+    assert_eq!(run.consecutive_repeats(), 0);
+}
+
+/// The domain's half of v2's `IsConfirmed` (it lives here with the check): grade, spring count and
+/// three named attribute rows are all required; every missing piece is a partial read.
+#[test]
+fn a_read_is_confirmed_only_with_grade_every_row_and_remaining() {
+    let complete = read(Some("DG"), Some(100));
+    assert!(complete.is_confirmed());
+    let mut missing_remaining = complete.clone();
+    missing_remaining.remaining = None;
+    assert!(!missing_remaining.is_confirmed());
+    let mut two_rows = complete;
+    two_rows.attributes.truncate(2);
+    assert!(!two_rows.is_confirmed());
+    let mut unnamed = read(Some("DG"), Some(100));
+    unnamed.attributes[0].name.clear();
+    assert!(!unnamed.is_confirmed());
 }
 
 /// Three identical results in a row is a stuck game: the same springs never came back.
@@ -298,9 +362,17 @@ fn three_identical_results_stop_the_run() {
 fn a_changed_attribute_value_breaks_the_repeat_chain() {
     let mut run = TunerRun::new(settings());
     let mut first = read(Some("G"), Some(50));
-    first.attributes = vec![attr("增加傷害", Some(1))];
+    first.attributes = vec![
+        attr("增加傷害", Some(1)),
+        attr("STR", Some(1)),
+        attr("DEX", Some(1)),
+    ];
     let mut changed = read(Some("G"), Some(50));
-    changed.attributes = vec![attr("增加傷害", Some(2))];
+    changed.attributes = vec![
+        attr("增加傷害", Some(2)),
+        attr("STR", Some(1)),
+        attr("DEX", Some(1)),
+    ];
 
     assert_eq!(run.decide(&first).decision, TunerDecision::Retry);
     assert_eq!(run.decide(&changed).decision, TunerDecision::Retry);
@@ -324,13 +396,14 @@ fn running_out_of_springs_is_reported_as_its_own_stop() {
         ">>> OUT OF SPRINGS <<<"
     );
 
-    // A missing remaining count is not "zero".
+    // A missing remaining count is not "zero": the read is PARTIAL, so it stops with the confirming
+    // line rather than claiming the springs ran out.
     let mut unknown = TunerRun::new(settings());
     unknown.begin_attempt();
-    assert_eq!(
-        unknown.decide(&read(Some("G"), None)).decision,
-        TunerDecision::Retry
-    );
+    let missing = stop_of(unknown.decide(&read(Some("G"), None)));
+    assert_eq!(missing.kind, StopKind::Error);
+    assert_eq!(missing.message, UNCONFIRMED_READ_MESSAGE);
+    assert_ne!(missing.message, ">>> OUT OF SPRINGS <<<");
 }
 
 /// Reaching the target outranks running out of springs: the read is the answer, whatever is left.
@@ -350,11 +423,11 @@ fn the_retry_ceiling_stops_the_run() {
 
     run.begin_attempt();
     assert_eq!(
-        run.decide(&read(Some("G"), None)).decision,
+        run.decide(&read(Some("G"), Some(50))).decision,
         TunerDecision::Retry
     );
     run.begin_attempt();
-    let stop = stop_of(run.decide(&read(Some("G"), None)));
+    let stop = stop_of(run.decide(&read(Some("G"), Some(50))));
     assert_eq!(stop.message, "[!] Max 2");
 }
 
@@ -368,7 +441,7 @@ fn an_unknown_grade_name_counts_as_reached_when_the_target_is_also_unknown() {
     settings.target_grade = "DG".to_owned();
     let mut run = TunerRun::new(settings);
 
-    let stop = stop_of(run.decide(&read(Some("mystery"), None)));
+    let stop = stop_of(run.decide(&read(Some("mystery"), Some(50))));
     assert_eq!(stop.message, ">>> mystery REACHED (no filter) <<<");
 }
 

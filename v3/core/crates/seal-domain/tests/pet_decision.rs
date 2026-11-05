@@ -684,6 +684,28 @@ fn a_drag_needs_the_food_strip_and_right_click_does_not() {
     right_click.slots[0].feeder_strip = None;
     assert!(ready(&right_click).is_ok());
 }
+
+/// PET-F14: Start and the run must read the mode the SAME way. `ready` used a plain
+/// `eq_ignore_ascii_case` while the visit used `FoodLoadMode`'s trimmed comparison, so a config value
+/// of `"drag "` (or `" DRAG"`) passed Start as a right-click run and then failed at `FoodPlace` with
+/// "the food strip doesn't divide …", a message that named the wrong fix entirely.
+#[test]
+fn a_trimmed_or_upper_case_drag_mode_is_read_the_same_way_by_ready_and_the_run() {
+    let mut padded = setup();
+    padded.food_load_mode = "  DRAG ".to_owned();
+    padded.slots[0].feeder_strip = None;
+    assert_eq!(
+        refusal(&padded),
+        "Row 1's food strip isn't drawn — save the Row food strip for row 1 on the Calibrate tab. The food load is set to drag, which has to name the box it drops into, and the strip is what says where the boxes are."
+    );
+
+    let mut padded = setup();
+    padded.food_load_mode = "  DRAG ".to_owned();
+    assert!(
+        ready(&padded).is_ok(),
+        "the padded drag value is a drag, and this setup has its strip"
+    );
+}
 #[test]
 fn a_cell_on_an_uncalibrated_page_is_refused_before_the_run() {
     let mut broken = setup();
@@ -834,4 +856,72 @@ fn the_dropped_log_is_absent_until_the_row_is_dropped() {
     // A wait never carries a drop log for a failure, and the failure never claims a next when dropped.
     let last = fold_back("Row 1", &failure, 2, 500, 5, "x");
     assert!(last.dropped_log.is_some());
+}
+
+/// PET-F13, as the invariants the review asked for — checked exhaustively over the ranges the config
+/// allows instead of with `proptest` (the crate has no dev-dependency for it and the workspace builds
+/// offline): a HIGHER rate never lengthens a row's interval, and a tray holding no more than one load
+/// never schedules past the cycle fallback.
+#[test]
+fn a_higher_rate_never_lengthens_the_interval() {
+    let settings = PetScheduleSettings {
+        items_per_minute: 1,
+        wait_after_empty_minutes: 5,
+        reload_on_start: false,
+    };
+    for items in [1, 60, 300, 600, 899] {
+        let mut previous: Option<(i32, f64)> = None;
+        for rate in 1..=30 {
+            let read = ScheduleRead {
+                boarding_running: true,
+                items_left: Some(items),
+                completion_minutes: None,
+                rate,
+                stacks: 2,
+                slot_occupied: true,
+            };
+            let next = schedule_for(&read, &settings).next_minutes;
+            if let Some((last_rate, last_next)) = previous {
+                assert!(
+                    next <= last_next + 1e-9,
+                    "rate {rate} ({next} min) is slower than rate {last_rate} ({last_next} min) \
+                     for {items} items"
+                );
+            }
+            previous = Some((rate, next));
+        }
+    }
+}
+
+#[test]
+fn a_tray_that_fits_one_load_never_schedules_past_the_cycle_fallback() {
+    for stacks in 1..=8 {
+        let settings = PetScheduleSettings {
+            items_per_minute: 1,
+            wait_after_empty_minutes: 5,
+            reload_on_start: false,
+        };
+        let load = load_items(stacks);
+        for rate in 1..=30 {
+            for items in [1, load / 2, load] {
+                let read = ScheduleRead {
+                    boarding_running: true,
+                    items_left: Some(items),
+                    completion_minutes: None,
+                    rate,
+                    stacks,
+                    slot_occupied: true,
+                };
+                let next = schedule_for(&read, &settings).next_minutes;
+                let fallback = cycle_minutes(stacks, rate, settings.wait_after_empty_minutes);
+                // One minute of slack: `load_minutes` reports WHOLE minutes (v2's card figure), so
+                // the fallback can sit just under a fractional `items / rate`.
+                assert!(
+                    next <= fallback + 1.0 + 1e-9,
+                    "{stacks} stacks, {items}/{load} items at {rate}/min: {next} min is past the \
+                     {fallback} min fallback"
+                );
+            }
+        }
+    }
 }

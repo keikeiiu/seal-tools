@@ -159,18 +159,13 @@ fn frame_for(state: &CoreState, id: &str, draft: &Draft) -> Result<Option<Value>
     let Some(frame_id) = &draft.frame_id else {
         return Ok(None);
     };
-    state
-        .frames
-        .get(frame_id)
-        .cloned()
-        .map(Some)
-        .ok_or_else(|| {
-            Box::new(fail(
-                id,
-                format!("unknown frame_id {frame_id:?} - capture the window again"),
-                "frame_id",
-            ))
-        })
+    state.frames.get_value(frame_id).map(Some).ok_or_else(|| {
+        Box::new(fail(
+            id,
+            format!("unknown frame_id {frame_id:?} - capture the window again"),
+            "frame_id",
+        ))
+    })
 }
 
 fn composition(c: &ColorComposition) -> Value {

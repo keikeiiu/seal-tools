@@ -24,6 +24,31 @@ use seal_domain::decision::Key;
 use seal_domain::geometry::{DisplayInfo, Point};
 use seal_tools::runner::{EffectError, Effects};
 
+/// A fresh display measurement for the closed-loop placement. v2 measured the window before every
+/// placement; a long run must not keep aiming at the window's run-start position. TOOL-F3.
+pub trait DisplayProvider: Send {
+    /// # Errors
+    ///
+    /// Returns the domain's missing-window line when the game window is gone or cannot be measured.
+    fn current(&mut self) -> Result<DisplayInfo, EffectError>;
+}
+
+/// The production window measurement: find the configured title and measure it again for this
+/// placement.
+#[cfg(windows)]
+struct WindowDisplay {
+    title: String,
+}
+
+#[cfg(windows)]
+impl DisplayProvider for WindowDisplay {
+    fn current(&mut self) -> Result<DisplayInfo, EffectError> {
+        let hwnd = seal_win::window::find_window(&self.title)
+            .ok_or_else(|| EffectError::new(seal_domain::tools::shop::window_missing().message))?;
+        seal_win::window::measure(hwnd).map_err(|error| EffectError::new(error.to_string()))
+    }
+}
+
 /// The production transport is `seal_board::serial::SerialTransport`; this layer only needs the
 /// trait, which is what makes the tests hardware-free.
 pub struct BoardEffects<T: Transport, C: Cursor, K: Clock> {
@@ -31,6 +56,9 @@ pub struct BoardEffects<T: Transport, C: Cursor, K: Clock> {
     cursor: C,
     clock: K,
     display: DisplayInfo,
+    /// When present, every placement re-measures the display. `None` keeps the run-start reading
+    /// (one-shot command effects and tests). TOOL-F3.
+    display_provider: Option<Box<dyn DisplayProvider>>,
     /// True between a successful `hold_left` and its release. `Drop` releases it, because a drag
     /// abandoned by a cancelled run would otherwise leave the host's button down — the same rule the
     /// spacebar hold follows, at the same seam.
@@ -44,8 +72,17 @@ impl<T: Transport, C: Cursor, K: Clock> BoardEffects<T, C, K> {
             cursor,
             clock,
             display,
+            display_provider: None,
             held_left: false,
         }
+    }
+
+    /// Re-measure the display on every placement. Production tool sessions use this with
+    /// `WindowDisplay`; tests inject their own provider. TOOL-F3.
+    #[must_use]
+    pub fn with_display_provider(mut self, provider: Box<dyn DisplayProvider>) -> Self {
+        self.display_provider = Some(provider);
+        self
     }
 
     /// The frame's display measurement, for the placement's logical goal.
@@ -68,8 +105,11 @@ impl<T: Transport, C: Cursor, K: Clock> BoardEffects<T, C, K> {
     ///
     /// # Errors
     ///
-    /// Returns the effect error when the board placement fails.
+    /// Returns the effect error when the display cannot be re-measured or the board placement fails.
     pub fn place_at(&mut self, at: Point) -> Result<(), EffectError> {
+        if let Some(provider) = self.display_provider.as_mut() {
+            self.display = provider.current()?;
+        }
         let target = self.display.cursor_target(at.x, at.y).logical;
         let placement = place(
             &mut self.transport,
@@ -135,13 +175,18 @@ impl<T: Transport, C: Cursor, K: Clock> Effects for BoardEffects<T, C, K> {
     }
 
     fn move_by(&mut self, dx: i32, dy: i32) -> Result<(), EffectError> {
-        self.write(BoardCommand::move_by(dx, dy))
+        // Refused at the grammar when the frame is outside ±9999 (HW-F11): the sketch would reject
+        // it, and a silently ignored move is a mis-aimed click.
+        let command =
+            BoardCommand::move_by(dx, dy).map_err(|error| EffectError::new(error.message()))?;
+        self.write(command)
     }
 
     fn hold_left(&mut self) -> Result<(), EffectError> {
-        self.write(BoardCommand::HoldLeft)?;
+        // Record the intent BEFORE the write so a timeout after the board received `L` is still
+        // released by `Drop` (TOOL-F13).
         self.held_left = true;
-        Ok(())
+        self.write(BoardCommand::HoldLeft)
     }
 
     fn release_left(&mut self) -> Result<(), EffectError> {
@@ -205,6 +250,20 @@ pub fn system_effects(
     BoardEffects::new(transport, WinCursor, RealClock, display)
 }
 
+/// The effects for a long-running tool: same seams, but every placement re-finds and re-measures the
+/// configured window instead of aiming with the run-start display. A moved/minimised game is then the
+/// domain's "game window not found" refusal, never a blind click. TOOL-F3.
+#[cfg(windows)]
+#[must_use]
+pub fn system_effects_for_window(
+    transport: seal_board::serial::SerialTransport,
+    display: DisplayInfo,
+    title: String,
+) -> BoardEffects<seal_board::serial::SerialTransport, WinCursor, RealClock> {
+    BoardEffects::new(transport, WinCursor, RealClock, display)
+        .with_display_provider(Box::new(WindowDisplay { title }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,6 +317,34 @@ mod tests {
         fn write_line(&mut self, wire: &str) -> Result<(), seal_board::transport::TransportError> {
             self.writes.borrow_mut().push(wire.to_owned());
             Ok(())
+        }
+
+        fn read_line(
+            &mut self,
+            _deadline: seal_board::transport::Deadline,
+        ) -> seal_board::transport::LineRead {
+            seal_board::transport::LineRead::Silent
+        }
+    }
+
+    /// Records the attempted write and fails the first one, then succeeds — the timeout-after-byte
+    /// shape TOOL-F13 is about.
+    struct FailFirstTransport {
+        writes: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+        failed: bool,
+    }
+
+    impl Transport for FailFirstTransport {
+        fn write_line(&mut self, wire: &str) -> Result<(), seal_board::transport::TransportError> {
+            self.writes.borrow_mut().push(wire.to_owned());
+            if self.failed {
+                Ok(())
+            } else {
+                self.failed = true;
+                Err(seal_board::transport::TransportError::new(
+                    "the board did not acknowledge the hold",
+                ))
+            }
         }
 
         fn read_line(
@@ -325,6 +412,54 @@ mod tests {
         fx.key(Key::Function(12)).expect("a function key");
 
         assert_eq!(fx.transport().writes(), vec!["K 1\n", "F 12\n"]);
+    }
+
+    /// TOOL-F3: the display is measured per placement, so a window moved between two clicks changes
+    /// the logical target instead of reusing the run-start origin.
+    struct MovingDisplay {
+        calls: usize,
+    }
+
+    impl DisplayProvider for MovingDisplay {
+        fn current(&mut self) -> Result<DisplayInfo, EffectError> {
+            self.calls += 1;
+            let origin = if self.calls == 1 { 100 } else { 200 };
+            Ok(DisplayInfo::from_rects(
+                Rect::new(origin, 40, 820, 640),
+                Rect::new(origin, 50, 800, 600),
+                Rect::new(origin, 50, 800, 600),
+                Size::new(1920, 1080),
+            ))
+        }
+    }
+
+    #[test]
+    fn a_moved_window_is_remeasured_before_each_click() {
+        let mut fx = BoardEffects::new(
+            FakeTransport::new(),
+            ScriptedCursor::new(vec![
+                Some((0, 0)),
+                Some((110, 70)),
+                Some((110, 70)),
+                Some((110, 70)),
+                Some((0, 0)),
+                Some((210, 70)),
+                Some((210, 70)),
+                Some((210, 70)),
+            ]),
+            StepClock::default(),
+            display(),
+        )
+        .with_display_provider(Box::new(MovingDisplay { calls: 0 }));
+
+        fx.click(Point::new(10, 20)).expect("first click");
+        fx.click(Point::new(10, 20)).expect("second click");
+
+        assert_eq!(
+            fx.transport().writes(),
+            vec!["D 110 70\n", "C\n", "D 210 70\n", "C\n"],
+            "the second placement must use the re-measured origin, not the run-start one"
+        );
     }
 
     #[test]
@@ -452,6 +587,31 @@ mod tests {
         let mut recorder = RecordingEffects::default();
         recorder.record_hold_and_release();
         assert_eq!(recorder.writes(), vec!["L\n", "l\n"]);
+    }
+
+    #[test]
+    fn a_failed_hold_is_still_released_on_drop() {
+        let writes = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut fx = effects(
+            FailFirstTransport {
+                writes: writes.clone(),
+                failed: false,
+            },
+            ScriptedCursor::new(vec![Some((100, 50))]),
+            StepClock::default(),
+        );
+
+        assert!(
+            fx.hold_left().is_err(),
+            "the transport timeout is reported to the runner"
+        );
+        drop(fx);
+
+        assert_eq!(
+            *writes.borrow(),
+            vec!["L\n", "l\n"],
+            "the release is still attempted after a failed press (TOOL-F13)"
+        );
     }
 
     #[test]

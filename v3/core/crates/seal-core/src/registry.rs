@@ -36,8 +36,10 @@ use crate::shop::ShopTool;
 use crate::spammer::{RealNow, SpammerTool};
 use crate::tuner::TunerTool;
 
-/// The merged config, shared between the dispatcher (publisher) and the registry (reader).
-pub type SharedConfig = Arc<RwLock<Value>>;
+/// The merged config, shared between the dispatcher (publisher) and the registry (reader). The inner
+/// `Arc<Value>` makes a reader's snapshot cheap and immutable (CORE-F11): a run keeps the config it
+/// started with without copying the whole tree, and the next publish swaps the pointer.
+pub type SharedConfig = Arc<RwLock<Arc<Value>>>;
 
 /// One run's two halves: the decision half the runner calls, and the effects it performs decisions
 /// with. They arrive together because a run cannot exist with only one of them.
@@ -128,11 +130,11 @@ impl ProductionRegistry {
         self
     }
 
-    fn config(&self) -> Value {
-        self.shared.read().map_or_else(
-            |poisoned| poisoned.into_inner().clone(),
-            |config| config.clone(),
-        )
+    fn config(&self) -> Arc<Value> {
+        match self.shared.read() {
+            Ok(config) => Arc::clone(&config),
+            Err(poisoned) => Arc::clone(&poisoned.into_inner()),
+        }
     }
 
     fn buy_session(&self, args: &Value) -> Result<Session, String> {
@@ -157,7 +159,7 @@ impl ProductionRegistry {
         let hwnd = seal_win::window::find_window(&title)
             .ok_or_else(|| seal_domain::tools::shop::window_missing().message)?;
         let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
-        let effects = crate::effects::system_effects(transport, display);
+        let effects = crate::effects::system_effects_for_window(transport, display, title.clone());
         let effects = wrap_dry_run(effects, args, self.logs.clone(), ToolId::Buy);
         Ok(Session {
             tool: Box::new(ShopTool::new(ToolId::Buy, plan)),
@@ -183,7 +185,7 @@ impl ProductionRegistry {
         let hwnd = seal_win::window::find_window(&title)
             .ok_or_else(|| seal_domain::tools::shop::window_missing().message)?;
         let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
-        let effects = crate::effects::system_effects(transport, display);
+        let effects = crate::effects::system_effects_for_window(transport, display, title.clone());
         let effects = wrap_dry_run(effects, args, self.logs.clone(), ToolId::Sell);
         Ok(Session {
             tool: Box::new(ShopTool::new(ToolId::Sell, plan)),
@@ -211,6 +213,7 @@ impl ProductionRegistry {
 
     fn tuner_session(&self) -> Result<Session, String> {
         let config = self.config();
+        let title = crate::win::configured_title(&config).map_err(|error| error.line())?;
         let root = self.store.config_dir().parent().map_or_else(
             || std::path::PathBuf::from("."),
             std::path::Path::to_path_buf,
@@ -228,7 +231,7 @@ impl ProductionRegistry {
             .map_err(|error| error.to_string())?;
         let (source, display) =
             crate::tuner::OcrTunerSource::open(&config, attributes, plan.region, &root)?;
-        let effects = crate::effects::system_effects(transport, display);
+        let effects = crate::effects::system_effects_for_window(transport, display, title.clone());
         let (click_enter_delay, ocr_delay) = crate::tuner::timings(&config);
         let tool = TunerTool::new(
             plan,
@@ -266,7 +269,7 @@ impl ProductionRegistry {
         let hwnd = seal_win::window::find_window(&title)
             .ok_or_else(|| seal_domain::tools::gem::window_missing().message)?;
         let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
-        let effects = crate::effects::system_effects(transport, display);
+        let effects = crate::effects::system_effects_for_window(transport, display, title.clone());
         Ok(Session {
             tool: Box::new(tool),
             effects: Box::new(effects),
@@ -315,7 +318,7 @@ impl ProductionRegistry {
         let hwnd = seal_win::window::find_window(&title)
             .ok_or_else(|| format!("game window not found — is {title:?} running?"))?;
         let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
-        let effects = crate::effects::system_effects(transport, display);
+        let effects = crate::effects::system_effects_for_window(transport, display, title.clone());
         Ok(Session {
             tool: Box::new(tool),
             effects: Box::new(effects),
@@ -513,7 +516,7 @@ mod tests {
 
     fn registry(config: Value) -> ProductionRegistry {
         ProductionRegistry::new(
-            Arc::new(RwLock::new(config)),
+            Arc::new(RwLock::new(Arc::new(config))),
             seal_config::ConfigStore::new(std::path::PathBuf::from(r"C:\not-used-by-these-tests")),
             Arc::new(crate::logs::Logs::disabled()),
         )
@@ -847,5 +850,28 @@ mod tests {
         write_key(&mut transport, Key::Function(2), true).expect("fast function key");
 
         assert_eq!(transport.writes(), vec!["K 1\n", "f 2\n"]);
+    }
+
+    #[test]
+    fn a_shared_config_snapshot_is_swapped_not_copied_per_reader() {
+        let first = Arc::new(serde_json::json!({"tuner": {"guard_px": 8}}));
+        let shared: SharedConfig = Arc::new(RwLock::new(Arc::clone(&first)));
+        let registry = ProductionRegistry::new(
+            Arc::clone(&shared),
+            seal_config::ConfigStore::new(std::path::PathBuf::from(r"C:\not-used")),
+            Arc::new(crate::logs::Logs::disabled()),
+        );
+
+        let before = registry.config();
+        assert!(
+            Arc::ptr_eq(&before, &first),
+            "the reader shares the snapshot"
+        );
+
+        let second = Arc::new(serde_json::json!({"tuner": {"guard_px": 12}}));
+        *shared.write().expect("not poisoned") = Arc::clone(&second);
+        let after = registry.config();
+        assert!(Arc::ptr_eq(&after, &second));
+        assert_eq!(after["tuner"]["guard_px"], 12);
     }
 }

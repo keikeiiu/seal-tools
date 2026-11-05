@@ -81,6 +81,9 @@ class _SetupTabState extends State<SetupTab>
   CoreActionResult<DisplayInfo>? _measure;
   CoreActionResult<BoardProbeResult>? _probe;
 
+  /// The last run-window preference save refusal, shown under the switches. Null when clean.
+  String? _runWindowError;
+
   @override
   void dispose() {
     _group.dispose();
@@ -176,6 +179,18 @@ class _SetupTabState extends State<SetupTab>
     setState(() => _probe = result);
   }
 
+  Future<void> _setRunWindowPreference(Future<ConfigSaveOutcome> future) async {
+    final outcome = await future;
+    if (!mounted) {
+      return;
+    }
+    setState(
+      () => _runWindowError = outcome.saved
+          ? null
+          : outcome.errorLines.join(' · '),
+    );
+  }
+
   /// Saves the title the last Find detected through the normal draft/Save path. Only the player's
   /// press can do this; no config write happens without it.
   Future<void> _useDetectedTitle() async {
@@ -245,6 +260,29 @@ class _SetupTabState extends State<SetupTab>
             ],
           ),
           EditorSection(
+            title: 'Appearance',
+            children: [
+              const ShellProse(
+                'Choose the shell look. Follow system tracks the Windows light/dark setting; '
+                'Light and Dark keep it fixed. The title bar follows the same choice.',
+              ),
+              const SizedBox(height: ShellSpace.sm),
+              Wrap(
+                spacing: ShellSpace.sm,
+                runSpacing: ShellSpace.sm,
+                children: [
+                  for (final mode in ShellThemeMode.values)
+                    ChoiceChip(
+                      key: ValueKey('setup-theme-${mode.wire}'),
+                      label: Text(mode.label),
+                      selected: model.themeMode == mode,
+                      onSelected: (_) => unawaited(model.setThemeMode(mode)),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          EditorSection(
             title: 'Quick dock',
             children: [
               const ShellProse(
@@ -298,6 +336,53 @@ class _SetupTabState extends State<SetupTab>
                 icon: const Icon(Icons.dashboard_customize_outlined, size: 16),
                 label: const Text('Open quick dock'),
               ),
+            ],
+          ),
+          EditorSection(
+            title: 'Run window',
+            children: [
+              const ShellProse(
+                'These two switches decide how the window behaves around a run. The default '
+                'collapses to the 360×96 run bar on Start and keeps the bar (with Full window) '
+                'after a run. Turning collapse off keeps the full window; turning return on '
+                'restores the window you started from (the quick dock if you started there).',
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              SwitchListTile(
+                key: const ValueKey('setup-collapse-on-run-start'),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text('Collapse to the run bar when a run starts'),
+                subtitle: const Text(
+                  'Off: keep the full window until you press the app-bar Mini action.',
+                ),
+                value: model.collapseOnRunStart,
+                onChanged: (value) => unawaited(
+                  _setRunWindowPreference(model.setCollapseOnRunStart(value)),
+                ),
+              ),
+              SwitchListTile(
+                key: const ValueKey('setup-return-after-run'),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text('Return to the previous window after a run'),
+                subtitle: const Text(
+                  'On: restore the full window or the quick dock when the run ends.',
+                ),
+                value: model.returnAfterRun,
+                onChanged: (value) => unawaited(
+                  _setRunWindowPreference(model.setReturnAfterRun(value)),
+                ),
+              ),
+              if (_runWindowError != null) ...[
+                const SizedBox(height: ShellSpace.xs),
+                Text(
+                  _runWindowError!,
+                  key: const ValueKey('setup-run-window-error'),
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
             ],
           ),
           EditorSection(

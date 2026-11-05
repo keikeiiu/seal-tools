@@ -19,6 +19,393 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-05 (49) — the Tuner's private capture button is gone
+
+With the shared Capture bar owning capture on the session tabs, the duplicate **Capture screen** button
+inside the Tuner session was redundant. In shared mode the right-side Tuner editor keeps its box
+fields, Check/Save and guidance, but the button is not rendered; the card points to the shared bar
+instead. Direct `SessionCalibrationsPanel` tests (shared mode off) keep the old private button, and the
+Calibrate widget tests now drive capture through the shared bar. The Tooltip's **Capture hover** is
+unchanged because it captures the live cursor anchor, not a generic screenshot.
+
+Verification: shell format/analyze clean, **380/380 tests**, Windows debug build.
+
+## 2026-11-05 (48) — screens can be deleted, with two confirmations
+
+The Screens shelf had no way to remove a stale screenshot; only FIFO eviction or a capture could get
+rid of it. Each mark/session screen tile now has a small delete action. It opens **two** dialogs:
+the first reports what uses the screen (targets/session) and that deleting clears those assignments;
+the second is the irreversible confirmation and explicitly states that **saved calibration
+coordinates are not deleted**. Only the second writes.
+
+Core `capture.discard` (`FrameCache::discard`) removes the live PNG/RGBA and is idempotent
+(`discarded:false` for an already-evicted id), so the shell can clean up after a cache race. The
+delete path never touches `config/` and never issues `calibration.save`; a saved mark remains
+fetchable with unchanged coordinates. Eviction is unchanged and still automatic.
+
+Verification: Rust fmt/clippy/rustdoc clean; **95 suites, 1,357 passed, 0 failed, 6 ignored**. Shell
+format/analyze clean; **380/380 tests**, Windows debug build. Commit attached to this entry.
+
+## 2026-11-05 (47) — Tuner and Tooltip reuse the shared Screens bar
+
+The mark tools had per-target screens; the two sessions still owned a private capture. The session
+tabs now show the same capture bar and Screens strip, and reuse the selected shared screen:
+
+- **Tuner `034d3cb`:** the existing right-side three-box editor is unchanged. Its Capture screen
+  button delegates to the shared capture action, the picture comes from the selected shared frame,
+  Check runs against that frame, and Save requires a Check for the current frame. Selecting another
+  screen clears the Check and disables Save until Check boxes runs again.
+- **Tooltip `034d3cb`:** the selected shared screen becomes the visual background for the offset
+  fields. Capture hover remains the live cursor-anchor action for Test read; the right-side layout is
+  unchanged.
+- Each session remembers its own selected screen; sessions do not participate in the mark tools'
+  per-target assignment map. Switching away and back restores the session's screen.
+- The page scroll fallback at short heights now covers session tabs; `UI.md` documents the shared
+  session capture rule.
+
+Verification: `flutter analyze --fatal-infos` clean, `dart format` clean, **379/379 tests**, Windows
+debug build. No Rust change; the twelve-frame cache from `ae1bfaa` is the limit.
+
+## 2026-11-05 (46) — calibration screens become per-target instead of one shared frame
+
+The Calibrate page used one selected frame for every mark tool and let a tool with no frame adopt the
+newest shelf capture. That is wrong for the actual game: the Buy/Sell window, the Gem Composer and the
+Pet panels cannot be open together, so a Pet target could be shown on a Shop frame. The design pass
+(`a86500a`, with the plans-board row and the alignment fix in `cbb79ef`/`5a3e1e5`) proposed a
+persistent Screens strip, an explicit Screen selector per target and session-only assignments.
+
+Implementation:
+- **Core `ae1bfaa`:** `FrameCache` keeps 12 live frames instead of four, so a whole calibration pass
+  can be captured before saving. PNG bytes + lazily decoded RGBA stay as before; PROTOCOL/CALIBRATION
+  and the capacity test move to 12.
+- **Shell `c5a964f`:** every mark target has its own assigned screen (`kind`/`kind@target`); a new
+  capture auto-assigns only when the selected target has none. The capture action now lives in each
+  mark tool's capture bar. A Screens strip under it previews captures (newest first, tool-labelled,
+  assignment count), and the editor's Screen row / *Use “Shop · 1” for this target* action performs
+  the assignment. Save is disabled until the target has a live assigned screen and the preview
+  matches it. A different tool never borrows another tool's frame. Evicted screens clear their
+  assignments with a warning; assignments are session-only and saved marks still store no frame id.
+- At the 680 px minimum the page scrolls as one block; the fixed cockpit remains for normal windows.
+
+Verification: shell `flutter analyze --fatal-infos` clean, `dart format` clean, **378/378 tests**,
+Windows debug build; Rust fmt/clippy/rustdoc clean, **95 suites, 1,356 passed, 0 failed, 6 ignored**.
+The earlier four-frame assumption is gone from the specs; historical entries above keep their original
+counts.
+
+## 2026-11-05 (45) — the grade ladder becomes colour-only and its minimum selector moves up
+
+The first ladder pass over-explained itself: flag/shield/play icons and `target`/`minimum`/`start`
+words inside each node, plus a legend underneath, made the static path busier than the chips it
+replaced.
+
+- **Nodes are just the grade.** Colour carries the role: primary fill/border = target, warning
+  fill/border = minimum, info fill/border = start, neutral surface = unmarked. When one grade is
+  both target and minimum, the primary fill shows target and the warning border shows the floor.
+- **No visible role wording or icons.** `Semantics` still expose `<grade> · target` etc. for screen
+  readers, so colour is not the only channel for assistive technology.
+- **Tuner's minimum selector is now next to the target.** The `Require grade` control moved out of
+  Filter into Grades, labelled **Minimum grade (filter)**; both markers therefore have their
+  controls directly under the ladder. The key stays `require-grade`.
+- Tests now assert the accessible role labels instead of the removed legend/words.
+
+Verification: full shell gate **375/375**, analyze `--fatal-infos` clean, format clean, Windows debug
+build green.
+
+## 2026-11-05 (44) — Tuner and Gem share one readable grade ladder
+
+Both tabs rendered the same fixed ladder two different ways: Tuner as `N · G · DG…` text, Gem as a row
+of chips. Neither explained what the selected grade *did*.
+
+- **One component** (`GradeLadder`, `ui/components/grade_ladder.dart`): a read-only `N → G → DG → …`
+  path with arrow connectors and role markers — **target** (flag), **minimum** (shield), **start**
+  (play) — each with a word legend. The active side of the path is highlighted; the role is never
+  colour-only.
+- **Tuner** passes its draft `target_grade` and filter `require_grade`; **Gem** passes its
+  `start_grade`. Existing element keys (`grade-order-<grade>`, `gem-grade-<grade>`) and caption keys are
+  preserved, so the fixed-ladder tests keep proving there is no add/remove control.
+- The ladder scrolls horizontally rather than wrapping at narrow widths, and the old look-tappable
+  chips/plain text are gone.
+
+Verification: new component tests for target/minimum/start roles, Tuner and Gem role integration;
+full shell gate **375/375**, analyze `--fatal-infos` clean, format clean, Windows debug build green.
+
+## 2026-11-05 (43) — Pet Feeder gets the calmer two-column setup
+
+The Pet tab was the longest single scroll in the app: readiness, rows, queue, add-pet, bag scan, 8×8
+food grid, return slot, loading, timing, portable feeding and the reference panel all in one column.
+This implements the approved Pet design study without dropping an editor.
+
+- **Two-column layout at ≥900 px:** readiness + summary span the page; rows/queue/add-by-icon are the
+  left column, bag scan/food cells/return slot/food loading the right. Narrow windows stack.
+- **Summary strip:** rows, queued pets, marked food cells and the next pet, so the common question is
+  answered before opening an editor.
+- **Timing & thresholds disclosure:** action wait, wait-after-empty, count thresholds and the portable
+  feeding fields are one collapsed `ExpansionTile`; the tests open it explicitly so every field keeps
+  its coverage.
+- **Shorter copy:** the page description and section descriptions were trimmed; the demo's prose wall
+  was the main source of the "too much" feeling.
+
+Verification: Pet tests **44/44**, full shell `flutter test --no-pub` **372/372**, analyze
+`--fatal-infos` clean, format clean, Windows debug build green. UI spec and both guides updated.
+
+## 2026-11-05 (42) — Phase 1 and Phase 2 review work, except engine/library swaps
+
+The player asked to finish the remaining Phase 1 and Phase 2 review findings, leaving out anything
+that needs an engine or library swap. The work landed in focused commits (one per finding where the
+change was separable; the large cross-crate groups name their ids):
+
+- **OCR** (`0da1994`): F1 unclipped crop, F2 bbox-bounded scoring/contour work, F3 det max-side and
+  padding, F4 corner order, F5 left-to-right grade line, F9 one shared model set, F10 optional
+  classifier, F12 cubic/area upscale, F14 fixed-layout reads skip detection, F16 allocation-light
+  contour tracing.
+- **Config/board/HW** (`1b1f1c3`, `f0bfa43`, `5caf9eb`): HW-F3/F4/F5 migration + verify + durable
+  fsync/retry, HW-F6/F7/F8/F9/F10/F11 firmware/serial/placement work, HW-F13 RAII cleanup of the
+  existing GDI backend, HW-F14 foreign keys (earlier), HW-F15 corrupt-file quarantine; CORE-F15
+  rejects absolute/UNC artifact references.
+- **Pet/tools** (`e2f2d3d`, `252e458`, `07bbcc6`): PET-F8/F9/F11/F12/F13/F14/F15/F16, TOOL-F10's
+  lease check surface, TOOL-F11/F12/F15/F16, TOOL-F13 press-intent-before-write.
+- **Core** (`a72cbf4`, plus `ddffd1a`): CORE-F7/F8/F10/F12/F14; CORE-F9 framing (earlier).
+- **Shell** (`f8dd35f`, `b6bd31e`, `2012172`, `43daee9`): SHELL-F3 single frame decode,
+  SHELL-F6 dirty-draft close guard, SHELL-F9 release gates/checksums/no-signing, SHELL-F10 pubspec as
+  version source, SHELL-F11 generated notices.
+- Tooling: `991feaf` greens the strict clippy/rustdoc gates, `e088d0a` fixes the frame-cache test's
+  harness height.
+
+**Deliberately excluded:** OCR-F6 (DirectML/multi-thread runtime engine), OCR-F13 (recogniser model
+swap), SHELL-F13 (l10n framework), SHELL-F14 (protocol codegen), CORE-F13 (typed schema codegen),
+HW-F12 (Windows.Graphics.Capture/DXGI), and real code signing (needs an external certificate).
+
+Later in the same round: **SHELL-F5** (`ce09009`) scoped event/log rebuilds to the widgets that
+render them (cards/mini/dock self-listen; logs drawer/status/connecting view own their listener) and
+**TOOL-F10** (`1aa9ce7`) gave long calibration sequences a real held lease — the supervisor refuses
+starts, game requests and other pointer actions while the 21-step gem cycle owns the game. The OCR
+regression runner landed as `ocr_eval` with the `fixtures/ocr` schema (`6397fe2`, OCR-F11); the
+model-free half of OCR-F15 (`23efff6`) matches one-character substitutions by bounded edit-distance
+windows; HW-F7's FW_VERSION 3 is now pinned in the v2 sketch test too (`e968b10`). CORE-F11's frame
+layer landed in `aedf627`: FrameCache keeps raw PNG bytes plus a once-decoded RGBA image instead of
+base64 `Value`s, so scans/crops no longer re-decode and base64 is re-encoded only for a response. Its
+config half followed in `f38b009`: `SharedConfig` is now an `Arc<RwLock<Arc<Value>>>`, so readers
+clone a pointer and a publish swaps it. OCR-F11 gained a real seeded tuner-panel case and baseline
+regression gating in `d4f624f`/`108e1dd`: normalization ignores segmentation/punctuation, the first
+run records the baseline, and later runs fail only on an exact-rate drop or CER rise >0.01.
+
+**Known gaps in this batch:** OCR-F15's full CTC/logit scorer still needs retained model logits (the
+model-free substitution fallback is in); HW-F7's firmware is now flashed and verified as **protocol
+level 3** on the real board, but the 3-second watchdog release remains a manual behavioural check;
+SHELL-F15's README rewrite stays at publish per CUTOVER; the OCR corpus has one real case and should
+grow toward the planned ~50.
+
+Verification: Rust fmt/clippy/rustdoc clean; `cargo test --workspace --offline` **95 suites, 1,355
+passed, 0 failed, 6 ignored**. Shell analyze clean and **371/371** tests. The v2 firmware sketch test
+is 4/4. The launcher was rebuilt and restarted on the new binaries.
+
+## 2026-11-05 (41) — the remaining Claude-review Phase 0 fixes
+
+The player asked to work the still-open review items one by one. All ten Phase-0 findings left after
+the earlier batch (and TOOL-F7's tuner half, already done in the SEAL-1 work) landed, each with a
+regression test and its own commit:
+
+- **PET-F2** (`68f64a5`): the scheduled wait is now subtracted from every row's relative schedule, so
+  a timer-due row is acted on even when its slot/feeders stay unreadable; it no longer reschedules the
+  configured cycle forever.
+- **PET-F4** (`2db798e`): every input step re-checks the game foreground; Open defers, a lost
+  foreground drops queued input, failed VerifyEmpty/ScanPage reads abandon the visit, and no Close
+  click is sent when the game is gone.
+- **TOOL-F3** (`fdb427b`): `BoardEffects` takes a `DisplayProvider`; production tool sessions re-find
+  and re-measure the configured window per placement, so a moved/minimised game is the domain's
+  `window_missing` line rather than a blind click at stale coordinates.
+- **CORE-F3** (`6e365df`): a `DoneGuard` catches worker panics and always sends the exit (slot freed,
+  shutdown returns); a panic hook writes the panic + backtrace to `error.log`; the dispatcher is
+  wrapped in catch-unwind; a dead supervisor is `Internal`, not `not_running`.
+- **CORE-F4** (`fc8b75b`): the dispatcher refreshes `state.config` from the shared mirror when a
+  worker bumped the revision and only republishes when the command itself wrote; `bump_revision` uses
+  the shared counter.
+- **HW-F1** (`f9cb667`): one `merge_with_policy` now routes all three config merges; `presets` and
+  `sequences` are replaced whole, so a deleted flow/sequence stays deleted.
+- **HW-F2** (`b52c7f1`): backups are fsynced; the transaction marks a successful commit with
+  `journal.done` (checked) and recovery never rolls a committed save back; a missing backup refuses a
+  partial restore.
+- **CORE-F2** (`134e4d3`): `StateCell` publishes through an observer; the worker emits a live `state`
+  event for every status change while running (never after Stopping), so cards update mid-run.
+- **CORE-F5** (`65795db`): the grade colour crop uses the image dimensions, not the area's, so a
+  non-zero-origin grade box no longer silently disables the fallback.
+- **PET-F7** (`302ec17`): fold outcomes (strike count included), dropped-row reasons and veto notes
+  reach `pet.log`; every-row-failed is an error stop.
+
+Verification: workspace clippy/fmt/rustdoc clean; `cargo test --workspace --offline` **94 suites,
+1,254 passed, 0 failed, 6 ignored**. Shell source was not touched by this series.
+
+## 2026-11-04 (40) — Calibrate above the fold, readable light labels, and a quick appearance menu
+
+First UI pass after the capture-once work, driven by the review rather than the backend:
+
+- **Above-the-fold Calibrate:** the fixed workspace now fills the height left after the header/tool tabs.
+  The capture shelf, display environment + Detect, and the stored-marks table moved behind the compact
+  capture bar's **Captures / Details / Stored marks** dialogs, so the canvas is visible at the default
+  720 px window instead of below the panels. The canvas height is responsive, and the page no longer
+  scrolls for mark tools.
+- **Light-mode labels:** calibration overlay labels pick white or black text from their background's
+  luminance; the fixed green/blue/amber palette no longer leaves white-on-amber labels.
+- **Tool order/naming:** tabs are now Buy / Sell → Gem Composer → Magic Tuner → Pet Feeder → Tooltip
+  (Pet is not the default; the shop tab remains first). The target panel is titled "Buy / Sell targets"
+  rather than "Shop targets"; Mark/Gem/Pet titles follow the same naming.
+- **Ergonomics:** the target/inspector panes have visible scrollbars with controllers, the three-column
+  breakpoint dropped from 980 to 850 so the 1120 minimum still fits with the rail, and a narrow-layout
+  hint points at Ctrl+B. The top bar gained a quick appearance menu (Follow system / Light / Dark)
+  alongside Setup → Appearance.
+
+Verification: `flutter analyze --fatal-infos` clean, `dart format` clean, shell `flutter test --no-pub`
+**356/356**, Windows debug build green. UI spec and both user guides updated.
+
+## 2026-11-04 (39) — Appearance: light / dark / follow-system lands on the calibration branch
+
+The calibration branch had stayed dark-only while the appearance work lived on `v3-core`. The player
+asked for the toggle here, so the existing implementation was ported rather than reinvented.
+
+- Both `ThemeData` brightnesses now come from `buildShellTheme(brightness:)`; `ShellColors` has a light
+  semantic set, and `ShellApp` maps the model's `ShellThemeMode` to `ThemeMode` on `MaterialApp`.
+- **Setup → Appearance** offers Follow system / Light / Dark and saves immediately as the portable
+  `settings.ui.theme` (`system|light|dark`; default dark so existing installs do not change on upgrade).
+- The native title bar follows the same choice through the runner's `setTitleBarTheme(0|1|2)` host call;
+  system mode keeps following Windows when the system setting changes.
+- Core `ensure_portable_ui` seeds the `theme` leaf so a hand-edited or reloaded config carries it.
+
+Verification: shell `flutter analyze --fatal-infos` clean, `dart format` clean, `flutter test --no-pub`
+**355/355**, Windows debug build green; `seal-config` tests **24/24**. The `seal-core` config integration
+test could not link in this environment because the offline ONNX Runtime is absent; the store/config
+crate coverage for the new portable leaf is green.
+
+## 2026-11-04 (38) — the mark workspace becomes a fixed canvas with independently scrolling sides
+
+The demo's central promise is that the game frame and the fields editing it never scroll away from
+each other. The mark workspace now has that shape at wide widths.
+
+- **Fixed 620 px pane:** target tree, canvas and inspector share one fixed-height row. The left tree and
+  the right inspector each scroll inside their own column; the canvas stays put.
+- **Pinned actions:** Revert/Save and their result lines were extracted into a separate action bar under
+  the scrolling inspector, so Save is always visible without scrolling the fields away from the frame.
+  Narrow windows keep the stacked layout with the actions inside the mark panel.
+- **Tests:** a new test checks the 620 px pane, scrolls the inspector and asserts the frame's top-left
+  does not move and the inner scroll position advanced. Save taps now ensure the button is visible first,
+  matching the new scrollable inspector.
+- **Docs:** UI spec and both user guides describe the fixed canvas, independent scrolling, and pinned
+  actions.
+
+Verification: `flutter analyze --fatal-infos` clean, `dart format` clean, `flutter test --no-pub`
+**352/352**, Windows debug build green.
+
+## 2026-11-04 (37) — each mark tool keeps its own live capture; the shelf moves above the workspace
+
+Continuing the capture-once slice: the tool tab now owns its frame, not just its target list.
+
+- **Per-tool capture memory:** `_toolFrameIds` records which live frame each mark tool captured or
+  selected. Switching tabs restores that tool's frame; a tool with no mapping adopts the newest live
+  shelf frame instead of starting blank, and selecting a shelf frame assigns it to the active tool.
+- **Eviction/refusal hygiene:** when the core's four-frame FIFO evicts a frame, or the core refuses an
+  id as unknown, the tool mapping pointing at it is removed so no tab can offer a dead frame.
+- **Capture shelf moved** from the target-tree column to full width above the mark workspace: the strip
+  sits under the tool tabs, matching the design study's capture-first order. The target-tree column is
+  now only what the tool can calibrate.
+- **Frame provenance visible:** the canvas caption now includes `frame <id>`, so the active frame is
+  unambiguous while the test and the player switch tools.
+- Tests cover Shop→Pet→Shop frame restoration (f1, f2, f1), plus the moved shelf and existing flows.
+
+Verification: `flutter analyze --fatal-infos` clean, `dart format` clean, `flutter test --no-pub`
+**351/351**, Windows debug build green. UI spec and both user guides updated in the same commit.
+
+## 2026-11-04 (36) — Calibrate gets tool tabs; sessions move into their tool workspace
+
+First implementation slice of the approved capture-once UX (`calibrate-capture-once.html` design
+study). The player picks what to calibrate first, and the Tuner/Tooltip sessions stop living below the
+stored-marks table.
+
+- **Tool tab row:** Buy / Sell (Shop), Gem Composer, Pet Feeder, Magic Tuner, Tooltip, between the page
+  header and the workspace.
+- **Mark tabs scope the tree:** the target tree now names the active tool and lists only that tool's
+  kinds/instances. The kind picker still offers all 17 marks; choosing another tool's kind moves the tab
+  with the selection, so the two pickers cannot disagree.
+- **Session tabs host the session:** Magic Tuner and Tooltip replace the mark workspace with their
+  session panel (one capture, split picture/controls). The page header hides its mark capture/refresh
+  actions on those tabs because the session owns the capture.
+- **No below-fold sessions:** the global Sessions panel, its header shortcut, and the target-tree
+  session rows are gone. Both session workspaces stay mounted in an `IndexedStack`, so switching tabs
+  keeps the captured frame and typed fields.
+- The scoped tree is guarded for a tool with no mark group (Tuner/Tooltip), and the tuner section now
+  renders its status line so a Save result is visible where the action happened.
+
+Verification: `flutter analyze --fatal-infos` clean, `dart format` clean, `flutter test --no-pub`
+**350/350**, Windows debug build green. Docs (UI spec and both user guides) updated in the same commit.
+
+## 2026-11-04 (35) — one capture per tuner; calibration units grouped by tool
+
+Three UX corrections after the session design:
+
+- **Tuner is one capture again.** v2 captured the status screen once and drew the three OCR boxes and
+  the spring point. v3 had split the spring point into a normal mark, so the player needed one Captures
+  capture for it and a second session capture for the OCR boxes. Spring point is no longer a
+  presentation mark; it is set inside the Tuner session, which already carries it to
+  `tuner.spring_point`. The core still serves the 18-kind table; the shell presents 17 marks.
+- **The target tree groups by consuming tool.** Each tool's marks and its sessions now sit under the
+  same group header; the separate global SESSIONS section is gone, and Pet's tooltip session lives
+  under Pet, Tuner's session under Tuner.
+- **The Pet crops/rows session was removed.** It duplicated the nine Pet marks already in the upper
+  editor. The mark editor is now the single place for Pet geometry; rows/queue/food cells stay on the
+  Pet tab. This also removes one capture and two duplicate Save paths from the screen.
+
+Verification: shell `flutter analyze --fatal-infos` clean, `flutter test --no-pub` 351/351, format
+clean; Windows debug/release builds green.
+
+## 2026-11-04 (34) — the Tuner 3-box and Tooltip sessions get a real UI design
+
+The two session-shaped calibrations were already wired to the core, but their panel read as three
+anonymous rows of x/y/w/h fields with one mark on the picture. Asked for the missing UI design, this
+increment keeps the payloads and tests and rebuilds the presentation:
+
+- **Canvas overlay:** `CalibrationFramePicture` gained `overlayMarks` (id, mark, label, colour), painted
+  under the selected/editable mark. It is generic: the tuner passes the two non-selected boxes and the
+  tooltip passes the placed cursor point.
+- **Tuner OCR 3-box:** numbered Capture → Draw → Check/Save steps; one card per box with its colour dot,
+  target chip, status size and x/y/w/h fields; green/blue/amber overlays on the picture. Check now
+  renders a result card (region, derived row pitch, grade, remaining, filter verdict, matched rows)
+  instead of only a status line.
+- **Tooltip offset + shape:** two step cards (hover point, then panel box/offset), the offset formula
+  as a mono line (`cursor + offset = panel top-left`), a pink cursor crosshair on the captured frame,
+  and a bordered **Read result** card for Test read lines.
+- **Discoverability:** the same numbered step strips and cards make both sessions read as guided flows
+  under Calibrate's stored table; typed fields stay authoritative and the existing element keys remain.
+- **Follow-up — selection and recapture:** the **SESSIONS** rows in Targets are now selectable exactly
+  like kind rows (selected state + jump to the matching card), the page header gained a **Sessions**
+  shortcut, and the tuner's **Capture/Recapture screen** button moved to the top of its card beside the
+  **Target to drag** chips. The selected tuner box also stays drawn after a drag (the first pass hid
+  it), and the card carries an explicit drag-on-picture hint.
+- **Follow-up — screen beside the controls:** each session is a split workspace at wide widths: the
+  captured frame stays fixed on the left (380 px fit) and the target cards/fields scroll in a 470 px
+  pane on the right, so a drawing drag and the box it edits are visible together instead of requiring
+  a page scroll between the picture and the fields. Narrow layouts stack them. The tuner's
+  Capture/Recapture button and target chips sit above the split; the tooltip's placeholder explains
+  where the captured panel will appear before the first hover.
+- Tests pin the new box cards, step chips, all-box/cursor overlays, the 19 px pitch + 300×200 region
+  summary, the Read-result card and the session target selection/scroll; the full shell gate is
+  **353/353**, analyze `--fatal-infos` clean, format clean and the Windows debug build OK.
+## 2026-11-03 (34) — Appearance: light, dark or follow Windows
+
+The player asked for a Setup choice of light / dark / follow-system. The shell had been dark-only, so
+this increment makes both `ThemeData`s first-class instead of flipping a colour: `buildShellTheme` takes
+a `brightness`, `ShellColors` gained a light set (semantic roles tuned for the light surface), and
+`ShellApp` maps the model's `ShellThemeMode` to `ThemeMode` on `MaterialApp`.
+
+- **Persistence:** portable `settings.ui.theme` (`system|light|dark`), default **dark** so an install
+  that predates the setting keeps its look; `ensure_portable_ui` carries the leaf and the core config
+  test covers apply/local/reload/hand-written values alongside the other `ui` fields.
+- **Setup:** a new **Appearance** section offers Follow system / Light / Dark; the choice saves
+  immediately and the shell rebuilds through the model notifier.
+- **Native chrome:** the runner gained `setTitleBarTheme(0|1|2)` over `seal/host`. `Win32Window` keeps
+  the chosen mode so `WM_DWMCOLORIZATIONCOLORCHANGED` re-applies an explicit light/dark choice instead
+  of snapping back to Windows, while system mode keeps following Windows.
+- **Tests:** `ShellApp`'s ThemeMode/theme extension mapping, the model's save/restore + title-bar calls,
+  and the Setup chip payload. Shell **336/336**, analyze `--fatal-infos` clean, format clean, Windows
+  debug build incl. the runner change OK; core config test green.
+
 ## 2026-11-02 (33) — the shell lint/quality gate gets sharper
 
 Asked what could be done for lint/code quality on the Flutter frontend. The answer was to make the

@@ -14,11 +14,19 @@ phases, rows, counts and sentences still come from the core's `state`/`log`/`ref
 `lib/ui/tokens.dart` is the single place a new value comes from (`lib/ui/theme.dart` re-exports it and
 builds the `ThemeData`).
 
-- **Colour.** `ColorScheme.fromSeed(0xFF3B82F6, dark)` is kept. A `ShellColors` `ThemeExtension` adds
-  the meanings M3 does not name: `success` #7EE2B8 (+ `onSuccess`, `successContainer`,
-  `onSuccessContainer`), `warning` #F2CC7B (+ its pair/container), `info` #9ECAFF. `blocked` is
-  `colorScheme.error`. Colour is never the only channel: chips carry a dot + word, selected cells a
-  check, banners an icon.
+- **Colour.** `ColorScheme.fromSeed(0xFF3B82F6, brightness)` builds both themes. A `ShellColors`
+  `ThemeExtension` adds the meanings M3 does not name: dark uses `success` #7EE2B8 (+ `onSuccess`,
+  `successContainer`, `onSuccessContainer`), `warning` #F2CC7B (+ its pair/container), `info` #9ECAFF;
+  light installs the matching darker `success`/`warning`/`info` plus inverted containers so a StatusChip
+  keeps AA contrast on the light surface. `blocked` is `colorScheme.error`. Colour is never the only
+  channel: chips carry a dot + word, selected cells a check, banners an icon.
+- **Brightness.** Setup's **Appearance** section offers **Follow system / Light / Dark**; the shell
+  installs both `ThemeData`s on `MaterialApp` and maps the choice to `ThemeMode`. The choice is the
+  portable `settings.ui.theme` (`system|light|dark`, default `dark` so the original shell does not
+  change appearance on upgrade). The native title bar follows the same choice through the runner's
+  `setTitleBarTheme` host call (`0` system, `1` light, `2` dark), and re-follows Windows when the
+  system setting changes in system mode. The top bar also carries a quick appearance menu (system/light/
+  dark) so the choice is reachable without opening Setup.
 - **Type.** The `textTheme` is declared explicitly: `headlineSmall` 22/600 (page title),
   `titleMedium` 16/600 (card/dialog), `titleSmall` 14/600 (section), `labelLarge` 13/600,
   `bodyMedium` 14/400 (body/prose), `bodySmall` 12.5/400 (meta — never prose alone), `labelSmall`
@@ -233,17 +241,22 @@ screen: Save.
 - **Foldable advanced sections.** `FoldableSection` holds diagnostics that are not part of a normal
   run: Tuner (OCR retries, save captures, capture cleanup), Gem (save empty captures), Quest (cursor
   guard). Folded by default; the controls keep their keys.
-- **Tuner** (`spammer`-style panels): Grades (plain-text fixed ladder — the audit's "read-only chips
-  look tappable" fixed), Timing, Springs, Filter (rules/overrides with tonal Add, outlined per-row
-  delete), Advanced (folded); geometry in the aside. The aside also carries the demo's **Last run**
+- **Tuner** (`spammer`-style panels): Grades (the shared **GradeLadder** path `N → G → DG → XG → SG`,
+  read-only; the target grade uses the primary fill and the filter's `require_grade` a warning
+  border/fill, with no extra icon or word inside the node. The **Target grade** and
+  **Minimum grade** selectors sit directly beneath the ladder; the old Require-grade dropdown in
+  Filter moved here so both roles have their controls in the same place.
+  Timing, Springs, Filter (rules/overrides with tonal Add, outlined per-row delete), Advanced (folded);
+  geometry in the aside. The aside also carries the demo's **Last run**
   panel once a run has finished: the core's `tool.finished` `summary` (Grade, Attempts, Captures saved,
   Stopped by) plus the local `ended_at`; the panel is absent before the first finish and never invents
   a placeholder run.
 - **Spammer**: Presets (editing/active pickers, tonal Add/Rename, outlined Duplicate/Delete; selection
   actions hidden when the preset list is empty) · Keys & cooldowns (opening, priority key rows) ·
   Rotation — combos.
-- **Gem**: Grades, Empty result, Movement; calibrated positions/slots/result area in the aside;
-  save-empty-captures folded.
+- **Gem**: Grades (the same **GradeLadder**; the start grade uses the info fill, no extra word or
+  icon inside the node), Empty result, Movement; calibrated positions/slots/result area in
+  the aside; save-empty-captures folded.
 - **Quest**: Active selection (empty sequence reads as "flow only"), Flows, Sequences; empty lists are
   `EmptyState` with a next action; cursor guard folded.
 - **Buy / Sell are split screens** (`BuySellTab(section: buy|sell)`): Buy edits/saves the `presets`
@@ -255,6 +268,12 @@ screen: Save.
 
 ## Pet (landed 2026-10-30)
 
+- **Layout:** readiness and a one-line summary (rows · queued · food cells · next pet) span the page.
+  Below, at wide widths, the setup is two columns: **rows + queue + add-by-icon** on the left;
+  **bag scan + food cells + return slot + food loading** on the right. **Timing & read thresholds** and
+  the portable **Feeding** fields are folded into one **Timing & thresholds** disclosure, collapsed by
+  default; narrow windows stack the columns. This removes the previous single 10-panel scroll without
+  dropping any editor.
 - **Readiness first:** a `StatusBanner` whose kind is the core's verdict (`pet.preflight`: success ready,
   warning not-ready, error on a refusal, info while reading) with **Refresh checklists** as a text
   action. Below it, a panel of per-item checklist rows (icon + label + detail) and the core's readiness
@@ -279,27 +298,62 @@ screen: Save.
 
 ## Calibrate workspace (landed 2026-10-30)
 
-The one-form screen became the demo's workspace. Layout: at **content width ≥ 980** (the default 1280
-window leaves ~1064 px beside the rail, so it shows the workspace) — captures + target tree 250 px ·
-flexible canvas · mark editor + reference gallery 340 px; below the breakpoint the same panels stack in
-one column. Below the columns: the stored-coordinate table and the session-shaped calibrations panel.
-The page header keeps the display/match chips and the Refresh/Capture actions on the right at wide
-widths and stacks them under the prose when the window is narrow.
+The one-form screen became the demo's workspace. Layout: at **content width ≥ 850** (the default 1280
+window leaves ~1064 px beside the rail, and the 1120 minimum still leaves ~872) — target tree 250 px ·
+flexible canvas · mark editor + reference gallery 340 px; below the breakpoint the panels stack in one
+scroll column with a "collapse the sidebar" hint. A compact **capture bar** sits between the tool tabs and
+the fixed panes: active frame/display summary, its own **Capture** action (filled when no screen exists),
+**Captures**, **Details**, and **Stored marks** buttons (those three open dialogs, so the canvas is above
+the fold at 720 px). The page header keeps the display/match chips and Refresh. A **tool tab row** sits
+between the header and the workspace: **Buy / Sell** (Shop), **Gem Composer**, **Magic Tuner**, **Pet
+Feeder**, **Tooltip**. The three mark tabs scope the target tree and editor to that tool; the two session
+tabs replace the mark workspace with that session's one-capture workspace. A **Screens strip** under the
+capture bar lists every live capture (up to the core's twelve), newest first, labelled by the tool that
+took it (`Shop · 1`) with the count of targets assigned to it.
 
-- **Capture shelf:** at most four frames (the core's FIFO). Each item: label/time, physical size, that
-  capture's **own `DisplayInfo`**, frame id, and an eviction marker on the oldest; a fifth capture
-  evicts the oldest and a save against an evicted id is refused — the screen says so and never
-  auto-recaptures. The hide → one frame → show flow and its status are unchanged.
-- **Target tree:** all 18 kinds / 35 marks grouped by tool (Shop 5/5, Gem 3/9, Pet 9/20, Tuner 1/1)
-  with saved/partial/not-set dots and counts; named-instance kinds expand their targets (N/G/DG/
-  Register/Combine, ITEM1–3, row 1–4). Selecting a kind/target drives canvas and editor.
+- **Per-target capture assignment:** each mark target has its own assigned screen, keyed by
+  `kind`/`kind@target`. A target with no assignment starts empty and Save stays disabled; it never borrows
+  another tool's newest frame. Selecting a target restores its assigned screen. Clicking a screen in the
+  strip only previews it; the editor's **Screen** row and **Use “Shop · 1” for this target** action perform
+  the assignment. A capture auto-assigns only to the selected target that has no screen yet. Assignments
+  are session state; saved marks never store a frame id.
+- **Tool-scoped target tree:** the active mark tool's 17 presentation marks / 34 instances are listed
+  (Shop 5/5, Gem 3/9, Pet 9/20), with saved/partial/not-set dots and counts; named-instance kinds expand
+  their targets (N/G/DG/Register/Combine, ITEM1–3, row 1–4). Selecting a kind/target drives canvas and
+  editor. Switching the kind picker to another tool's kind moves the tool tab with it.
+- **Capture shelf:** behind the capture bar's **Captures** dialog. At most twelve frames (the core's
+  FIFO). Each item: label/time, physical size, that capture's **own `DisplayInfo`**, frame id, and an
+  eviction marker on the oldest; the thirteenth capture evicts the oldest and a save against an evicted id
+  is refused — the screen says so and never auto-recaptures. Selecting a shelf frame previews it; assigning
+  it is the editor's explicit action. The hide → one frame → show flow and its status are unchanged; the
+  capture result/refusal stays visible in the compact capture bar.
+- **Session capture reuse:** Tuner and Tooltip show the same capture bar/Screens strip above their
+  existing right-side editors. Tuner draws its three boxes and Spring point on the selected shared
+  screen; a screen change clears the Check result and disables Save until **Check boxes** runs again,
+  and Save sends that screen's `frame_id`. Tooltip reuses the selected screen as the visual background
+  for its offset/size fields, but **Capture hover** remains the live cursor-anchor/Test-read action.
+  The sessions' right-side layouts and controls are otherwise unchanged; the Tuner's private
+  **Capture screen** button is not shown in shared mode because the shared bar above owns capture.
+  Screen selection itself has no target assignment because each session has one calibration record.
+- **Delete a screen:** each Screens tile has a small **× Delete screen** action. It opens two
+  confirmations (usage/consequences, then the irreversible confirmation); only the second one calls
+  `capture.discard`, removes the tile and clears the session-only assignments that pointed at it.
+  **Saved calibration marks and coordinates are config data and are never changed by a delete** — the
+  dialog says so and the saved mark remains fetchable.
 - **Canvas:** fit / 1:1 / zoom ± / pan, zoom % and "1 display px = N physical px"; the selected mark is
   drawn with its label. The typed x/y/(w/h) fields stay authoritative and the mapping function is
-  unchanged and single.
+  unchanged and single. Overlay labels choose white or black text from the label background's luminance,
+  so the fixed grade/attribute/remaining palette stays legible in light mode.
+- **Fixed mark workspace:** at wide widths the target tree, canvas and inspector fill the height left
+  under the capture bar. The target tree and the inspector scroll inside their own columns with visible
+  scrollbars; the canvas does not move while the inspector scrolls, so drawing and editing the selected
+  mark happen in one view. Revert/Save are pinned below the scrolling inspector, and the gallery scrolls
+  with the fields. The page itself does not scroll for mark tools; **Details** (display environment +
+  Detect) and **Stored marks** are dialogs. Narrow windows keep the stacked layout.
 - **Editor:** surface + target pickers, shape-aware fields, the result-gem-area empty verdict, stored
   crop preview, Revert + Save (Save is the only filled action and enables only with a live frame/target/
   verdict); save refusals render verbatim, including "capture again" for an unknown frame id.
-- **Stored coordinates:** all 35 marks — surface, tool, shape, `x, y` / `x, y · w×h`, artifact, status —
+- **Stored coordinates:** all 34 instances — surface, tool, shape, `x, y` / `x, y · w×h`, artifact, status —
   filterable by tool. Marks do **not** persist a frame reference; the frame is write-time provenance.
   **Copy as YAML** copies the saved marks as a small YAML document to the clipboard (a read of values
   already on screen; it writes nothing and is not a config import).
@@ -308,8 +362,29 @@ widths and stacks them under the prose when the window is narrow.
 - **Display environment:** the capture's DisplayInfo and the stored environment; a mismatch raises a
   `StatusBanner` "recalibrate before running a tool" (client-size/screen invalidates every point, scale
   alone does not; no auto-anchor, no proportional transform).
-- **Session-shaped calibrations:** tooltip offset (two captures), tuner OCR 3-box and pet crops, each
-  stating what it needs with a disabled **Run session** — these need protocol work (Phase 5).
+- **Sessions:** **Magic Tuner** and **Tooltip** are top-level tool tabs (not a panel below the stored
+  table). Each is one capture-owned workspace: every session starts with a numbered step strip
+  (Capture → measure → save), states what it needs, and keeps the typed fields authoritative. At wide
+  widths each session is a **split workspace**: the captured picture stays fixed on the left (fit to
+  380 px) while a 470 px right pane scrolls its target cards/fields independently, so a drag and the
+  box being edited are visible together; narrow widths stack the two columns. Switching tabs keeps both
+  session states and typed fields mounted.
+  - **Tuner OCR 3-box + Spring point** — the top of the card pairs **Capture screen / Recapture
+    screen** with the required capture state and the **Target to drag** chips (grade, attributes,
+    remaining, spring). One capture covers the three OCR boxes AND the optional spring point (v2's
+    one-capture flow); there is no separate Spring-point mark. After capture, the picture shows every
+    drawn box in its own colour (grade green, attributes blue, remaining amber) with labels. A card
+    per box carries the colour dot, label and its x/y/w/h fields; dragging on the picture writes the
+    selected box and advances grade → attributes → remaining (v2 order). **Check boxes** adds a result
+    card with the derived region, row pitch, grade, remaining count and filter verdict plus the
+    matched-row count; **Save tuner** writes `tuner.ocr`/`spring_point`.
+  - **Pet tooltip offset + shape** — the picture sits left, the two step cards right: **1 · Hover
+    point** (x/y/delay + *Capture hover*; the core places the cursor and captures the panel) and
+    **2 · Panel box & offset** (offset and panel size; a mono formula line shows `cursor + offset =
+    panel top-left`). The picture overlays the placed cursor as a pink crosshair under the selected
+    panel box; a **Read result** card shows the Test read lines in a bordered surface instead of loose
+    prose. The nine Pet marks are calibrated in the mark editor; the removed Pet rows/crops session
+    duplicated them.
 
 ## System surfaces (landed 2026-10-30)
 
@@ -322,9 +397,10 @@ widths and stacks them under the prose when the window is narrow.
   a "moves the cursor" warning. No filled action on the page.
 - **Hotkeys:** the accepted-name help appears once above the group; raw stored codes moved into a
   section-header tooltip; the four fields keep their key-name/parse/save commands.
-- **Setup:** Detect/Measure/Probe are outlined probes under a caption that names the one writing action;
-  **Use detected title** is the single filled action with "applies a config save" under it; the detected-
-  vs-configured mismatch raises a warning banner.
+- **Setup:** **Appearance** chooses Follow system / Light / Dark and saves it immediately; **Quick dock**
+  chooses its placement and idle behaviour; Detect/Measure/Probe are outlined probes under a caption
+  that names the one writing action; **Use detected title** is the single filled action with "applies a
+  config save" under it; the detected-vs-configured mismatch raises a warning banner.
 
 ## Crash / connecting surfaces
 
@@ -349,7 +425,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 333/333; `dart format` clean. Every
+Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 375/375; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,

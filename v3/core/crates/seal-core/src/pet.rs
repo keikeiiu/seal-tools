@@ -59,11 +59,11 @@ use seal_domain::tools::pet::{
     PLACE_ATTEMPTS, PetCard, PetFeeding, PetRowSetup, PetRowView, PetScheduleSettings, PetSetup,
     ReloadStep, RowOutcome, ScheduleRead, build_card, consider_veto, every_row_failed_message,
     fold_back, food_load, pet_did_not_go_in, rate_for, reload_step_message, schedule_for,
-    visit_opening_message,
+    stopped_during, visit_opening_message, window_left_front_message, window_not_in_front_message,
 };
 use seal_domain::tools::shop::BagGrid;
 use seal_tools::game::GamePort;
-use seal_tools::runner::{Tool, ToolStatus};
+use seal_tools::runner::{EffectError, EffectRecovery, Tool, ToolStatus};
 use seal_tools::tool::{ToolId, ToolNextAction, ToolRow};
 use serde_json::Value;
 
@@ -219,6 +219,14 @@ fn rect_of(values: &[i32]) -> Option<Rect> {
         .then(|| Rect::new(values[0], values[1], values[2], values[3]))
 }
 
+/// PET-F14: the bounds a configured value is CLAMPED to before it reaches a schedule, an allocation
+/// or a click. `stacks` in particular sizes `Vec::with_capacity` in the domain's slot arithmetic, so
+/// `i32::MAX` there aborts the core on allocation instead of misbehaving visibly.
+const MIN_STACKS: i32 = 1;
+const MAX_STACKS: i32 = 8;
+const MAX_WAIT_AFTER_EMPTY_MINUTES: i32 = 120;
+const MAX_ITEMS_PER_MINUTE: i32 = 30;
+
 /// `pet.slots` entry → the domain's row setup.
 fn row_setup(value: &Value, index: usize) -> PetRowSetup {
     let at = |field: &str| format!("/pet/slots/{index}/{field}");
@@ -228,7 +236,9 @@ fn row_setup(value: &Value, index: usize) -> PetRowSetup {
         enabled: boolean(value, &at("enabled")).unwrap_or(true),
         toggle_label: int_array(value, &at("toggle_label")),
         feeder_strip: int_array(value, &at("feeder_strip")),
-        stacks: number(value, &at("stacks")).unwrap_or(2),
+        stacks: number(value, &at("stacks"))
+            .unwrap_or(2)
+            .clamp(MIN_STACKS, MAX_STACKS),
     }
 }
 
@@ -421,8 +431,14 @@ pub fn plan(config: &Value, root: &Path) -> Result<PetPlan, String> {
         close_button_png: text(config, "/pet/close_button_png"),
         boarding_window_may_be_open: boolean(config, "/pet/boarding_window_may_be_open")
             .unwrap_or(false),
-        items_per_minute: number(config, "/pet/items_per_minute").unwrap_or(3),
-        wait_after_empty_minutes: number(config, "/pet/wait_after_empty_minutes").unwrap_or(5),
+        items_per_minute: number(config, "/pet/items_per_minute")
+            .unwrap_or(3)
+            .clamp(1, MAX_ITEMS_PER_MINUTE),
+        // A negative value used to give `next <= 0` in `fold_back`, i.e. a back-to-back reload loop
+        // (PET-F14). The upper bound keeps a typo from parking a row for a week.
+        wait_after_empty_minutes: number(config, "/pet/wait_after_empty_minutes")
+            .unwrap_or(5)
+            .clamp(0, MAX_WAIT_AFTER_EMPTY_MINUTES),
         action_wait_ms: number(config, "/pet/action_wait_ms").unwrap_or(1200),
         reload_on_start: boolean(config, "/pet/reload_on_start").unwrap_or(false),
         pet_slot_occupied_above: float(config, "/pet/pet_slot_occupied_above").unwrap_or(0.05),
@@ -499,15 +515,22 @@ pub fn tool_rows(card: &PetCard) -> Vec<ToolRow> {
 }
 
 /// The card as a `ToolStatus`: the schedule line as the message (the caller supplies the formatted
-/// `HH:mm` because the decision half has no clock) plus the standing rows.
+/// `HH:mm` because the decision half has no clock), the soonest row's remaining time as the summary
+/// countdown, and the standing rows.
 #[must_use]
 pub fn status(card: &PetCard, next_label: &str) -> seal_tools::runner::ToolStatus {
     seal_tools::runner::ToolStatus {
         message: card.schedule_line(next_label),
-        countdown_s: None,
+        countdown_s: summary_countdown(card),
         rows: tool_rows(card),
         detail: Vec::new(),
     }
+}
+
+/// v2 showed the soonest row's `NextActionAt` as the card's summary countdown; the rows carry each
+/// row's own, so this is the one a glance should read.
+fn summary_countdown(card: &PetCard) -> Option<f64> {
+    card.next_minutes.map(|minutes| (minutes * 60.0).max(0.0))
 }
 
 /// The visit's opening line, for the loop and the tests: one row names itself, a batch says how many.
@@ -892,6 +915,9 @@ const CLICK_WAIT: f64 = 0.35;
 const PAGE_WAIT: f64 = 0.9;
 const DRAG_GRAB_WAIT: f64 = 0.35;
 const START_WAIT: f64 = 2.0;
+/// v2's `EndWait` (PET-F10): the end toggle was observed to need longer than a normal action for the
+/// pet to reappear in the bag, so the post-press wait is `max(EndWait, action_wait)`.
+const END_WAIT: f64 = 2.5;
 const RETRY_MINUTES: f64 = 5.0;
 
 /// The floor between two opens when the pass acted on NOTHING (PET-F6). An unreadable row falls back
@@ -963,10 +989,14 @@ fn differing_fraction_images(
         return None;
     }
     let (left, top, right, bottom) = inset_bounds(a.width, a.height, inset)?;
+    // The resize is the only case that needs a copy; equal sizes are compared in place (PET-F16 —
+    // every call in the sweep used to clone the crop just to read it).
+    let resized;
     let other = if a.width == b.width && a.height == b.height {
-        b.clone()
+        b
     } else {
-        area_resize(b, a.width, a.height)
+        resized = area_resize(b, a.width, a.height);
+        &resized
     };
     let mut differing = 0usize;
     let mut compared = 0usize;
@@ -1001,6 +1031,10 @@ fn pitch(grid: &[i32]) -> Option<(i32, i32)> {
 
 /// v2 `IconMatch.BestOffsetScore`: the lowest differing fraction over every offset within
 /// `SEARCH_RADIUS` of `centre`, comparing `icon` with the bag region at the cell pitch.
+///
+/// ONE crop buffer per cell, overwritten for each of the 49 offsets (PET-F16): the sweep runs over
+/// every queue icon × every page of every due row, and allocating a fresh `Vec` per offset was 49
+/// allocations per cell for a comparison that never needs to own the pixels.
 #[allow(
     clippy::cast_sign_loss,
     reason = "frame pixel coordinates and counts are far inside the range these conversions can represent"
@@ -1012,6 +1046,15 @@ fn best_offset_score(
     pitch_y: i32,
     icon: &PetImage,
 ) -> Option<f64> {
+    if pitch_x <= 0 || pitch_y <= 0 {
+        return None;
+    }
+    let (width, height) = (pitch_x as usize, pitch_y as usize);
+    let mut crop = PetImage {
+        width,
+        height,
+        rgba: vec![0u8; width * height * 4],
+    };
     let mut best: Option<f64> = None;
     for dy in -SEARCH_RADIUS..=SEARCH_RADIUS {
         for dx in -SEARCH_RADIUS..=SEARCH_RADIUS {
@@ -1021,19 +1064,14 @@ fn best_offset_score(
                 continue;
             }
             let (left, top) = (left as usize, top as usize);
-            let (width, height) = (pitch_x as usize, pitch_y as usize);
             if left + width > bag.width || top + height > bag.height {
                 continue;
             }
-            let mut crop = PetImage {
-                width,
-                height,
-                rgba: Vec::with_capacity(width * height * 4),
-            };
-            for y in top..top + height {
+            for (row, y) in (top..top + height).enumerate() {
                 let start = (y * bag.width + left) * 4;
-                crop.rgba
-                    .extend_from_slice(&bag.rgba[start..start + width * 4]);
+                let target = row * width * 4;
+                crop.rgba[target..target + width * 4]
+                    .copy_from_slice(&bag.rgba[start..start + width * 4]);
             }
             if let Some(score) = differing_fraction_images(icon, &crop, ICON_INSET, ICON_TOLERANCE)
             {
@@ -1127,6 +1165,10 @@ struct RowState {
     detail: Option<String>,
     growth_target: Option<i32>,
     measured_rate: Option<i32>,
+    /// The rate the PREVIOUS read of this row's line gave (PET-F13): one OCR misread of `3` as `1`
+    /// would triple the computed food time, which is the late (unsafe) direction, so a digit is only
+    /// trusted once two consecutive reads agree.
+    previous_rate: Option<i32>,
     species: Option<String>,
     panel: Option<PetPanel>,
 }
@@ -1140,6 +1182,7 @@ impl RowState {
             detail: None,
             growth_target: None,
             measured_rate: None,
+            previous_rate: None,
             species: None,
             panel: None,
         }
@@ -1203,7 +1246,12 @@ struct Visit {
     /// Labels of candidates the hover panel refused (+9/100 %), for the domain's collect-refused
     /// line (`all_refused_message`), as v2 collected them.
     refused: Vec<String>,
+    /// Placement attempts for the pet being put in (PET-F9): its own counter, reset per row, because
+    /// a pet placed on the third try must not leave the drag with nothing left.
     attempts: i32,
+    /// Drag attempts for the CURRENT stack (PET-F9): reset by `FoodPick` for every stack, so the two
+    /// retry budgets cannot spend each other.
+    drag_attempts: i32,
     stack: i32,
     food_cell: Option<Point>,
     slot_centre: Option<Point>,
@@ -1223,6 +1271,7 @@ impl Visit {
             return_slot_tried: false,
             refused: Vec::new(),
             attempts: 0,
+            drag_attempts: 0,
             stack: 0,
             food_cell: None,
             slot_centre: None,
@@ -1230,6 +1279,16 @@ impl Visit {
             outcome: None,
         }
     }
+}
+
+/// The two one-shot pass flags, grouped so the tool itself stays below clippy's bool-count limit and
+/// the PET-F2/F6 "override pending" / "a pass acted" state reads as one concept.
+#[derive(Debug, Clone, Copy)]
+struct PassState {
+    /// `pet.reload_on_start` is a one-shot override until the first Look scheduled from it.
+    start_override_pending: bool,
+    /// Whether the pass that is about to schedule acted on a row (found due rows/started a visit).
+    acted: bool,
 }
 
 /// The resident pet feeder's loop: the plan/read-seam adapter around the domain's schedule, reload
@@ -1253,15 +1312,27 @@ pub struct PetTool<S: PetSource> {
     /// `pet.reload_on_start` is a one-shot override: true until the first Look has scheduled from it.
     /// Every later look schedules from the readings, so the option cannot force a reload on every wake
     /// — and, with an unreadable row, cannot turn the loop into a zero-delay click cycle. PET-F6.
-    start_override_pending: bool,
+    pass: PassState,
     /// Whether the pass that is about to schedule acted on a row (found due rows and started a visit).
     /// A zero-minute schedule with nothing acted on waits [`MIN_NO_ACTION_WAIT_MINUTES`] instead of
     /// reopening immediately. PET-F6.
-    acted_this_pass: bool,
+    /// The long wait the runner was just asked to take, in minutes. The next `decide` subtracts it
+    /// from every row's `next_minutes` before the fresh look, so the row that was scheduled for that
+    /// wake is genuinely DUE — even when its slot/feeders are unreadable on this pass. PET-F2.
+    pending_wait_minutes: Option<f64>,
+    /// Whether the current wait carries a foreground-deferral message that must stay on the card
+    /// instead of being replaced by the generic schedule line. PET-F4.
+    deferred_message: Option<String>,
     message: String,
-    countdown_s: Option<f64>,
     /// Mid-run state persistence (A1). Tests/decision-only tools get a no-op sink.
     state_sink: Option<Arc<dyn PetStateSink>>,
+    /// The live close-guard belief (PET-F15): true from the moment this run opens the boarding window
+    /// until its close click is sent. Persisted on both edges, so a crash mid-visit tells the next
+    /// run that the window may still be up. Starts from what the plan read.
+    window_may_be_open: bool,
+    /// Rich file-only diagnostics drained by the supervisor's `LoggedTool` into `logs/pet.log`.
+    /// Deliberately separate from `message`/`status`: cards keep their short strings.
+    log_notes: Vec<String>,
 }
 
 impl<S: PetSource> PetTool<S> {
@@ -1279,6 +1350,7 @@ impl<S: PetSource> PetTool<S> {
         );
         let food_used = plan.food_slots_used;
         let start_override_pending = plan.reload_on_start;
+        let window_may_be_open = plan.boarding_window_may_be_open;
         Self {
             plan,
             source,
@@ -1290,11 +1362,16 @@ impl<S: PetSource> PetTool<S> {
             pending_stop: None,
             visit: None,
             food_used,
-            start_override_pending,
-            acted_this_pass: false,
+            pass: PassState {
+                start_override_pending,
+                acted: false,
+            },
+            pending_wait_minutes: None,
+            deferred_message: None,
             message,
-            countdown_s: None,
             state_sink: None,
+            window_may_be_open,
+            log_notes: Vec::new(),
         }
     }
 
@@ -1309,6 +1386,46 @@ impl<S: PetSource> PetTool<S> {
     fn persist_state(&self, patch: &seal_config::PetRunStatePatch) {
         if let Some(sink) = &self.state_sink {
             sink.persist(patch);
+        }
+    }
+
+    fn note(&mut self, line: impl Into<String>) {
+        self.log_notes.push(line.into());
+    }
+
+    /// The current food-cell and queue readings for a diagnostic line. The visit owns the live
+    /// readings; outside a visit the last configured values are named as such, never invented.
+    fn read_facts(&self) -> String {
+        let used = self.food_used;
+        let taken = match &self.visit {
+            Some(visit) => format!("queue candidates {}", visit.candidates.len()),
+            None => {
+                if self.plan.queue.is_empty() {
+                    "queue empty".to_owned()
+                } else {
+                    format!(
+                        "queue icons {} (not yet matched this pass)",
+                        self.plan.queue_icons.iter().flatten().count()
+                    )
+                }
+            }
+        };
+        let food = if self.plan.food_slots.is_empty() {
+            "food unknown (no cells marked)".to_owned()
+        } else {
+            format!("food used {used}/{}", self.plan.food_slots.len())
+        };
+        format!("{food}; {taken}")
+    }
+
+    fn row_action(&self, index: usize) -> String {
+        let state = &self.state[index];
+        if state.next_minutes.is_none() {
+            "check (no next reload)".to_owned()
+        } else if state.boarding {
+            format!("reload in {:.0} min", state.next_minutes.unwrap_or(0.0))
+        } else {
+            format!("feed in {:.0} min", state.next_minutes.unwrap_or(0.0))
         }
     }
 
@@ -1331,6 +1448,41 @@ impl<S: PetSource> PetTool<S> {
             self.game.release(ToolId::Pet);
             self.held = false;
         }
+    }
+
+    /// No input while the game is not in front: push every row to the short retry, send no click, and
+    /// let the card name the reason. PET-F4 (the 2026-10-01 incident guard).
+    fn defer_for_window(&mut self) {
+        let row = self.active_rows().first().map_or_else(
+            || "the row".to_owned(),
+            |index| self.plan.rows[*index].name.clone(),
+        );
+        for index in self.active_rows() {
+            if self.state[index].next_minutes.is_some() {
+                self.state[index].next_minutes = Some(RETRY_MINUTES);
+            }
+        }
+        self.visit = None;
+        self.phase = Phase::Wait;
+        self.message = window_not_in_front_message(&row);
+        self.deferred_message = Some(self.message.clone());
+        self.note(format!(
+            "defer: {row} — game window not in front; no click sent"
+        ));
+    }
+
+    /// The window left the front during a visit: abandon it without another click, and give the
+    /// current row the short retry. The remaining rows keep the schedule they already had. PET-F4.
+    fn abandon_visit_for_window(&mut self, index: usize) {
+        self.state[index].next_minutes = Some(RETRY_MINUTES);
+        self.visit = None;
+        self.phase = Phase::Wait;
+        self.message = window_left_front_message();
+        self.deferred_message = Some(self.message.clone());
+        self.note(format!(
+            "defer: {} — game window left the front mid-visit; no further click sent",
+            self.plan.rows[index].name
+        ));
     }
     pub fn card(&self) -> PetCard {
         let views: Vec<PetRowView> = self
@@ -1374,23 +1526,37 @@ impl<S: PetSource> PetTool<S> {
         f64::from(self.plan.action_wait_ms.max(200)) / 1000.0
     }
 
+    /// PET-F10: v2's `Math.Max(EndWait, ActionWait)` around the end toggle.
+    fn end_toggle_wait(&self) -> f64 {
+        END_WAIT.max(self.action_wait())
+    }
+
     fn schedule_settings(&self) -> PetScheduleSettings {
         PetScheduleSettings {
             items_per_minute: self.plan.items_per_minute.max(1),
             wait_after_empty_minutes: self.plan.wait_after_empty_minutes,
-            reload_on_start: self.start_override_pending,
+            reload_on_start: self.pass.start_override_pending,
         }
     }
 
     /// The opening look: read every active row through the window that was just opened. The reading
     /// and the schedule are the same pass (v2 `ReadRows`), and a due row is reloaded in this window
     /// (v2's look hand-off), so a cold start does not close and re-open.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the pass reads every row, applies the schedule and now emits the file-log diagnostics; splitting it would scatter that ordering"
+    )]
     fn look(&mut self) {
         let mut retry = false;
         let mut due: Vec<usize> = Vec::new();
         let mut unread = false;
         for index in self.active_rows() {
             let row = self.plan.rows[index].clone();
+            // PET-F2: the wait we just took is the row's own timer. `next_minutes` is relative to the
+            // previous look, so this is the schedule's "now >= due_at" test.
+            let timer_due = self.state[index]
+                .next_minutes
+                .is_some_and(|minutes| minutes <= 0.0);
             match self.source.slot_state(&row) {
                 Ok(slot) => match slot.empty {
                     Some(true) => {
@@ -1416,9 +1582,7 @@ impl<S: PetSource> PetTool<S> {
                                 ..seal_config::PetRunStatePatch::default()
                             });
                         }
-                        let was_due = self.state[index]
-                            .next_minutes
-                            .is_some_and(|minutes| minutes <= 0.0);
+                        let was_due = timer_due;
                         let reading = self.read_boarding_row(index);
                         if reading.next_minutes <= 0.0 {
                             self.state[index].next_minutes = Some(0.0);
@@ -1428,6 +1592,9 @@ impl<S: PetSource> PetTool<S> {
                             // reload. Positive-only: only a fresh count with food in the slot vetoes.
                             let (skip, note) = consider_veto(&reading, self.state[index].failures);
                             if skip {
+                                // PET-F7: the card message is short-lived; the file log keeps the
+                                // full veto reason.
+                                self.note(format!("row {}: {note}", row.name));
                                 self.message = note;
                             } else {
                                 self.state[index].next_minutes = Some(0.0);
@@ -1437,7 +1604,20 @@ impl<S: PetSource> PetTool<S> {
                     }
                     None => {
                         unread = true;
-                        self.schedule_unread_row(index, row.stacks);
+                        if timer_due {
+                            // The timer says this row is due even though its slot could not be read.
+                            // Act on the ticked belief: no veto is possible without a fresh occupied
+                            // read, so it must be a reload, not another full cycle of silence.
+                            self.state[index].next_minutes = Some(0.0);
+                            let name = self.plan.rows[index].name.clone();
+                            self.note(format!(
+                                "row {name}: timer due, slot still unread — reloading rather than \
+                                 carrying the configured cycle"
+                            ));
+                            due.push(index);
+                        } else {
+                            self.schedule_unread_row(index, row.stacks);
+                        }
                     }
                 },
                 Err(line) => {
@@ -1450,17 +1630,32 @@ impl<S: PetSource> PetTool<S> {
         // The start override is ONE-SHOT: this Look has scheduled from it, so every later look
         // schedules from its readings (PET-F6). Cleared even on a retry/early break — the override is
         // about the run's first pass, not about the read succeeding.
-        self.start_override_pending = false;
+        self.pass.start_override_pending = false;
         // A pass acts only when it found due rows. If it did not, a zero-minute soonest must wait the
         // floor rather than reopen at once — that is what broke the unknown-reading case into a
         // zero-delay click loop (PET-F6; the floor is applied in `Phase::Wait`).
-        self.acted_this_pass = !due.is_empty();
+        self.pass.acted = !due.is_empty();
         if retry {
             for index in self.active_rows() {
                 if self.state[index].next_minutes.is_some() {
                     self.state[index].next_minutes = Some(RETRY_MINUTES);
                 }
             }
+            if !self.source.game_in_front() {
+                // The read failed because the window/foreground is gone; clicking Close now would be
+                // input into whatever is in front. PET-F4.
+                self.phase = Phase::Wait;
+                self.message = window_left_front_message();
+                self.deferred_message = Some(self.message.clone());
+                self.note(format!(
+                    "defer: a row read failed and the game window is not in front — retry in \
+                     {RETRY_MINUTES:.0} min without closing"
+                ));
+                return;
+            }
+            self.note(format!(
+                "defer: every ticked row failed its read — retry in {RETRY_MINUTES:.0} min"
+            ));
             self.close_window();
             self.phase = Phase::Wait;
             return;
@@ -1470,17 +1665,34 @@ impl<S: PetSource> PetTool<S> {
                 .clone_into(&mut self.message);
         }
         if due.is_empty() {
-            self.close_window();
+            if self.source.game_in_front() {
+                self.close_window();
+                self.message = self
+                    .card()
+                    .schedule_line(&Self::next_label(self.soonest_minutes()));
+            } else {
+                self.message = window_left_front_message();
+                self.deferred_message = Some(self.message.clone());
+                self.note(
+                    "defer: game window left the front after the look — no Close click sent"
+                        .to_owned(),
+                );
+            }
             self.phase = Phase::Wait;
-            self.message = self
-                .card()
-                .schedule_line(&Self::next_label(self.soonest_minutes()));
         } else {
             self.message = visit_opening_message(
                 &due.iter()
                     .map(|index| self.plan.rows[*index].name.clone())
                     .collect::<Vec<_>>(),
             );
+            for index in &due {
+                let name = self.plan.rows[*index].name.clone();
+                let action = self.row_action(*index);
+                let facts = self.read_facts();
+                self.note(format!(
+                    "visit: {name} is due — reload/board now ({action}); {facts}"
+                ));
+            }
             self.phase = Phase::Visit;
             self.visit = Some(Visit::new(due));
         }
@@ -1502,6 +1714,10 @@ impl<S: PetSource> PetTool<S> {
             &self.schedule_settings(),
         );
         self.state[index].next_minutes = Some(fallback.next_minutes);
+        self.note(format!(
+            "row {}: slot unread — carrying the configured cycle (next in {:.0} min)",
+            self.plan.rows[index].name, fallback.next_minutes
+        ));
     }
 
     /// Read a boarding row: the game's own time line and rate, then the feeder counts; the three feed
@@ -1518,6 +1734,7 @@ impl<S: PetSource> PetTool<S> {
             Err(_) => None,
         };
         let completion = FeederEta::completion_minutes(eta.as_ref()).map(f64::from);
+        let rate = self.trusted_rate(index, rate);
         let read = ScheduleRead {
             boarding_running: true,
             items_left: items,
@@ -1537,12 +1754,54 @@ impl<S: PetSource> PetTool<S> {
         reading
     }
 
+    /// The rate the schedule may use from this read (PET-F13). `FeederEta::parse_rate` already
+    /// rejects implausible values, but a single OCR pass can still turn `每1分 攝取3個` into `1`: with
+    /// `120 / rate` minutes of food, a 3→1 misread TRIPLES the interval — the late, unsafe direction
+    /// (the pet starves while the card counts a full cycle). So a digit is trusted as a per-row
+    /// figure only once TWO consecutive reads agree; until then the reading may only RAISE the rate
+    /// above the configured one, which shortens the interval.
+    fn trusted_rate(&mut self, index: usize, measured: Option<i32>) -> Option<i32> {
+        let previous = self.state[index].previous_rate;
+        self.state[index].previous_rate = measured;
+        measured.map(|now| {
+            if previous == Some(now) {
+                now
+            } else {
+                now.max(self.plan.items_per_minute.max(1))
+            }
+        })
+    }
+
     fn soonest_minutes(&self) -> f64 {
         self.state
             .iter()
             .filter(|state| state.next_minutes.is_some())
             .filter_map(|state| state.next_minutes)
             .fold(f64::INFINITY, f64::min)
+    }
+
+    /// Apply the long wait the runner was just asked to take. `next_minutes` is relative to the
+    /// previous look, so this is what makes "the timer fired" observable to [`Self::look`] even when
+    /// the row's slot and feeders are unreadable on the next pass. PET-F2.
+    fn advance_after_wait(&mut self) {
+        let Some(minutes) = self.pending_wait_minutes.take() else {
+            return;
+        };
+        self.advance_elapsed_minutes(minutes);
+    }
+
+    /// Move every scheduled row `minutes` closer — one subtraction, so the wait that was asked for
+    /// and the time that actually passed (a suspend, PET-F12) cannot be applied by two paths that
+    /// disagree. A nonsense interval is ignored rather than corrupting every schedule.
+    fn advance_elapsed_minutes(&mut self, minutes: f64) {
+        if !minutes.is_finite() || minutes <= 0.0 {
+            return;
+        }
+        for state in &mut self.state {
+            if let Some(next) = state.next_minutes {
+                state.next_minutes = Some((next - minutes).max(0.0));
+            }
+        }
     }
 
     fn next_label(minutes: f64) -> String {
@@ -1557,6 +1816,41 @@ impl<S: PetSource> PetTool<S> {
         if let Some(close) = self.plan.setup.close_button.as_deref().and_then(point_of) {
             self.click(close);
             self.wait(WINDOW_WAIT);
+            // PET-F15: the close has been sent, so the crash belief falls back to "closed". Updated
+            // only when it was set, so a run that never opened a window writes nothing.
+            if self.window_may_be_open {
+                self.window_may_be_open = false;
+                self.persist_state(&seal_config::PetRunStatePatch {
+                    boarding_window_may_be_open: Some(false),
+                    ..seal_config::PetRunStatePatch::default()
+                });
+            }
+        }
+    }
+
+    /// The open click has been queued: from here until the close, a crash leaves the boarding window
+    /// up, and the next run must know (PET-F15's close guard).
+    fn note_window_opened(&mut self) {
+        if self.window_may_be_open {
+            return;
+        }
+        self.window_may_be_open = true;
+        self.persist_state(&seal_config::PetRunStatePatch {
+            boarding_window_may_be_open: Some(true),
+            ..seal_config::PetRunStatePatch::default()
+        });
+    }
+
+    /// Close the window only while the game still owns the foreground; a Close click after focus
+    /// moved is input into another app. PET-F4.
+    fn close_window_if_front(&mut self) {
+        if self.source.game_in_front() {
+            self.close_window();
+        } else {
+            self.note(
+                "defer: game window left the front — no Close click sent (window may stay open)"
+                    .to_owned(),
+            );
         }
     }
 
@@ -1590,7 +1884,24 @@ impl<S: PetSource> PetTool<S> {
             boarding_running: vec![(index, running)],
             ..seal_config::PetRunStatePatch::default()
         });
-        self.message = folded.message;
+        self.message.clone_from(&folded.message);
+        let why = match outcome {
+            RowOutcome::Reloaded { .. } => "reloaded and boarded".to_owned(),
+            RowOutcome::Deferred => "deferred: boarding window did not open".to_owned(),
+            RowOutcome::NothingToBoard => "deferred: no feedable pet in the bag".to_owned(),
+            RowOutcome::Failed { error } => format!("failed: {error}"),
+        };
+        let facts = self.read_facts();
+        let next = self.row_action(index);
+        // PET-F7: the card message is overwritten by the next schedule line, so the durable
+        // pet.log note must carry the fold's own sentence (strikes included) and the drop reason.
+        self.note(format!(
+            "row {}: {}; {why}; {next}; {facts}",
+            self.plan.rows[index].name, folded.message
+        ));
+        if let Some(dropped) = &folded.dropped_log {
+            self.note(dropped.clone());
+        }
     }
 
     #[allow(
@@ -1607,7 +1918,7 @@ impl<S: PetSource> PetTool<S> {
             return;
         };
         if visit.pos >= visit.batch.len() {
-            self.close_window();
+            self.close_window_if_front();
             self.phase = Phase::Wait;
             self.message = self
                 .card()
@@ -1618,6 +1929,12 @@ impl<S: PetSource> PetTool<S> {
         let index = visit.batch[visit.pos];
         let row_name = self.plan.rows[index].name.clone();
         let row = self.plan.rows[index].clone();
+        // PET-F4: every step may click/right-click/Enter. Re-check the foreground before the step,
+        // not just once when the visit opened; a lost window ends the visit with no further input.
+        if !self.source.game_in_front() {
+            self.abandon_visit_for_window(index);
+            return;
+        }
         match visit.stage {
             Stage::Begin => {
                 self.message = reload_step_message(&row_name, ReloadStep::Reloading);
@@ -1628,7 +1945,14 @@ impl<S: PetSource> PetTool<S> {
                     self.message = reload_step_message(&row_name, ReloadStep::EndingBoarding);
                     if let Some(toggle) = row.toggle_label.as_deref().and_then(toggle_point) {
                         self.click(toggle);
-                        self.wait(self.action_wait());
+                        self.wait(self.end_toggle_wait());
+                        // v2 persisted this right after the press, before the slot read; the fold
+                        // runs much later, so a crash mid-visit kept boarding=true on disk.
+                        self.state[index].boarding = false;
+                        self.persist_state(&seal_config::PetRunStatePatch {
+                            boarding_running: vec![(index, false)],
+                            ..seal_config::PetRunStatePatch::default()
+                        });
                     }
                     visit.stage = Stage::VerifyEmpty;
                 } else {
@@ -1642,7 +1966,12 @@ impl<S: PetSource> PetTool<S> {
                     });
                     visit.stage = Stage::Fold;
                 }
-                _ => visit.stage = Stage::PickPage,
+                Ok(_) => visit.stage = Stage::PickPage,
+                Err(_) => {
+                    // A failed read is not "empty": treating it as empty clicked PickPage blindly.
+                    self.abandon_visit_for_window(index);
+                    return;
+                }
             },
             Stage::PickPage => {
                 visit.page = 0;
@@ -1651,6 +1980,7 @@ impl<S: PetSource> PetTool<S> {
                 visit.return_slot_tried = false;
                 visit.refused.clear();
                 visit.attempts = 0;
+                visit.drag_attempts = 0;
                 visit.stack = 0;
                 visit.stage = Stage::CapturePage;
             }
@@ -1668,7 +1998,14 @@ impl<S: PetSource> PetTool<S> {
             }
             Stage::ScanPage => {
                 let icons = self.plan.queue_icons.clone();
-                if let Ok(bag) = self.source.client_capture()
+                let capture = self.source.client_capture();
+                if capture.is_err() {
+                    // A lost/changed window at the page scan is the same guard as at the click
+                    // stages: stop the visit rather than continue on a stale screen. PET-F4.
+                    self.abandon_visit_for_window(index);
+                    return;
+                }
+                if let Ok(bag) = capture
                     && let Some(grid) = self.plan.setup.bag_grid.clone()
                 {
                     let centres = BagGrid::centres(Some(&grid));
@@ -1808,6 +2145,9 @@ impl<S: PetSource> PetTool<S> {
                 if visit.stack >= row.stacks.max(1) {
                     visit.stage = Stage::StartToggle;
                 } else if let Some(cell) = self.plan.food_slots.get(self.food_used as usize) {
+                    // A new stack gets its own drag budget (PET-F9): the retry belongs to this
+                    // stack's drag, not to the row and not to the pet placement.
+                    visit.drag_attempts = 0;
                     let page = cell.first().copied().unwrap_or(0);
                     let cell_index = cell.get(1).copied().unwrap_or(0);
                     let tabs = self.plan.setup.page_tabs.clone();
@@ -1909,8 +2249,8 @@ impl<S: PetSource> PetTool<S> {
                 }
                 if moved {
                     visit.stage = Stage::FoodDone;
-                } else if visit.attempts < FOOD_DRAG_ATTEMPTS {
-                    visit.attempts += 1;
+                } else if visit.drag_attempts < FOOD_DRAG_ATTEMPTS {
+                    visit.drag_attempts += 1;
                     visit.stage = Stage::FoodPlace;
                 } else {
                     visit.outcome = Some(RowOutcome::Failed {
@@ -1948,13 +2288,23 @@ impl<S: PetSource> PetTool<S> {
                 let started =
                     matches!(self.source.slot_state(&row), Ok(slot) if slot.empty == Some(false));
                 if started {
-                    let landed = match self.source.row_lines(&row) {
-                        Ok(lines) => {
+                    // PET-F13: the rate read BEFORE the reload describes the pet that was just taken
+                    // out, and `fold` sizes the next load with it. This line is the new pet's, so it
+                    // is re-read here and becomes the row's rate for the fold.
+                    let (landed, fresh_rate) = match self.source.row_lines(&row) {
+                        Ok(lines) => (
                             FeederEta::completion_minutes(FeederEta::parse(&lines).as_ref())
-                                .map(f64::from)
-                        }
-                        Err(_) => None,
+                                .map(f64::from),
+                            FeederEta::parse_rate(&lines),
+                        ),
+                        Err(_) => (None, None),
                     };
+                    if fresh_rate.is_some() {
+                        self.state[index].measured_rate = fresh_rate;
+                        // It is the first read of the NEW pet, so it still needs confirming before
+                        // it is trusted alone.
+                        self.state[index].previous_rate = fresh_rate;
+                    }
                     let panel = self.state[index].panel;
                     let species = self.state[index].species.clone();
                     let pet_minutes = panel.and_then(|panel| {
@@ -1985,6 +2335,7 @@ impl<S: PetSource> PetTool<S> {
                 visit.pos += 1;
                 visit.stage = Stage::Begin;
                 visit.attempts = 0;
+                visit.drag_attempts = 0;
                 visit.stack = 0;
                 visit.candidate = None;
                 visit.candidates.clear();
@@ -1994,7 +2345,7 @@ impl<S: PetSource> PetTool<S> {
                 visit.slot_centre = None;
                 visit.before = None;
                 if visit.pos >= visit.batch.len() {
-                    self.close_window();
+                    self.close_window_if_front();
                     self.phase = Phase::Wait;
                     self.message = self
                         .card()
@@ -2008,6 +2359,17 @@ impl<S: PetSource> PetTool<S> {
     }
     fn decide_once(&mut self) -> Decision {
         loop {
+            // The queue may still hold input (menu/feed clicks + their settle waits) when focus
+            // changes between decisions. Never pop an input decision while another window owns the
+            // foreground: drop the queued work, keep the rows' places, and defer. PET-F4.
+            if let Some(next) = self.queue.front()
+                && !matches!(next, Decision::Wait(_) | Decision::Stop(_))
+                && !self.source.game_in_front()
+            {
+                self.queue.clear();
+                self.defer_for_window();
+                continue;
+            }
             if let Some(decision) = self.queue.pop_front() {
                 return decision;
             }
@@ -2016,7 +2378,10 @@ impl<S: PetSource> PetTool<S> {
             }
             match self.phase {
                 Phase::Open => {
-                    self.countdown_s = None;
+                    if !self.source.game_in_front() {
+                        self.defer_for_window();
+                        continue;
+                    }
                     if let Err(reason) = self.ensure_game() {
                         return Decision::Stop(reason);
                     }
@@ -2028,6 +2393,7 @@ impl<S: PetSource> PetTool<S> {
                         self.click(feed);
                         self.wait(WINDOW_WAIT);
                     }
+                    self.note_window_opened();
                     self.message = seal_domain::tools::pet::checking_rows_message();
                     self.phase = Phase::Look;
                 }
@@ -2044,7 +2410,8 @@ impl<S: PetSource> PetTool<S> {
                         .collect();
                     if scheduled.is_empty() {
                         self.phase = Phase::Finished;
-                        self.pending_stop = Some(StopReason::done(every_row_failed_message()));
+                        // PET-F7: every row failed is a failure, not a successful finish.
+                        self.pending_stop = Some(StopReason::error(every_row_failed_message()));
                         continue;
                     }
                     let Some(soonest) = scheduled.into_iter().min_by(|a, b| {
@@ -2057,7 +2424,7 @@ impl<S: PetSource> PetTool<S> {
                         continue;
                     };
                     let mut minutes = self.state[soonest].next_minutes.unwrap_or(0.0);
-                    if minutes <= 0.0 && !self.acted_this_pass {
+                    if minutes <= 0.0 && !self.pass.acted {
                         // A pass that reloaded nothing must not reopen at once: an unreadable row falls
                         // back to a zero-minute "reload now" on the first pass, and reopening there
                         // clicked menu/feed/close every few seconds forever (PET-F6). The review's
@@ -2068,12 +2435,28 @@ impl<S: PetSource> PetTool<S> {
                         self.phase = Phase::Open;
                         self.message =
                             visit_opening_message(&[self.plan.rows[soonest].name.clone()]);
+                        let next = self.row_action(soonest);
+                        let facts = self.read_facts();
+                        self.note(format!(
+                            "wake: {} — due now; {next}; {facts}",
+                            self.plan.rows[soonest].name
+                        ));
                     } else {
                         let seconds = minutes * 60.0;
-                        let label = Self::next_label(minutes);
-                        self.countdown_s = Some(seconds);
-                        self.message = self.card().schedule_line(&label);
+                        // The runner is about to sleep this long; the next decide is the timer wake,
+                        // so subtract it from every row before the fresh look (PET-F2).
+                        self.pending_wait_minutes = Some(minutes);
+                        if self.deferred_message.take().is_none() {
+                            let label = Self::next_label(minutes);
+                            self.message = self.card().schedule_line(&label);
+                        }
                         self.phase = Phase::Open;
+                        for index in self.active_rows() {
+                            let name = self.plan.rows[index].name.clone();
+                            let action = self.row_action(index);
+                            let facts = self.read_facts();
+                            self.note(format!("wait: {name}; {action}; {facts}"));
+                        }
                         return Decision::Wait(seconds);
                     }
                 }
@@ -2094,23 +2477,132 @@ impl<S: PetSource + Send> Tool for PetTool<S> {
         ToolId::Pet
     }
 
+    fn drain_log_notes(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.log_notes)
+    }
+
     fn status(&self) -> ToolStatus {
         let card = self.card();
         ToolStatus {
             message: self.message.clone(),
-            countdown_s: self.countdown_s,
+            // v2's summary `NextActionAt`: the soonest row's remaining time, kept live while the run
+            // works (the per-row countdowns stay in `rows`, unchanged).
+            countdown_s: summary_countdown(&card),
             rows: tool_rows(&card),
             detail: Vec::new(),
         }
     }
 
+    /// PET-F15: the run's last facts for `tool.finished.summary`. The resident feeder's most useful
+    /// closing sentence is the one a stop INSIDE a visit owes the player — the domain's
+    /// [`stopped_during`] line naming the rows that may not have been fed — because the card's final
+    /// message is the runner's generic `Stopped.`. A run that ended between visits has no such line.
+    fn summary(&self, reason: &StopReason) -> Option<serde_json::Value> {
+        let stopped_by = match reason.kind {
+            seal_domain::decision::StopKind::Done => "done",
+            seal_domain::decision::StopKind::Cancelled => "cancelled",
+            seal_domain::decision::StopKind::Error => "error",
+            seal_domain::decision::StopKind::Guard => "guard",
+        };
+        let card = self.card();
+        let interrupted: Vec<String> = self.visit.as_ref().map_or_else(Vec::new, |visit| {
+            visit
+                .batch
+                .get(visit.pos..)
+                .unwrap_or_default()
+                .iter()
+                .map(|index| self.plan.rows[*index].name.clone())
+                .collect()
+        });
+        Some(serde_json::json!({
+            "boarding": card.boarding,
+            "next_row": card.next_row,
+            "next_minutes": card.next_minutes,
+            "food_slots_used": self.food_used,
+            "interrupted": if interrupted.is_empty() {
+                serde_json::Value::Null
+            } else {
+                serde_json::Value::String(stopped_during(&interrupted))
+            },
+            "stopped_by": stopped_by,
+        }))
+    }
+
     fn decide(&mut self) -> Decision {
+        self.advance_after_wait();
         let decision = self.decide_once();
         if decision.is_terminal() {
             // A terminal decision ends the run; no claim may outlive it.
             self.release_game();
         }
         decision
+    }
+
+    /// PET-F8: one failed effect must not end a multi-day resident run. A cursor nudged by the
+    /// player, a COM hiccup after resume or a USB re-enumeration used to stop the feeder for good.
+    /// The visit in flight (if any) is abandoned and folded as a FAILURE — the row takes a strike and
+    /// its own short retry — and the loop re-decides from the schedule instead of dying.
+    fn on_effect_error(&mut self, error: &EffectError) -> EffectRecovery {
+        let line = error.message().trim();
+        let problem = if line.is_empty() {
+            "a board or capture action failed".to_owned()
+        } else {
+            line.to_owned()
+        };
+        // Whatever the abandoned visit had queued would drive the cursor further (a drag's second
+        // Place/HoldLeft, a dialog's Enter). Drop it — but release the drag button FIRST: a press
+        // whose write timed out may still have reached the board, and the release is idempotent.
+        self.queue.clear();
+        self.queue.push_back(Decision::ReleaseLeft);
+        let abandoned = self.visit.take();
+        if let Some(index) = abandoned.and_then(|visit| visit.batch.get(visit.pos).copied()) {
+            self.fold(
+                index,
+                &RowOutcome::Failed {
+                    error: problem.clone(),
+                },
+            );
+            self.note(format!(
+                "row {}: the action failed ({problem}) — strike and retry in {RETRY_MINUTES:.0} min; the run carries on",
+                self.plan.rows[index].name
+            ));
+        } else {
+            for index in self.active_rows() {
+                if self.state[index].next_minutes.is_some() {
+                    self.state[index].next_minutes = Some(RETRY_MINUTES);
+                }
+            }
+            self.note(format!(
+                "the action failed ({problem}) — every row retries in {RETRY_MINUTES:.0} min"
+            ));
+        }
+        self.phase = Phase::Wait;
+        self.message =
+            format!("{problem} — retrying in {RETRY_MINUTES:.0} min; the feeder keeps running.");
+        EffectRecovery::Retry {
+            // no extra delay: the fold already scheduled the retry, and `Phase::Wait` pays it as a
+            // cancellable runner wait rather than a second sleep inside the error path.
+            after_s: 0.0,
+            message: self.message.clone(),
+        }
+    }
+
+    /// PET-F12: the machine slept through a long wait. The schedule is MINUTES FROM NOW, so the time
+    /// that passed while it was asleep has to be applied or the feeder wakes and waits again for a
+    /// moment that is already gone; and the next decision re-opens and re-reads rather than acting on
+    /// the pre-sleep screen (the foreground gate still guards every click, PET-F4).
+    fn on_resume(&mut self, actual_seconds: f64) {
+        if !actual_seconds.is_finite() || actual_seconds <= 0.0 {
+            return;
+        }
+        // The runner paid the wait itself, so the scheduled subtraction is the WHOLE elapsed time:
+        // clearing the pending wait is what stops `advance_after_wait` subtracting it a second time.
+        self.pending_wait_minutes = None;
+        self.advance_elapsed_minutes(actual_seconds / 60.0);
+        self.note(format!(
+            "resume: the machine slept through the wait ({actual_seconds:.0} s) — re-reading the rows \
+             before acting"
+        ));
     }
 }
 
@@ -2257,6 +2749,38 @@ mod tests {
 
         assert!(line.contains("pet menu button isn't calibrated"), "{line}");
         assert!(line.contains("Calibrate tab"), "{line}");
+    }
+
+    /// PET-F14: the numeric fields are CLAMPED while the plan is built, so no absurd value reaches a
+    /// schedule or an allocation. `stacks` is the dangerous one: the domain sizes
+    /// `Vec::with_capacity(stacks)` from it, so `i32::MAX` used to abort the core on allocation;
+    /// a negative `wait_after_empty_minutes` gave a back-to-back reload loop.
+    #[test]
+    fn absurd_numeric_config_values_are_clamped_by_the_plan() {
+        let mut high = config_with_rows(1);
+        high["pet"]["slots"][0]["stacks"] = serde_json::json!(i32::MAX);
+        high["pet"]["items_per_minute"] = serde_json::json!(1000);
+        high["pet"]["wait_after_empty_minutes"] = serde_json::json!(100_000);
+        let clamped = plan(&high, Path::new("C:/root")).expect("the clamped plan is valid");
+        assert_eq!(clamped.rows[0].stacks, 8);
+        assert_eq!(
+            clamped.setup.slots[0].stacks, 8,
+            "the domain half sees the same clamp, not the raw value"
+        );
+        assert_eq!(clamped.items_per_minute, 30);
+        assert_eq!(clamped.wait_after_empty_minutes, 120);
+
+        let mut low = config_with_rows(1);
+        low["pet"]["slots"][0]["stacks"] = serde_json::json!(0);
+        low["pet"]["items_per_minute"] = serde_json::json!(0);
+        low["pet"]["wait_after_empty_minutes"] = serde_json::json!(-30);
+        let clamped = plan(&low, Path::new("C:/root")).expect("the clamped plan is valid");
+        assert_eq!(clamped.rows[0].stacks, 1);
+        assert_eq!(clamped.items_per_minute, 1);
+        assert_eq!(
+            clamped.wait_after_empty_minutes, 0,
+            "a negative wait would fold to a zero-minute reload loop"
+        );
     }
 
     #[test]
@@ -2472,6 +2996,13 @@ mod tests {
         assert_eq!(status.rows.len(), 2);
         assert_eq!(status.rows[0].status, "boarding");
         assert_eq!(status.rows[0].next_action_in_seconds, Some(300.0));
+        assert!(
+            status
+                .countdown_s
+                .is_some_and(|seconds| (seconds - 300.0).abs() < 1e-9),
+            "v2's summary countdown is the soonest row's remaining time: {:?}",
+            status.countdown_s
+        );
         assert_eq!(
             status.rows[0].detail.as_deref(),
             Some("a pet  ·  3/min (game line)")
@@ -2801,10 +3332,15 @@ mod loop_tests {
         slots: VecDeque<Result<SlotState, String>>,
         last: Result<SlotState, String>,
         lines: Vec<String>,
+        /// PET-F13: per-call line readings, when a test needs the line to CHANGE between reads (the
+        /// pet that was taken out and the one that replaced it). Empty means `lines` every time.
+        seq_lines: VecDeque<Vec<String>>,
         counts: FeederCounts,
         hover: Vec<String>,
         bag: PetImage,
         captures: VecDeque<PetImage>,
+        /// PET-F4: scripted foreground state; tests flip it to lose the game mid-run.
+        front: bool,
     }
 
     impl FakeSource {
@@ -2820,6 +3356,7 @@ mod loop_tests {
                     "代養完成預計所需時間：約14分".to_owned(),
                     "每1分 攝取3個".to_owned(),
                 ],
+                seq_lines: VecDeque::new(),
                 counts: FeederCounts {
                     counts: vec![Some(120), Some(300)],
                     digits_read: true,
@@ -2831,13 +3368,17 @@ mod loop_tests {
                     rgba: vec![0u8; 40 * 40 * 4],
                 },
                 captures: VecDeque::new(),
+                front: true,
             }
         }
     }
 
     impl PetSource for FakeSource {
         fn row_lines(&mut self, _row: &PetRowPlan) -> Result<Vec<String>, String> {
-            Ok(self.lines.clone())
+            Ok(self
+                .seq_lines
+                .pop_front()
+                .unwrap_or_else(|| self.lines.clone()))
         }
         fn feeder_counts(&mut self, _row: &PetRowPlan) -> Result<FeederCounts, String> {
             Ok(self.counts.clone())
@@ -2862,7 +3403,7 @@ mod loop_tests {
             Some(Point::new(0, 0))
         }
         fn game_in_front(&mut self) -> bool {
-            true
+            self.front
         }
     }
 
@@ -2892,6 +3433,32 @@ mod loop_tests {
 
     fn a_toggle_click() -> Decision {
         Decision::Click(Point::new(25, 15))
+    }
+
+    #[test]
+    fn a_wait_leaves_per_row_next_actions_and_reads_in_the_log_notes() {
+        let config = config(1, false, true, false);
+        let plan = plan_of(&config);
+        let source = FakeSource::new(vec![empty()]);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        let _ = run_to_wait(&mut tool);
+        let notes = tool.drain_log_notes();
+
+        assert!(
+            notes
+                .iter()
+                .any(|note| note.starts_with("wait:") && note.contains("food used")),
+            "a wait names the row's next action and the food read: {notes:?}"
+        );
+        assert!(
+            notes.iter().any(|note| note.contains("queue")),
+            "a wait names the queue read or its absence: {notes:?}"
+        );
+        assert!(
+            notes.iter().any(|note| note.contains("row")),
+            "the row that is waiting is named: {notes:?}"
+        );
     }
 
     #[test]
@@ -3081,6 +3648,159 @@ mod loop_tests {
         );
     }
 
+    /// PET-F9: placement and drag retries shared one counter (`visit.attempts`), so a pet placed on
+    /// the third try left the drag no retry at all and the first "the stack didn't move" folded the
+    /// row. They are separate budgets, and the drag's is reset per stack.
+    #[test]
+    fn a_pet_placed_on_the_third_try_still_gets_its_drag_retry() {
+        let config = config(1, true, true, false);
+        let plan = plan_of(&config);
+        let source = FakeSource::new(vec![
+            empty(),     // the opening look: the row is due
+            empty(),     // VerifyEmpty
+            empty(),     // VerifyPlaced, attempt 1: not in yet
+            empty(),     // VerifyPlaced, attempt 2: not in yet
+            populated(), // VerifyPlaced, attempt 3: the pet is in
+            populated(), // VerifyStarted
+        ]);
+        let mut source = source;
+        let zeros = PetImage {
+            width: 16,
+            height: 16,
+            rgba: vec![0u8; 16 * 16 * 4],
+        };
+        let filled = PetImage {
+            width: 16,
+            height: 16,
+            rgba: vec![255u8; 16 * 16 * 4],
+        };
+        // First drag does not move the stack; the retry's does.
+        for capture in [zeros.clone(), zeros.clone(), zeros, filled] {
+            source.captures.push_back(capture);
+        }
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        let (decisions, _messages) = run_to_wait(&mut tool);
+
+        assert_eq!(
+            decisions
+                .iter()
+                .filter(|decision| **decision == Decision::HoldLeft)
+                .count(),
+            2,
+            "the drag retried even though the placement used all three of its own attempts: {decisions:?}"
+        );
+        let card = tool.card();
+        assert_eq!(card.rows[0].status, "boarding", "{card:?}");
+        assert!(
+            card.rows[0]
+                .next_minutes
+                .is_some_and(|minutes| minutes > 10.0),
+            "the row folded as reloaded, not as a failed drag: {card:?}"
+        );
+        let notes = tool.drain_log_notes();
+        assert!(
+            !notes
+                .iter()
+                .any(|note| note.contains("would not leave the bag")),
+            "the retry succeeded, so no drag failure was folded: {notes:?}"
+        );
+    }
+
+    /// PET-F13: ONE OCR read of the rate line must not be able to lengthen a row's food time. The
+    /// live forms mangle that line (`每1分最取适` is in `pet.log` 37 times), and a `3` read as `1`
+    /// triples `items / rate` — the unsafe direction, where the pet starves while the card counts a
+    /// full cycle. A single reading may only RAISE the rate; two agreeing reads are trusted.
+    #[test]
+    fn a_single_rate_misread_cannot_triple_the_food_time() {
+        let config = config(1, false, true, false); // the configured rate is 3
+        let plan = plan_of(&config);
+        let mut source = FakeSource::new(vec![populated(), populated()]);
+        // The LEVEL form, so only the food figure drives the schedule (a completion line would cap it
+        // and hide the difference between a rate of 3 and a rate of 1).
+        source.lines = vec![
+            "到2為止預計所需時間：約 20分".to_owned(),
+            "每1分 攝取1個".to_owned(),
+        ];
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        let _ = run_to_wait(&mut tool);
+
+        let next = tool.card().rows[0]
+            .next_minutes
+            .expect("the row is scheduled");
+        // 420 items at the configured 3 = 140 min + the 5 min wait; at the misread 1 it would be 425.
+        assert!(
+            (next - 145.0).abs() < 1.0,
+            "the misread rate was not allowed to triple the interval: {next}"
+        );
+    }
+
+    /// The rate is trusted only once two consecutive reads agree; until then the configured rate is
+    /// the floor, so a reading can only shorten the interval (the safe direction).
+    #[test]
+    fn a_measured_rate_is_trusted_only_when_two_reads_agree() {
+        let config = config(1, false, true, false); // the configured rate is 3
+        let plan = plan_of(&config);
+        let mut tool = PetTool::new(
+            plan,
+            FakeSource::new(vec![populated()]),
+            Arc::new(seal_tools::game::AllowAll),
+        );
+
+        assert_eq!(
+            tool.trusted_rate(0, Some(1)),
+            Some(3),
+            "the first read may only raise the rate to the configured floor"
+        );
+        assert_eq!(
+            tool.trusted_rate(0, Some(1)),
+            Some(1),
+            "two agreeing reads are the row's own figure"
+        );
+        assert_eq!(
+            tool.trusted_rate(0, Some(2)),
+            Some(3),
+            "a different read drops back to the safe floor"
+        );
+        assert_eq!(
+            tool.trusted_rate(0, Some(8)),
+            Some(8),
+            "a reading above the configured rate shortens the interval, so it is used at once"
+        );
+        assert_eq!(
+            tool.trusted_rate(0, None),
+            None,
+            "an unreadable line keeps the configured fallback"
+        );
+    }
+
+    /// PET-F13: the rate read BEFORE a reload describes the pet that was just taken out, and `fold`
+    /// sizes the next load with it. The line is re-read after the new pet is in, so the fold uses the
+    /// NEW pet's rate.
+    #[test]
+    fn the_rate_is_re_read_after_the_reload() {
+        let mut config = config(1, false, true, false);
+        config["pet"]["reload_on_start"] = serde_json::json!(true);
+        let plan = plan_of(&config);
+        let mut source = FakeSource::new(vec![populated(), empty(), populated(), populated()]);
+        source.seq_lines = VecDeque::from(vec![
+            // The opening look: the pet that is about to be taken out.
+            vec!["每1分 攝取3個".to_owned()],
+            // VerifyStarted: the pet that just went in.
+            vec!["每1分 攝取6個".to_owned()],
+        ]);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        let _ = run_to_wait(&mut tool);
+
+        assert_eq!(
+            tool.state[0].measured_rate,
+            Some(6),
+            "the row carries the NEW pet's rate, not the one read before the reload"
+        );
+    }
+
     /// PET-F1: the food cursor is RUN state. Two rows of two stacks in right-click mode: the four
     /// loads must take four DISTINCT cells in order, and the sink must persist 1, 2, 3, 4. The old code
     /// reset the cursor from the plan at every `PickPage`, so row 2 re-clicked row 1's first two cells
@@ -3182,6 +3902,170 @@ mod loop_tests {
         );
     }
 
+    /// PET-F2: the scheduled wait IS the row timer. A row whose slot/feeders stay unreadable must be
+    /// reloaded when its own wait expires, not rescheduled for another full cycle forever.
+    #[test]
+    fn an_unreadable_row_reloads_when_its_scheduled_timer_fires() {
+        let mut config = config(1, false, true, false);
+        config["pet"]["reload_on_start"] = serde_json::json!(false);
+        let plan = plan_of(&config);
+        let unknown = SlotState {
+            difference: None,
+            empty: None,
+        };
+        let source = FakeSource::new(vec![unknown]);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        // The first pass schedules the configured cycle and hands the runner its long wait.
+        let mut saw_long_wait = false;
+        for _ in 0..500 {
+            match tool.decide() {
+                Decision::Wait(seconds) if seconds >= 60.0 => {
+                    saw_long_wait = true;
+                    break;
+                }
+                Decision::Wait(_) => {}
+                terminal => assert!(!terminal.is_terminal(), "unexpected stop: {terminal:?}"),
+            }
+        }
+        assert!(saw_long_wait, "the first pass must schedule a wait");
+
+        // The next decide is the timer wake. The synthetic clock subtracts the wait it requested;
+        // the slot is still unknown, but the row is due, so this pass must act instead of scheduling
+        // the same cycle again.
+        let mut acted = false;
+        for _ in 0..200 {
+            let decision = tool.decide();
+            assert!(!decision.is_terminal(), "unexpected stop: {decision:?}");
+            if matches!(decision, Decision::Wait(seconds) if seconds >= 60.0) {
+                break;
+            }
+            if !matches!(decision, Decision::Wait(_)) {
+                acted = true;
+            }
+            let notes = tool.drain_log_notes();
+            if notes
+                .iter()
+                .any(|note| note.contains("timer due, slot still unread"))
+            {
+                acted = true;
+                break;
+            }
+        }
+        assert!(acted, "the timer-due unreadable row must be acted on");
+    }
+
+    /// PET-F4: no Click/Place/Enter/RightClick may be emitted while another window owns the
+    /// foreground; the row keeps its place and the card says why.
+    #[test]
+    fn the_pet_sends_no_input_while_the_game_is_not_in_front() {
+        let config = config(1, false, true, false);
+        let plan = plan_of(&config);
+        let mut source = FakeSource::new(vec![empty()]);
+        source.front = false;
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        let mut saw_wait = false;
+        for _ in 0..50 {
+            match tool.decide() {
+                Decision::Wait(seconds) if seconds >= 60.0 => {
+                    saw_wait = true;
+                    break;
+                }
+                Decision::Wait(_) | Decision::Stop(_) => {}
+                input => panic!("input while the game is not in front: {input:?}"),
+            }
+        }
+        assert!(saw_wait, "the deferred pass must wait instead of clicking");
+        assert!(
+            tool.status().message.contains("isn't in front"),
+            "the card names the foreground refusal: {}",
+            tool.status().message
+        );
+    }
+
+    /// PET-F4: queued input must not be sent after focus moves between decisions. The menu click is
+    /// already queued when the test drops the foreground; the feed click and the rest of the batch
+    /// must be abandoned, and the run must defer without another input.
+    #[test]
+    fn queued_input_is_abandoned_when_the_game_leaves_the_front() {
+        let config = config(1, false, true, false);
+        let plan = plan_of(&config);
+        let source = FakeSource::new(vec![empty()]);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        let mut saw_menu_click = false;
+        for _ in 0..20 {
+            if matches!(tool.decide(), Decision::Click(_)) {
+                saw_menu_click = true;
+                break;
+            }
+        }
+        assert!(saw_menu_click, "the opening pass queues a real click");
+
+        tool.source.front = false;
+        let mut saw_defer_wait = false;
+        for _ in 0..50 {
+            match tool.decide() {
+                Decision::Wait(seconds) if seconds >= 60.0 => {
+                    saw_defer_wait = true;
+                    break;
+                }
+                Decision::Wait(_) | Decision::Stop(_) => {}
+                input => panic!("input after the foreground was lost: {input:?}"),
+            }
+        }
+        assert!(saw_defer_wait, "the run must defer instead of clicking");
+        assert!(tool.status().message.contains("isn't in front"));
+    }
+
+    /// PET-F7: a row failure must reach `pet.log` with its strike count, because the card message is
+    /// replaced by the schedule line immediately after the fold.
+    #[test]
+    fn a_failed_reload_reaches_the_log_notes() {
+        let mut config = config(1, false, true, false);
+        config["pet"]["reload_on_start"] = serde_json::json!(true);
+        let plan = plan_of(&config);
+        // Look reads empty (due), then VerifyEmpty reads populated -> the end toggle failed.
+        let source = FakeSource::new(vec![empty(), populated()]);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        let _ = run_to_wait(&mut tool);
+        let notes = tool.drain_log_notes();
+        assert!(
+            notes.iter().any(|note| note.contains("failed 1/3")),
+            "the fold's strike sentence reaches the file log: {notes:?}"
+        );
+    }
+
+    #[test]
+    fn the_end_toggle_wait_is_at_least_v2s_end_wait() {
+        let base = config(1, false, true, false);
+        let plan = plan_of(&base);
+        let tool = PetTool::new(
+            plan,
+            FakeSource::new(vec![empty()]),
+            Arc::new(seal_tools::game::AllowAll),
+        );
+        assert!(
+            (tool.end_toggle_wait() - END_WAIT).abs() < 1e-9,
+            "the default 1.2 s action wait is raised to END_WAIT"
+        );
+
+        let mut config = config(1, false, true, false);
+        config["pet"]["action_wait_ms"] = serde_json::json!(3000);
+        let plan = plan_of(&config);
+        let tool = PetTool::new(
+            plan,
+            FakeSource::new(vec![empty()]),
+            Arc::new(seal_tools::game::AllowAll),
+        );
+        assert!(
+            (tool.end_toggle_wait() - 3.0).abs() < 1e-9,
+            "a longer configured action wait still wins"
+        );
+    }
+
     #[test]
     fn four_boarding_rows_publish_four_rows_with_their_next_times() {
         let config = config(4, false, true, false);
@@ -3210,6 +4094,243 @@ mod loop_tests {
             "{}",
             status.message
         );
+    }
+
+    #[test]
+    fn the_summary_countdown_is_the_soonest_rows_remaining_time() {
+        let config = config(1, false, true, false);
+        let plan = plan_of(&config);
+        let source = FakeSource::new(vec![empty(), empty(), populated(), populated()]);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        let (decisions, _messages) = run_to_wait(&mut tool);
+
+        let scheduled = decisions
+            .iter()
+            .rev()
+            .find_map(|decision| match decision {
+                Decision::Wait(seconds) => Some(*seconds),
+                _ => None,
+            })
+            .expect("the run reached its scheduled wait");
+        let countdown = tool
+            .status()
+            .countdown_s
+            .expect("v2's summary countdown is published");
+        assert!(
+            (countdown - scheduled).abs() < 1e-6,
+            "the summary countdown ({countdown}) is the soonest row's wait ({scheduled})"
+        );
+    }
+
+    /// PET-F8: an effect failure used to end the resident run permanently — a player's nudge, a COM
+    /// hiccup after resume or a USB re-enumeration killed a multi-day feeder. It is now a row strike
+    /// with the short retry: the queued work is dropped, the drag button is released, and the loop
+    /// re-decides from the schedule.
+    #[test]
+    fn an_effect_failure_strikes_the_row_and_keeps_the_run_alive() {
+        let config = config(1, true, true, false);
+        let plan = plan_of(&config);
+        let source = FakeSource::new(vec![empty(), empty(), populated(), populated()]);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        // Drive the visit up to the drag's button press: the queue then still holds the drop point
+        // and the release, which is exactly the state a failed write lands in.
+        let mut held = false;
+        for _ in 0..300 {
+            match tool.decide() {
+                Decision::HoldLeft => {
+                    held = true;
+                    break;
+                }
+                decision if decision.is_terminal() => panic!("unexpected stop: {decision:?}"),
+                _ => {}
+            }
+        }
+        assert!(held, "the drag reaches its hold decision");
+
+        let recovery = tool.on_effect_error(&EffectError::new("the board is not open"));
+
+        match recovery {
+            EffectRecovery::Retry { after_s, message } => {
+                assert!(after_s.abs() < 1e-9, "no second delay in the error path");
+                assert!(
+                    message.contains("keeps running"),
+                    "the card says the feeder survives: {message}"
+                );
+            }
+            EffectRecovery::Stop => panic!("one failed click must not end the resident run"),
+        }
+        assert_eq!(
+            tool.decide(),
+            Decision::ReleaseLeft,
+            "the drag button is released before anything else runs"
+        );
+        let card = tool.card();
+        assert_eq!(
+            card.rows[0].next_minutes,
+            Some(RETRY_MINUTES),
+            "the abandoned row takes the short retry: {card:?}"
+        );
+        let notes = tool.drain_log_notes();
+        assert!(
+            notes.iter().any(|note| note.contains("failed 1/3")),
+            "a strike is counted: {notes:?}"
+        );
+        assert!(
+            notes
+                .iter()
+                .any(|note| note.contains("strike and retry")
+                    && note.contains("the board is not open")),
+            "the failure reaches the file log with its own line: {notes:?}"
+        );
+
+        // The run continues: the next long wait is the retry window, not a terminal decision.
+        let mut waited = None;
+        for _ in 0..200 {
+            match tool.decide() {
+                Decision::Wait(seconds) if seconds >= 60.0 => {
+                    waited = Some(seconds);
+                    break;
+                }
+                decision if decision.is_terminal() => {
+                    panic!("the run stopped instead of retrying: {decision:?}");
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(
+            waited,
+            Some(RETRY_MINUTES * 60.0),
+            "the retry window is the runner's own cancellable wait"
+        );
+    }
+
+    /// PET-F12: the machine slept through the long wait. The schedule is minutes-from-now, so the
+    /// real time that passed is applied ONCE (not on top of the requested wait), and a row that slept
+    /// past its own deadline is due instead of being waited for again.
+    #[test]
+    fn a_resume_applies_the_time_the_machine_slept() {
+        let config = config(1, false, true, false);
+        let plan = plan_of(&config);
+        let mut source = FakeSource::new(vec![populated(), populated()]);
+        // A completion line of 20 min and food for 140: the row is scheduled 20 + 5 = 25 min out.
+        source.lines = vec![
+            "代養完成預計所需時間：約20分".to_owned(),
+            "每1分 攝取3個".to_owned(),
+        ];
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        let _ = run_to_wait(&mut tool);
+        let before = tool.card().rows[0]
+            .next_minutes
+            .expect("the row is scheduled");
+        assert!(
+            (before - 25.0).abs() < 1.0,
+            "scheduled 25 min out: {before}"
+        );
+        assert!(
+            tool.pending_wait_minutes.is_some(),
+            "the requested wait is what the ordinary next decision would subtract"
+        );
+
+        tool.on_resume(10.0 * 60.0);
+
+        assert!(
+            tool.pending_wait_minutes.is_none(),
+            "the resumed elapsed time replaces the requested wait rather than stacking on it"
+        );
+        let after = tool.card().rows[0]
+            .next_minutes
+            .expect("the row is still scheduled");
+        assert!(
+            (before - after - 10.0).abs() < 1e-6,
+            "ten minutes of sleep moved the row ten minutes closer: {before} -> {after}"
+        );
+        assert!(
+            tool.drain_log_notes()
+                .iter()
+                .any(|note| note.contains("slept through the wait")),
+            "the resume is in the run's own log"
+        );
+
+        // Long enough to pass the row's deadline: the next decision re-opens the window and re-reads
+        // instead of waiting out another cycle.
+        tool.on_resume(60.0 * 60.0);
+        assert_eq!(tool.card().rows[0].next_minutes, Some(0.0));
+        assert_eq!(
+            tool.decide(),
+            Decision::Click(Point::new(10, 10)),
+            "the resumed run acts on the row it slept through"
+        );
+    }
+
+    /// PET-F15: the close-guard belief is written on BOTH edges — up when this run opens the boarding
+    /// window, down when its close click is sent — so a crash mid-visit leaves `true` behind and the
+    /// next run knows the window may still be up.
+    #[test]
+    fn the_close_guard_belief_is_persisted_on_open_and_on_close() {
+        let config = config(1, false, true, false);
+        let plan = plan_of(&config);
+        let source = FakeSource::new(vec![empty(), empty(), populated(), populated()]);
+        let sink = RecordingSink::new();
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll))
+            .with_state_sink(Arc::clone(&sink) as Arc<dyn crate::pet_state::PetStateSink>);
+
+        let _ = run_to_wait(&mut tool);
+
+        let beliefs: Vec<bool> = sink
+            .patches()
+            .iter()
+            .filter_map(|patch| patch.boarding_window_may_be_open)
+            .collect();
+        assert_eq!(
+            beliefs,
+            vec![true, false],
+            "one write when the window opened, one when it closed"
+        );
+    }
+
+    /// PET-F15: the summary is where a stop INSIDE a visit can say which rows may not have been fed —
+    /// the card's final message is the runner's generic `Stopped.`, and the domain's own sentence
+    /// (`stopped_during`) was written for exactly this and had no caller.
+    #[test]
+    fn a_summary_names_the_rows_a_stop_interrupted() {
+        let config = config(1, false, true, false);
+        let plan = plan_of(&config);
+        let source = FakeSource::new(vec![empty(), empty(), populated(), populated()]);
+        let mut tool = PetTool::new(plan, source, Arc::new(seal_tools::game::AllowAll));
+
+        // Drive until the due row's visit has actually started: the opening decisions queue the
+        // window clicks first, and the visit begins when the look reads the row as empty.
+        for _ in 0..50 {
+            let decision = tool.decide();
+            assert!(
+                !decision.is_terminal(),
+                "the run stopped early: {decision:?}"
+            );
+            if tool.visit.is_some() {
+                break;
+            }
+        }
+        assert!(tool.visit.is_some(), "the row's visit is in flight");
+        let stopped = tool
+            .summary(&StopReason::cancelled("Stopped."))
+            .expect("the feeder always has facts to report");
+        assert_eq!(stopped["stopped_by"], "cancelled");
+        assert!(
+            stopped["interrupted"]
+                .as_str()
+                .is_some_and(|line| line.contains("Row 1")),
+            "the interrupted row is named: {stopped}"
+        );
+
+        // A run between visits has nothing to warn about.
+        let _ = run_to_wait(&mut tool);
+        let idle = tool
+            .summary(&StopReason::cancelled("Stopped."))
+            .expect("the feeder always has facts to report");
+        assert_eq!(idle["interrupted"], serde_json::Value::Null, "{idle}");
     }
 
     #[derive(Default)]
@@ -3304,6 +4425,79 @@ mod loop_tests {
     }
 
     // ── the icon-match port ─────────────────────────────────────────────────────────────────
+
+    /// PET-F16: the sweep compares each offset IN PLACE through one reused crop buffer. The score
+    /// must be exactly the minimum the allocate-a-crop-per-offset path produced — a reused buffer
+    /// that left a stale row behind would score a picture that is not on screen.
+    #[test]
+    fn the_in_place_sweep_scores_the_same_pixels_as_explicit_crops() {
+        let icon = PetImage {
+            width: 8,
+            height: 8,
+            rgba: (0..64u8).flat_map(|pixel| [pixel, 0, 0, 255]).collect(),
+        };
+        // A 40x40 bag whose pixels vary by row AND column, so a stale row or column shows up.
+        let mut bag = PetImage {
+            width: 40,
+            height: 40,
+            rgba: vec![0u8; 40 * 40 * 4],
+        };
+        for y in 0..40 {
+            for x in 0..40 {
+                let index = (y * 40 + x) * 4;
+                bag.rgba[index] = u8::try_from((x * 3 + y * 7) % 256).expect("fits");
+                bag.rgba[index + 1] = u8::try_from((x * 5) % 256).expect("fits");
+                bag.rgba[index + 2] = u8::try_from((y * 11) % 256).expect("fits");
+                bag.rgba[index + 3] = 255;
+            }
+        }
+        let centre = Point::new(20, 20);
+        let (pitch_x, pitch_y) = (8, 8);
+
+        let in_place = best_offset_score(&bag, centre, pitch_x, pitch_y, &icon);
+
+        let mut reference: Option<f64> = None;
+        for dy in -SEARCH_RADIUS..=SEARCH_RADIUS {
+            for dx in -SEARCH_RADIUS..=SEARCH_RADIUS {
+                let left = centre.x + dx - pitch_x / 2;
+                let top = centre.y + dy - pitch_y / 2;
+                if left < 0 || top < 0 {
+                    continue;
+                }
+                let (left, top) = (
+                    usize::try_from(left).expect("non-negative"),
+                    usize::try_from(top).expect("non-negative"),
+                );
+                let (width, height) = (
+                    usize::try_from(pitch_x).expect("positive"),
+                    usize::try_from(pitch_y).expect("positive"),
+                );
+                if left + width > bag.width || top + height > bag.height {
+                    continue;
+                }
+                let mut crop = PetImage {
+                    width,
+                    height,
+                    rgba: Vec::new(),
+                };
+                for y in top..top + height {
+                    let start = (y * bag.width + left) * 4;
+                    crop.rgba
+                        .extend_from_slice(&bag.rgba[start..start + width * 4]);
+                }
+                if let Some(score) =
+                    differing_fraction_images(&icon, &crop, ICON_INSET, ICON_TOLERANCE)
+                {
+                    reference = Some(reference.map_or(score, |best: f64| best.min(score)));
+                }
+            }
+        }
+
+        assert_eq!(
+            in_place, reference,
+            "the reused buffer scores the same pixels"
+        );
+    }
 
     #[test]
     fn the_icon_difference_ignores_the_border_and_resizes_the_cell() {

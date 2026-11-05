@@ -163,6 +163,17 @@ fn meta(folded: bool) -> Value {
     })
 }
 
+/// True when the overlay carried the once-only fold marker into the migration. `ConfigStore::load`
+/// runs the legacy fold before calling this function, so a shipped install answers `true`; a caller
+/// that migrates an unfolded tree directly stamps `false`, which is the truth rather than a claim
+/// (HW-F3).
+fn fold_marker(local: &Map<String, Value>) -> bool {
+    local
+        .get("settings")
+        .and_then(|settings| settings.get("legacy_folded"))
+        == Some(&Value::Bool(true))
+}
+
 /// True when `meta.yaml` already says the tree was migrated.
 fn already_migrated(root: &Path) -> Result<bool, ConfigError> {
     let Some(meta) = file::read(root, def(META)?)? else {
@@ -205,14 +216,18 @@ fn write_user_blocks(root: &Path, blocks: &Map<String, Value>) -> Result<(), Con
     file::write_text(&root.join(USER), &text)
 }
 
-/// Migrate one config root. `base` is the parsed shipped default template, used to verify the new
-/// tree loads exactly as the old one did. Returns `None` when the tree was already migrated.
+/// Migrate one config root. `base` is the parsed shipped default template. Returns `None` when the
+/// tree was already migrated.
+///
+/// The new tree is verified BEFORE the old file is retired: it must load back to the same values the
+/// legacy loader served, and a mismatch restores every written file from the backup and refuses with
+/// the differing JSON pointers (HW-F4).
 ///
 /// # Errors
 ///
 /// Returns [`ConfigError`] when the backup copy, a read or parse of `local.yaml`/the template, a
-/// routed write, or the verify-before-retire load fails. A crop that cannot be decoded does not
-/// fail the migration: it stays inline and is reported in [`MigrationReport::warnings`].
+/// routed write, or the verify-before-retire comparison fails. A crop that cannot be decoded does
+/// not fail the migration: it stays inline and is reported in [`MigrationReport::warnings`].
 pub fn migrate(root: &Path, base: &Value) -> Result<Option<MigrationReport>, ConfigError> {
     if already_migrated(root)? {
         return Ok(None);
@@ -252,6 +267,8 @@ pub fn migrate(root: &Path, base: &Value) -> Result<Option<MigrationReport>, Con
     };
 
     let warnings = extract_crops(root, &mut local);
+    // The marker the new tree will carry: what the overlay actually states, not a hard-coded claim.
+    let folded = fold_marker(&local);
     let owned = crate::OWNED_LOCAL_BLOCKS;
     let mut sections = Map::new();
     let mut foreign = Map::new();
@@ -269,12 +286,32 @@ pub fn migrate(root: &Path, base: &Value) -> Result<Option<MigrationReport>, Con
     let written = layout::write_sections(root, &sections)?;
     write_user_blocks(root, &foreign)?;
 
-    // Verify BEFORE retiring the old file: the new tree must load against the same template.
+    // Verify BEFORE retiring the old file: the new tree must load back to the settings the old
+    // loader served. `layout::load` always starts from the base, so "it loaded" proves nothing; the
+    // comparison is what catches a routing gap that dropped a block (HW-F4). The expected value is
+    // computed from the SAME overlay the router saw — crops already rewritten to artifact
+    // references, so that documented difference cannot hide a real loss.
+    let mut written_files = written.files;
+    if !foreign.is_empty() {
+        written_files.push(USER);
+    }
+    let expected = crate::store::legacy_merged_config(base, &Value::Object(local));
     let loaded = layout::load(root, base)?;
-    if loaded.config.is_null() {
-        return Err(ConfigError::Parse {
-            path: root.to_path_buf(),
-            message: "the migrated tree loaded as null".to_owned(),
+    let losses = lost_values(&expected, &loaded.config);
+    if !losses.is_empty() {
+        let rollback_failed = restore_from_backup(root, &backup, &written_files);
+        let message = if rollback_failed.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " The previous files could not all be restored: {}.",
+                rollback_failed.join("; ")
+            )
+        };
+        return Err(ConfigError::MigrationMismatch {
+            differences: losses,
+            backup,
+            message,
         });
     }
 
@@ -283,12 +320,9 @@ pub fn migrate(root: &Path, base: &Value) -> Result<Option<MigrationReport>, Con
         path: local_path,
         source,
     })?;
-    file::write(root, def(META)?, &meta(true))?;
-    let mut files = written.files;
+    file::write(root, def(META)?, &meta(folded))?;
+    let mut files = written_files;
     files.push(META);
-    if !foreign.is_empty() {
-        files.push(USER);
-    }
     files.sort_unstable();
     Ok(Some(MigrationReport {
         backup,
@@ -296,4 +330,158 @@ pub fn migrate(root: &Path, base: &Value) -> Result<Option<MigrationReport>, Con
         user_blocks: foreign.keys().cloned().collect(),
         warnings,
     }))
+}
+
+/// How many losses one refusal names. Enough to identify the shape of the bug, few enough to stay
+/// readable in the startup line.
+const MAX_DIFFERENCES: usize = 8;
+
+/// The values the old loader served that the new tree does NOT reproduce — the migration's
+/// verify-before-retire comparison (HW-F4). A missing or changed value is a loss and refuses the
+/// migration; an EXTRA value is not: the router may keep a setting the current template no longer
+/// lists, and refusing an upgrade because the new tree preserved more than the old one served would
+/// strand the player's own data. Object keys are walked, and an array with a different length is
+/// reported at the array rather than at every shifted index.
+fn lost_values(expected: &Value, actual: &Value) -> Vec<String> {
+    let mut losses = Vec::new();
+    collect_losses(expected, actual, "", &mut losses);
+    losses
+}
+
+fn collect_losses(expected: &Value, actual: &Value, pointer: &str, out: &mut Vec<String>) {
+    if out.len() >= MAX_DIFFERENCES {
+        return;
+    }
+    match (expected, actual) {
+        (Value::Object(expected), Value::Object(actual)) => {
+            for (key, value) in expected {
+                let child = format!("{pointer}/{key}");
+                match actual.get(key) {
+                    Some(actual) => collect_losses(value, actual, &child, out),
+                    None => out.push(format!("{child}: missing from the migrated tree")),
+                }
+                if out.len() >= MAX_DIFFERENCES {
+                    return;
+                }
+            }
+        }
+        (Value::Array(expected), Value::Array(actual)) => {
+            if expected.len() != actual.len() {
+                out.push(format!(
+                    "{}: {} entries became {}",
+                    label(pointer),
+                    expected.len(),
+                    actual.len()
+                ));
+                return;
+            }
+            for (index, (expected, actual)) in expected.iter().zip(actual).enumerate() {
+                collect_losses(expected, actual, &format!("{pointer}/{index}"), out);
+                if out.len() >= MAX_DIFFERENCES {
+                    return;
+                }
+            }
+        }
+        // An extra key on a new side that is not an object reaches this arm too; it is not a loss,
+        // so only an expected value that changed is reported.
+        _ if expected != actual => out.push(format!(
+            "{}: expected {expected}, the migrated tree loaded {actual}",
+            label(pointer)
+        )),
+        _ => {}
+    }
+}
+
+fn label(pointer: &str) -> &str {
+    if pointer.is_empty() {
+        "(root)"
+    } else {
+        pointer
+    }
+}
+
+/// Put every file the migration wrote back the way the backup holds it, so a refused migration
+/// leaves the tree as the old loader saw it. A file the backup does not have did not exist before,
+/// so it is removed; the backup itself stays untouched as the record. Failures are collected rather
+/// than aborting, because the returned error already carries the mismatch that caused this.
+fn restore_from_backup(root: &Path, backup: &Path, files: &[&str]) -> Vec<String> {
+    let mut failures = Vec::new();
+    for path in files {
+        let target = root.join(path);
+        let source = backup.join(path);
+        let result = if source.is_file() {
+            fs::copy(&source, &target).map(|_| ())
+        } else {
+            match fs::remove_file(&target) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error),
+            }
+        };
+        if let Err(error) = result {
+            failures.push(format!("{path}: {error}"));
+        }
+    }
+    failures
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nested_and_array_losses_are_named_by_their_json_pointer() {
+        let expected = json!({
+            "hotkeys": {"start": 99},
+            "gem": {"grades": ["N", "G"]},
+            "window": {"title": "OLD"},
+        });
+        let actual = json!({
+            "hotkeys": {"start": 0},
+            "gem": {"grades": ["N"]},
+            "window": {"title": "OLD", "extra": true},
+            "unexpected": 1,
+        });
+
+        let losses = lost_values(&expected, &actual);
+
+        assert!(
+            losses.iter().any(|line| line.starts_with("/hotkeys/start")),
+            "{losses:?}"
+        );
+        assert!(
+            losses.iter().any(|line| line.starts_with("/gem/grades:")),
+            "an array length change is one line, not every shifted index: {losses:?}"
+        );
+        assert!(
+            !losses.iter().any(|line| line.starts_with("/window/extra")),
+            "a value the new tree preserves that the old one did not serve is not a loss: {losses:?}"
+        );
+        assert!(
+            !losses.iter().any(|line| line.starts_with("/unexpected")),
+            "an extra top-level block is not a loss either: {losses:?}"
+        );
+        assert!(
+            !losses.iter().any(|line| line.starts_with("/window/title")),
+            "an equal field produces no noise: {losses:?}"
+        );
+    }
+
+    #[test]
+    fn an_identical_tree_has_no_losses() {
+        let value = json!({"a": [1, {"b": null}], "c": "x"});
+        assert_eq!(lost_values(&value, &value.clone()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_wildly_diverged_tree_is_capped_so_the_error_stays_readable() {
+        let expected = Value::Object(
+            (0..50)
+                .map(|key| (key.to_string(), Value::from(key)))
+                .collect(),
+        );
+        let actual = json!({});
+        let losses = lost_values(&expected, &actual);
+        assert_eq!(losses.len(), MAX_DIFFERENCES);
+    }
 }

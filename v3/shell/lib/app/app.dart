@@ -17,5 +17,6 @@ export 'host_actions.dart';
 export 'key_names_result.dart';
 export 'logs.dart';
 export 'shell_model.dart';
+export 'theme_preference.dart';
 export 'tools.dart';
 export 'version.dart';

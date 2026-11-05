@@ -41,6 +41,10 @@ class LogBuffer extends ChangeNotifier {
   final List<LogEntry> _entries = [];
   List<String> _stderrTail = const [];
 
+  /// Optional durable sink (`main` installs the shell file log). Called for every entry, including
+  /// the ones that only live in the 200-line ring (SHELL-F7).
+  void Function(LogOrigin origin, String text)? sink;
+
   /// Oldest first. Unmodifiable.
   List<LogEntry> get entries => List.unmodifiable(_entries);
 
@@ -85,6 +89,11 @@ class LogBuffer extends ChangeNotifier {
     _entries.add(entry);
     if (_entries.length > maxLines) {
       _entries.removeRange(0, _entries.length - maxLines);
+    }
+    try {
+      sink?.call(entry.origin, entry.text);
+    } catch (_) {
+      // A log sink must never break the surface it observes.
     }
     notifyListeners();
   }

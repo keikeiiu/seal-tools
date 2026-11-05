@@ -36,6 +36,7 @@ class ConnectionModel extends ChangeNotifier {
   String? _root;
   List<String> _stderrTail = const [];
   int _crashCount = 0;
+  int? _exitCode;
 
   /// Where the connection is.
   ConnectionStatus get status => _status;
@@ -57,6 +58,9 @@ class ConnectionModel extends ChangeNotifier {
   /// never protocol). Empty while healthy.
   List<String> get stderrTail => _stderrTail;
 
+  /// The core process's exit code at the crash, when the transport reported one (SHELL-F4).
+  int? get exitCode => _exitCode;
+
   /// How many failed connections this app has seen. A count is a UI convenience: it lets the crash
   /// view say "the core failed twice" without the shell inventing a reason.
   int get crashCount => _crashCount;
@@ -76,6 +80,7 @@ class ConnectionModel extends ChangeNotifier {
     _failure = null;
     _failureMessage = null;
     _stderrTail = const [];
+    _exitCode = null;
     notifyListeners();
   }
 
@@ -97,11 +102,13 @@ class ConnectionModel extends ChangeNotifier {
     required ConnectionFailure failure,
     required String message,
     List<String> stderrTail = const [],
+    int? exitCode,
   }) {
     _status = ConnectionStatus.failed;
     _failure = failure;
     _failureMessage = message;
     _stderrTail = List.unmodifiable(stderrTail);
+    _exitCode = exitCode;
     _crashCount++;
     notifyListeners();
   }

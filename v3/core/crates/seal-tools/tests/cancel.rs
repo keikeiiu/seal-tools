@@ -13,7 +13,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Mutex;
 
-use seal_tools::cancel::{CancelToken, Cancelled, RunControl};
+use seal_tools::cancel::{CancelToken, Cancelled, MAX_WAIT_SECONDS, RunControl, TICK_SECONDS};
 use seal_tools::clock::Clock;
 
 /// A clock that records what it was asked to sleep and never really waits.
@@ -181,6 +181,47 @@ fn a_negative_or_nonsense_wait_is_clamped_not_rejected() {
     assert!(clock.total() > 0.0);
 }
 
+/// TOOL-F16: a huge or infinite wait used to saturate the tick count (`usize::MAX` steps) and then
+/// busy-spin at 100 % CPU, because the real clock refused the overflowing `Duration`. The wait is
+/// clamped to one day before any tick arithmetic happens.
+#[test]
+fn an_absurd_wait_is_clamped_to_a_day() {
+    /// Counts ticks without storing them: the clamped wait is 24 h of 50 ms ticks.
+    struct CountingClock {
+        ticks: std::cell::Cell<usize>,
+        total: std::cell::Cell<f64>,
+    }
+
+    impl Clock for CountingClock {
+        fn sleep_seconds(&self, seconds: f64) {
+            self.ticks.set(self.ticks.get() + 1);
+            self.total.set(self.total.get() + seconds);
+        }
+    }
+
+    let control = RunControl::new(CancelToken::new());
+    for absurd in [f64::INFINITY, f64::MAX, 1.0e12] {
+        let clock = CountingClock {
+            ticks: std::cell::Cell::new(0),
+            total: std::cell::Cell::new(0.0),
+        };
+
+        assert_eq!(control.sleep(&clock, absurd), Ok(()));
+
+        let expected = 1_728_000_usize; // MAX_WAIT_SECONDS / TICK_SECONDS = 86_400 / 0.05
+        assert_eq!(
+            clock.ticks.get(),
+            expected,
+            "{absurd} was clamped to {MAX_WAIT_SECONDS} s"
+        );
+        assert!(
+            (clock.total.get() - MAX_WAIT_SECONDS).abs() < 1e-3,
+            "{absurd}: the clamped wait is the day, not the input: {}",
+            clock.total.get()
+        );
+    }
+}
+
 // ── "a stop abandons the WORK, not the CLEANUP" ────────────────────────────────────────────────
 
 #[test]
@@ -229,6 +270,164 @@ fn a_finished_inner_cleanup_does_not_end_an_outer_one() {
     });
 
     assert_eq!(control.check(), Err(Cancelled));
+}
+
+// ── the deadline wait and the suspend it can see (PET-F12) ─────────────────────────────────────
+
+/// A clock with both readings. Each sleep advances the clocks by what was asked plus `overshoot`
+/// (a slow timer, the thing a sum of relative sleeps accumulates), and a one-shot `jump` is applied
+/// to the WALL clock only — which is what a suspend looks like from inside a wait.
+struct TimeKeepingClock {
+    state: Mutex<TimeState>,
+}
+
+struct TimeState {
+    monotonic: f64,
+    wall: f64,
+    overshoot: f64,
+    jump: Option<f64>,
+    slept: Vec<f64>,
+}
+
+impl TimeKeepingClock {
+    fn new(overshoot: f64) -> Self {
+        Self {
+            state: Mutex::new(TimeState {
+                monotonic: 0.0,
+                wall: 0.0,
+                overshoot,
+                jump: None,
+                slept: Vec::new(),
+            }),
+        }
+    }
+
+    fn with_jump(overshoot: f64, jump: f64) -> Self {
+        let clock = Self::new(overshoot);
+        clock.state.lock().expect("not poisoned").jump = Some(jump);
+        clock
+    }
+
+    fn slept(&self) -> Vec<f64> {
+        self.state.lock().expect("not poisoned").slept.clone()
+    }
+
+    fn monotonic(&self) -> f64 {
+        self.state.lock().expect("not poisoned").monotonic
+    }
+}
+
+impl Clock for TimeKeepingClock {
+    fn sleep_seconds(&self, seconds: f64) {
+        let mut state = self.state.lock().expect("not poisoned");
+        state.slept.push(seconds);
+        state.monotonic += seconds + state.overshoot;
+        state.wall += seconds + state.overshoot;
+        if let Some(jump) = state.jump.take() {
+            state.wall += jump;
+        }
+    }
+
+    fn monotonic_seconds(&self) -> Option<f64> {
+        Some(self.monotonic())
+    }
+
+    fn wall_seconds(&self) -> Option<f64> {
+        Some(1_000.0 + self.state.lock().expect("not poisoned").wall)
+    }
+}
+
+#[test]
+fn a_timed_wait_sleeps_to_a_deadline_instead_of_adding_ticks() {
+    // Each tick overruns by 10 ms (a real timer's resolution). The old sum of 50 ms sleeps asked for
+    // 0.2 s and let the error accumulate; the deadline asks for what is LEFT, so the last tick is the
+    // remainder rather than another 50 ms.
+    let control = RunControl::new(CancelToken::new());
+    let clock = TimeKeepingClock::new(0.01);
+
+    assert_eq!(control.sleep(&clock, 0.2), Ok(()));
+
+    let last = clock.slept().last().copied().expect("at least one tick");
+    assert!(
+        (last - 0.02).abs() < 1e-9,
+        "the last tick is the remainder the deadline left: {:?}",
+        clock.slept()
+    );
+    assert!(
+        clock.monotonic() <= 0.2 + TICK_SECONDS,
+        "the wait ends at the deadline, not a tick past it: {}",
+        clock.monotonic()
+    );
+}
+
+#[test]
+fn a_wall_clock_jump_during_a_wait_is_reported_as_a_resume() {
+    // The machine slept for 90 s in the middle of a five-minute wait. The wall clock saw it, the
+    // monotonic clock did not: the wait ends there and the run is told how much real time passed.
+    let control = RunControl::new(CancelToken::new());
+    let clock = TimeKeepingClock::with_jump(0.0, 90.0);
+
+    assert_eq!(control.sleep(&clock, 300.0), Ok(()));
+
+    assert_eq!(
+        clock.slept().len(),
+        1,
+        "the wait does not keep sleeping through a suspend: {:?}",
+        clock.slept()
+    );
+    let slept = control.take_resume().expect("the resume is reported");
+    assert!(
+        (slept - 90.05).abs() < 1e-6,
+        "real time that passed: {slept}"
+    );
+    assert_eq!(
+        control.take_resume(),
+        None,
+        "a resume is reported exactly once"
+    );
+}
+
+#[test]
+fn ordinary_timer_drift_is_not_a_resume() {
+    // A tick arriving a little late is not a suspend: the threshold is well above any scheduling
+    // latency, so the wait finishes normally and the run is not told to re-read.
+    let control = RunControl::new(CancelToken::new());
+    let clock = TimeKeepingClock::with_jump(0.0, 1.0);
+
+    assert_eq!(control.sleep(&clock, 0.2), Ok(()));
+
+    assert!(clock.slept().len() >= 4, "{:?}", clock.slept());
+    assert_eq!(control.take_resume(), None);
+}
+
+#[test]
+fn a_timed_wait_still_observes_a_stop() {
+    // Cancels on the first tick, which must be seen during the wait rather than at the deadline.
+    struct Cancelling(TimeKeepingClock, CancelToken);
+    impl Clock for Cancelling {
+        fn sleep_seconds(&self, seconds: f64) {
+            self.0.sleep_seconds(seconds);
+            self.1.cancel();
+        }
+        fn monotonic_seconds(&self) -> Option<f64> {
+            self.0.monotonic_seconds()
+        }
+        fn wall_seconds(&self) -> Option<f64> {
+            self.0.wall_seconds()
+        }
+    }
+
+    let token = CancelToken::new();
+    let control = RunControl::new(token.clone());
+    let clock = TimeKeepingClock::new(0.0);
+    let cancelling = Cancelling(clock, token);
+
+    assert_eq!(control.sleep(&cancelling, 5.0), Err(Cancelled));
+    assert_eq!(
+        cancelling.0.slept().len(),
+        1,
+        "the first tick observed the stop"
+    );
 }
 
 #[test]

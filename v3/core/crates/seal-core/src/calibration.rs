@@ -667,8 +667,16 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
             json!({}),
         );
     };
-    let frame_width = frame.get("width").and_then(Value::as_u64).unwrap_or(0) as i32;
-    let frame_height = frame.get("height").and_then(Value::as_u64).unwrap_or(0) as i32;
+    let frame_width = frame
+        .meta()
+        .get("width")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as i32;
+    let frame_height = frame
+        .meta()
+        .get("height")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as i32;
 
     let (mark, rect) = match def.shape {
         Shape::Rect => {
@@ -746,25 +754,12 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
                 json!({"kind": kind_name}),
             );
         };
-        let Some(encoded) = frame.get("data").and_then(Value::as_str) else {
-            return fail(
-                &request.id,
-                "the frame carries no PNG data to crop",
-                json!({"frame_id": frame_id}),
-            );
-        };
-        let png = match base64::engine::general_purpose::STANDARD.decode(encoded) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                return fail(
-                    &request.id,
-                    format!("the frame's PNG data is not base64: {error}"),
-                    json!({"frame_id": frame_id}),
-                );
-            }
-        };
-        let (width, height, rgba) = match seal_win::pure::decode_png(&png) {
-            Ok(pixels) => pixels,
+        let (width, height, rgba) = match frame.rgba() {
+            Ok((width, height, rgba)) => (
+                u32::try_from(width).unwrap_or(u32::MAX),
+                u32::try_from(height).unwrap_or(u32::MAX),
+                rgba,
+            ),
             Err(error) => {
                 return fail(
                     &request.id,
@@ -773,8 +768,7 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
                 );
             }
         };
-        let (crop_w, crop_h, cropped) = match seal_win::pure::crop_rgba(width, height, &rgba, rect)
-        {
+        let (crop_w, crop_h, cropped) = match seal_win::pure::crop_rgba(width, height, rgba, rect) {
             Ok(crop) => crop,
             Err(error) => {
                 return fail(
@@ -915,6 +909,11 @@ pub fn save(state: &mut CoreState, request: &Request) -> Response {
 /// written, with its natural dimensions and the bytes so the shell can draw it after a restart without
 /// guessing a path. A missing/undecodable file is simply absent - the gallery is evidence, not a
 /// reason for `fetch` to fail.
+///
+/// CORE-F10: the dimensions come from the PNG header, not a full decode, and the gallery is only
+/// echoed by `calibration.fetch_all` (the one request that opens the workspace). `calibration.fetch`
+/// used to attach up to four full frames, several megabytes, to every per-kind fetch the shell's
+/// fallback issues.
 fn session_gallery(state: &CoreState) -> Value {
     const ARTIFACTS: &[(&str, &str)] = &[
         ("tuner", "calib_tuner.png"),
@@ -927,7 +926,7 @@ fn session_gallery(state: &CoreState) -> Value {
         .filter_map(|(name, file)| {
             let path = state.store.path_of(file);
             let bytes = std::fs::read(&path).ok()?;
-            let (width, height, _) = seal_win::pure::decode_png(&bytes).ok()?;
+            let (width, height) = png_dimensions(&bytes)?;
             Some(json!({
                 "name": name,
                 "file": file,
@@ -940,7 +939,26 @@ fn session_gallery(state: &CoreState) -> Value {
     Value::Array(entries)
 }
 
+/// A PNG's `width`/`height` from its IHDR chunk (the file's first 24 bytes). A full decode is what
+/// CORE-F10 removed: it allocated the whole RGBA frame of up to four full-client captures just to
+/// read two integers. A file that is not a PNG (or truncated before the IHDR data) is `None` and the
+/// gallery simply omits it, exactly like an undecodable one before.
+fn png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    const SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    if bytes.get(..8) != Some(SIGNATURE.as_slice()) || bytes.get(12..16) != Some(b"IHDR".as_slice())
+    {
+        return None;
+    }
+    let width = u32::from_be_bytes(bytes.get(16..20)?.try_into().ok()?);
+    let height = u32::from_be_bytes(bytes.get(20..24)?.try_into().ok()?);
+    (width > 0 && height > 0).then_some((width, height))
+}
+
 /// Run `calibration.fetch`: the stored mark and, when the kind has one, the stored crop.
+///
+/// CORE-F10: the reference gallery is NOT part of this answer any more. The shell only ever reads it
+/// from `calibration.fetch_all`, while the per-kind fallback issues this request about 35 times; four
+/// full frames per answer was several megabytes on the stdout pipe for data nobody read.
 pub fn fetch(state: &CoreState, request: &Request) -> Response {
     let Some(kind_name) = request.args.get("kind").and_then(Value::as_str) else {
         return fail(
@@ -1003,7 +1021,6 @@ pub fn fetch(state: &CoreState, request: &Request) -> Response {
         "kind": def.name,
         "mark": mark,
         "artifact": artifact,
-        "gallery": session_gallery(state),
         "rev": state.rev,
     });
     if let Some(target) = &target {
@@ -1077,7 +1094,8 @@ fn withdrawn_catalog() -> Value {
 
 /// `calibration.fetch_all {}`: every stored mark plus the environment block in ONE local read, so
 /// opening the workspace is one request rather than ~35 fetches (G08). Artifacts stay per-kind (only
-/// one kind has one today) and are read best-effort like `fetch` does.
+/// one kind has one today) and are read best-effort like `fetch` does. The reference gallery rides
+/// ONLY on this answer (CORE-F10): it is the one request the workspace opener issues.
 #[must_use]
 pub fn fetch_all(state: &CoreState, request: &Request) -> Response {
     let local = match state.store.load_local() {

@@ -462,6 +462,109 @@ fn a_fake_run_logs_the_start_only_changed_statuses_and_the_finish() {
     assert_eq!(logs.write_failures(), 0);
 }
 
+/// CORE-F12: a status line is logged when its TEXT changes; a countdown that only moves its numbers
+/// is the same line. Before this, the pet's "reload in 205 min" wrote one `<tool>.log` line per tick,
+/// and every line reopened the file under the one global lock.
+#[test]
+fn a_countdown_status_writes_one_line_not_one_per_tick() {
+    let dir = TestDir::new();
+    let logs = Arc::new(Logs::new(dir.path()));
+    let registry = ScriptedRegistry::scripted(
+        ToolId::Pet,
+        vec![
+            Decision::wait(0.0),
+            Decision::wait(0.0),
+            Decision::wait(0.0),
+            Decision::stop(StopReason::done("schedule ends")),
+        ],
+        &[
+            "reload in 205 min",
+            "reload in 204 min",
+            "reload in 203 min",
+        ],
+    );
+    let (bus, events) = seal_core::events::event_channel();
+    let mut supervisor = Supervisor::start(
+        Arc::clone(&registry) as Arc<dyn ToolRegistry>,
+        bus,
+        Arc::clone(&logs),
+    );
+
+    assert_eq!(
+        supervisor.start_tool(ToolId::Pet, &Value::Null),
+        StartReply::Started
+    );
+    let finished = wait_finished(&events);
+    supervisor.shutdown("test");
+
+    let messages: Vec<String> = tool_log(&dir, ToolId::Pet)
+        .iter()
+        .map(|line| message_of(line))
+        .collect();
+    assert_eq!(
+        messages.join(" | "),
+        "run started | reload in 205 min | finished — schedule ends",
+        "only the countdown's first tick is a distinct line"
+    );
+    assert_eq!(finished.data["reason"], "done");
+}
+
+/// CORE-F12: a file that passes its cap is rotated instead of growing forever, and the retained
+/// copies stay bounded. The cap and the number of copies are constructible so the test does not need
+/// ten megabytes of lines.
+#[test]
+fn a_file_past_its_cap_rotates_and_keeps_a_bounded_number_of_copies() {
+    let dir = TestDir::new();
+    // Each line is exactly 32 bytes: a 19-character stamp, a space, "rotation NNN" and the newline.
+    // A 100-byte cap therefore rotates after every fourth line.
+    let logs = Logs::with_rotation(dir.path(), 100, 2);
+
+    for index in 1..=7 {
+        logs.tool_line(ToolId::Pet, &format!("rotation {index:03}"));
+    }
+    assert!(
+        dir.exists("logs/pet.log.1"),
+        "the first four lines moved to the rotated copy"
+    );
+    assert!(!dir.exists("logs/pet.log.2"), "one rotation is not yet two");
+    let retained = format!("{}{}", dir.read("logs/pet.log.1"), dir.read("logs/pet.log"));
+    for index in 1..=7 {
+        assert!(
+            retained.contains(&format!("rotation {index:03}")),
+            "line {index} was not lost by the rotation: {retained}"
+        );
+    }
+
+    for index in 8..=13 {
+        logs.tool_line(ToolId::Pet, &format!("rotation {index:03}"));
+    }
+    assert!(
+        dir.exists("logs/pet.log.2"),
+        "the second rotation shifted the oldest copy up"
+    );
+    assert!(
+        !dir.exists("logs/pet.log.3"),
+        "KEEP_ROTATED=2 bounds the file at three copies"
+    );
+    let retained = format!(
+        "{}{}{}",
+        dir.read("logs/pet.log.2"),
+        dir.read("logs/pet.log.1"),
+        dir.read("logs/pet.log")
+    );
+    assert!(
+        !retained.contains("rotation 001"),
+        "the oldest lines are deleted, not kept forever: {retained}"
+    );
+    for index in 5..=13 {
+        assert!(
+            retained.contains(&format!("rotation {index:03}")),
+            "line {index} is inside the retained window: {retained}"
+        );
+    }
+    assert_eq!(logs.write_failures(), 0);
+}
+
 #[test]
 fn a_stop_logs_a_stopped_final_line_not_a_finished_one() {
     let dir = TestDir::new();
@@ -674,6 +777,7 @@ fn gem_empty_check_saves_the_crop_and_writes_the_detail_to_gem_log() {
         &logs,
         &EmptyRead::DiffFraction(0.12),
         None,
+        0.01,
         0.18,
         Some(PNG_BYTES),
     )
@@ -698,19 +802,22 @@ fn gem_empty_check_saves_the_crop_and_writes_the_detail_to_gem_log() {
     assert_eq!(lines.len(), 1);
     assert!(
         lines[0].contains(
-            "empty check: diff=0.120 threshold=0.180 empty=true capture=logs/captures/empty_check_crop_"
+            "empty check: diff=0.120 diff_max=0.010 signature_distance=0.180 empty=false \
+             capture=logs/captures/empty_check_crop_"
         ),
-        "v2's detail, recorded in the tool log: {}",
+        "both thresholds, named by metric, recorded in the tool log: {}",
         lines[0]
     );
 
     // The weaker read has no crop and says why; the line is still written.
-    let no_capture = record_empty_check(&logs, &EmptyRead::NoReference, None, 0.18, None);
+    let no_capture = record_empty_check(&logs, &EmptyRead::NoReference, None, 0.01, 0.18, None);
     assert!(no_capture.is_none());
     let lines = read_lines(&dir.path_of("logs/gem.log"));
     assert_eq!(lines.len(), 2);
     assert!(
-        lines[1].contains("diff=n/a (no reference) threshold=0.180 empty=false"),
+        lines[1].contains(
+            "diff=n/a (no reference) diff_max=0.010 signature_distance=0.180 empty=false"
+        ),
         "{}",
         lines[1]
     );

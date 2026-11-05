@@ -990,6 +990,62 @@ void main() {
       expect(harness.model.miniMode, isTrue);
       expect(harness.model.miniTool, ToolId.holdspace);
     });
+
+    test('collapse_on_run_start off keeps the full window for a run', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect(
+        config: {
+          'settings': {
+            'ui': {'collapse_on_run_start': false},
+          },
+        },
+      );
+
+      harness.emitState(tool: ToolId.tuner, message: 'running');
+      await settle();
+      expect(harness.model.miniMode, isFalse);
+      expect(host.miniChromeCalls, isEmpty);
+      expect(harness.model.miniCandidate, ToolId.tuner);
+
+      // The manual app-bar action still works.
+      await harness.model.collapseToMini();
+      await settle();
+      expect(harness.model.miniMode, isTrue);
+      expect(host.miniChromeCalls, [true]);
+    });
+
+    test(
+      'return_after_run restores the full window when the run ends',
+      () async {
+        final host = FakeHost();
+        final harness = AppHarness(host: host);
+        addTearDown(harness.dispose);
+        await harness.connect(
+          config: {
+            'settings': {
+              'ui': {'return_after_run': true},
+            },
+          },
+        );
+        harness.emitState(tool: ToolId.tuner, message: 'running');
+        await settle();
+        expect(harness.model.miniMode, isTrue);
+
+        harness.emitState(
+          tool: ToolId.tuner,
+          phase: ToolPhase.idle,
+          message: 'DONE',
+        );
+        harness.emitToolFinished(tool: ToolId.tuner);
+        await settle();
+        expect(harness.model.miniMode, isFalse);
+        expect(host.miniChromeCalls, [true, false]);
+        expect(host.minSizeCalls.last, (1120, 680));
+        expect(host.appliedRects.last, _rect(10, 10, 1280, 720));
+      },
+    );
   });
 
   group('quick dock', () {
@@ -1108,6 +1164,44 @@ void main() {
         expect(host.appliedRects.last, _rect(1564, 564, 340, 460));
       },
     );
+
+    test('theme preference is saved, applied and restored', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect();
+      harness.answerConfigCommands();
+      await settle();
+      expect(harness.model.themeMode, ShellThemeMode.dark);
+      expect(host.titleBarThemeCalls.last, 2, reason: 'dark title bar');
+
+      await harness.model.setThemeMode(ShellThemeMode.light);
+      await settle();
+      expect(harness.model.themeMode, ShellThemeMode.light);
+      expect(host.titleBarThemeCalls.last, 1);
+      final args =
+          harness.lastSentWithCmd('config.apply')!['args']
+              as Map<String, dynamic>;
+      final sections = args['sections'] as Map<String, dynamic>;
+      final settings = sections['settings'] as Map<String, dynamic>;
+      final ui = settings['ui'] as Map<String, dynamic>;
+      expect(ui['theme'], 'light');
+
+      final restoredHost = FakeHost();
+      final restored = AppHarness(host: restoredHost);
+      addTearDown(restored.dispose);
+      await restored.connect(
+        config: {
+          'window': {'title': 'TW_LIVE'},
+          'settings': {
+            'ui': {'theme': 'light'},
+          },
+        },
+      );
+      await settle();
+      expect(restored.model.themeMode, ShellThemeMode.light);
+      expect(restoredHost.titleBarThemeCalls.last, 1);
+    });
 
     test('pinned Sell actions and tile order persist and restore', () async {
       final host = FakeHost();

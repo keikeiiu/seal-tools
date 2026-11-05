@@ -7,8 +7,9 @@
 //! threshold, 48-px input height, 320-wide rec cap.
 
 use seal_ocr::detgeom::{
-    DetBox, Quad, arc_length, box_score, contour_area, filled_mean, min_area_rect, offset_round,
-    sort_boxes, unclip_distance,
+    DetBox, Quad, arc_length, box_score, contour_area, contour_crop_quad, filled_mean,
+    filled_mean_scanned, min_area_rect, min_area_rect_pts, offset_round, quad_height,
+    quad_short_side, quad_width, sort_boxes, unclip_distance,
 };
 use seal_ocr::detmask::{Mask, ScoreMap, dilate, find_contours, threshold};
 use seal_ocr::imageops::{Rgb, perspective_crop, rec_input};
@@ -159,6 +160,52 @@ fn a_hole_is_a_second_contour_with_the_opposite_orientation() {
     );
 }
 
+#[test]
+fn a_pinch_vertex_keeps_both_boundary_loops_closed() {
+    // One 4-connected component with a 2-cell hole whose boundary touches the outer one at the vertex
+    // (2,2): two boundary edges leave that vertex. The old per-start HashMap kept only one of them,
+    // so the walk re-traced visited edges and emitted four spiralling "contours" for one outer loop
+    // and one hole; the sorted-edge walk emits exactly the two loops (OCR-F16).
+    let pixels: Vec<(usize, usize)> = vec![
+        (0, 0),
+        (1, 0),
+        (2, 0),
+        (3, 0),
+        (4, 0),
+        (0, 1),
+        (1, 1),
+        (4, 1),
+        (2, 2),
+        (3, 2),
+        (4, 2),
+        (2, 3),
+        (3, 3),
+        (4, 3),
+        (0, 4),
+        (1, 4),
+        (2, 4),
+        (3, 4),
+        (4, 4),
+    ];
+    let mask = blob_mask(&pixels, 5, 5);
+
+    let contours = find_contours(&mask);
+
+    assert_eq!(
+        contours.len(),
+        2,
+        "one outer loop and one hole loop: {contours:?}"
+    );
+    for contour in &contours {
+        let first = contour.points.first().copied().expect("a non-empty loop");
+        let last = contour.points.last().copied().expect("a non-empty loop");
+        assert!(
+            (first.0 - last.0).abs() <= 1 && (first.1 - last.1).abs() <= 1,
+            "every loop closes on itself: {contour:?}"
+        );
+    }
+}
+
 fn signed_area(points: &[(f64, f64)]) -> f64 {
     let mut sum = 0.0;
     for index in 0..points.len() {
@@ -262,6 +309,59 @@ fn box_points_are_clockwise_starting_at_the_top_left_most_corner() {
     assert_eq!(second, (10.0, 0.0), "clockwise from the start: {quad:?}");
 }
 
+/// A `width` x `height` rectangle rotated by `degrees` clockwise (image coordinates, y down).
+fn rotated_rectangle(width: f64, height: f64, degrees: f64) -> Vec<seal_ocr::detgeom::Pt> {
+    let (sin, cos) = degrees.to_radians().sin_cos();
+    [(0.0, 0.0), (width, 0.0), (width, height), (0.0, height)]
+        .iter()
+        .map(|(x, y)| seal_ocr::detgeom::Pt {
+            x: x * cos - y * sin,
+            y: x * sin + y * cos,
+        })
+        .collect()
+}
+
+#[test]
+fn a_tilted_box_keeps_its_wide_side_as_the_width() {
+    // A 2° counter-clockwise tilt (right end higher) makes the top-RIGHT corner the top-most one. The
+    // old "start at the top-most corner" order then began at TR, so width/height swapped and the crop
+    // was the box rotated 90° (OCR-F4).
+    for degrees in [2.0, 10.0, -2.0, -10.0] {
+        let points = rotated_rectangle(30.0, 8.0, degrees);
+        let quad = min_area_rect_pts(&points);
+        assert!(
+            quad_width(&quad) > quad_height(&quad),
+            "at {degrees} degrees the wide side must stay the width: {quad:?}"
+        );
+        assert!(
+            (quad_width(&quad) - 30.0).abs() < 0.5,
+            "the width is the rectangle's own: {quad:?}"
+        );
+        assert!((quad_height(&quad) - 8.0).abs() < 0.5, "{quad:?}");
+    }
+}
+
+#[test]
+fn a_tilted_box_starts_at_the_top_left_corner() {
+    let points = rotated_rectangle(30.0, 8.0, -2.0);
+    let quad = min_area_rect_pts(&points);
+
+    // Four corners clockwise from TL. A counter-clockwise tilt puts TR higher than TL, so the
+    // invariant is not "TL is the top-most": it is that TL is the upper of the two LEFT corners.
+    let mut by_x = quad.0;
+    by_x.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
+    assert_eq!(quad.0[0], by_x[0], "the leftmost top corner leads");
+    assert_eq!(quad.0[3], by_x[1], "the other left corner closes the quad");
+    assert!(
+        quad.0[0].y <= quad.0[3].y,
+        "TL is above BL on the left edge: {quad:?}"
+    );
+    assert!(
+        quad.0[1].y <= quad.0[2].y,
+        "TR is above BR on the right edge: {quad:?}"
+    );
+}
+
 // ── 4. box score, filter, unclip ───────────────────────────────────────────────────────────
 
 #[test]
@@ -286,6 +386,59 @@ fn the_box_score_is_the_mean_over_the_filled_polygon() {
     let mean = filled_mean(&map, &polygon);
 
     assert!((mean - 0.65).abs() < 1e-6, "{mean}");
+}
+
+#[test]
+fn the_box_score_scan_is_bounded_by_the_polygons_own_bbox() {
+    // A contour at (100,100) on a 512x512 map must not make the score scan visit the whole map: the
+    // reference `box_score_fast` clips the fill polygon to its integer bounding box (OCR-F2).
+    let map = score_map(512, 512, vec![0.05; 512 * 512]);
+    let polygon = [
+        seal_ocr::detgeom::Pt { x: 100.0, y: 100.0 },
+        seal_ocr::detgeom::Pt { x: 104.0, y: 100.0 },
+        seal_ocr::detgeom::Pt { x: 104.0, y: 104.0 },
+        seal_ocr::detgeom::Pt { x: 100.0, y: 104.0 },
+    ];
+
+    let (mean, scanned) = filled_mean_scanned(&map, &polygon);
+
+    assert!((mean - 0.05).abs() < 1e-6, "{mean}");
+    assert_eq!(
+        scanned, 25,
+        "only the clamped 5x5 bounding box (floor..=ceil) is visited"
+    );
+}
+
+#[test]
+fn a_polygon_clipped_at_the_map_edge_scores_over_the_visible_pixels() {
+    let map = score_map(4, 4, vec![1.0; 16]);
+    // Half of this box is left of and above the map; the scan clips it, it does not overflow.
+    let polygon = [
+        seal_ocr::detgeom::Pt { x: -3.0, y: -3.0 },
+        seal_ocr::detgeom::Pt { x: 2.0, y: -3.0 },
+        seal_ocr::detgeom::Pt { x: 2.0, y: 2.0 },
+        seal_ocr::detgeom::Pt { x: -3.0, y: 2.0 },
+    ];
+
+    let (mean, scanned) = filled_mean_scanned(&map, &polygon);
+
+    assert!((mean - 1.0).abs() < 1e-6, "{mean}");
+    assert_eq!(scanned, 9, "the clamped 3x3 corner of the map");
+}
+
+#[test]
+fn a_polygon_entirely_outside_the_map_scores_nothing() {
+    let map = score_map(4, 4, vec![1.0; 16]);
+    let polygon = [
+        seal_ocr::detgeom::Pt { x: 10.0, y: 10.0 },
+        seal_ocr::detgeom::Pt { x: 12.0, y: 10.0 },
+        seal_ocr::detgeom::Pt { x: 12.0, y: 12.0 },
+        seal_ocr::detgeom::Pt { x: 10.0, y: 12.0 },
+    ];
+
+    let (mean, scanned) = filled_mean_scanned(&map, &polygon);
+
+    assert_eq!((mean, scanned), (0.0, 0), "nothing to sample");
 }
 
 #[test]
@@ -349,6 +502,62 @@ fn the_round_join_offset_moves_each_edge_out_by_the_distance() {
         (area - expected).abs() / expected < 0.02,
         "area {area} vs {expected}"
     );
+}
+
+#[test]
+fn the_crop_quad_is_the_unclipped_kernel_not_the_raw_min_rect() {
+    // A 20x6 DB kernel (pixel indices 20..=39 x 10..=15) on a high-scoring map: the crop must include
+    // the unclip margin DB's shrunk kernel lost, or ascenders and descenders are cut off (OCR-F1).
+    let (width, height) = (60usize, 40usize);
+    let mut scores = vec![0.0f32; width * height];
+    for y in 10..16 {
+        for x in 20..40 {
+            scores[y * width + x] = 0.95;
+        }
+    }
+    let map = score_map(width, height, scores);
+    let contour = [(20i32, 10i32), (39, 10), (39, 15), (20, 15)];
+
+    let quad = contour_crop_quad(&map, &contour, 0.6, 1.5).expect("a 20x6 kernel is a candidate");
+
+    let raw = min_area_rect(&contour);
+    let raw_points = quad_points(&raw);
+    let distance = unclip_distance(
+        contour_area(&raw_points),
+        arc_length(&raw_points, true),
+        1.5,
+    );
+    assert!(
+        (quad_width(&quad) - (quad_width(&raw) + 2.0 * distance)).abs() < 1e-6,
+        "width {} vs {} + 2*{distance}",
+        quad_width(&quad),
+        quad_width(&raw)
+    );
+    assert!(
+        (quad_height(&quad) - (quad_height(&raw) + 2.0 * distance)).abs() < 1e-6,
+        "height {} vs {} + 2*{distance}",
+        quad_height(&quad),
+        quad_height(&raw)
+    );
+    assert!(
+        quad_short_side(&quad) > quad_short_side(&raw),
+        "the crop is bigger than the shrunk kernel: {quad:?} vs {raw:?}"
+    );
+}
+
+#[test]
+fn a_speck_below_the_min_box_side_is_not_a_candidate() {
+    let map = score_map(10, 10, vec![0.95; 100]);
+    // 2x2 pixels: the min-area rectangle's short side is 1 px, below `_minSize` 3.
+    let contour = [(1i32, 1i32), (2, 1), (2, 2), (1, 2)];
+    assert!(contour_crop_quad(&map, &contour, 0.6, 1.5).is_none());
+}
+
+#[test]
+fn a_low_scoring_kernel_is_not_a_candidate() {
+    let map = score_map(60, 40, vec![0.1; 60 * 40]);
+    let contour = [(20i32, 10i32), (39, 10), (39, 15), (20, 15)];
+    assert!(contour_crop_quad(&map, &contour, 0.6, 1.5).is_none());
 }
 
 // ── 5. warp + row sort ────────────────────────────────────────────────────────────────────

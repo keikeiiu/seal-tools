@@ -19,7 +19,59 @@ library;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+
+/// Run [body] with the shell hidden, then SHOW it again unconditionally.
+///
+/// This is the one capture lifecycle (SHELL-F8): hide -> wait one composited frame -> command ->
+/// show. The frame matters: the core checks the game is foreground, and DWM may not have removed
+/// the shell yet on the same frame as [HostActions.hideWindow]. A body throw still shows the window
+/// in a `finally`; a hide/show channel error is reported through [onHostError] instead of leaving
+/// the app invisible with no tray affordance.
+Future<T> withHiddenWindow<T>(
+  HostActions host,
+  Future<T> Function() body, {
+  ValueChanged<String>? onHostError,
+}) async {
+  try {
+    await host.hideWindow();
+  } catch (_) {
+    onHostError?.call(
+      'the shell could not hide itself — the game has to be in front for a capture',
+    );
+  }
+  await waitOneFrame();
+  try {
+    return await body();
+  } finally {
+    try {
+      await host.showWindow();
+    } catch (_) {
+      onHostError?.call('the shell could not be shown again — no host channel');
+    }
+  }
+}
+
+/// Wait for the next composited frame, with a 50 ms fallback so a paused engine cannot hang a
+/// capture (the same rule the calibration tab used before the helper existed).
+Future<void> waitOneFrame() async {
+  final waited = Completer<void>();
+  final fallback = Timer(const Duration(milliseconds: 50), () {
+    if (!waited.isCompleted) {
+      waited.complete();
+    }
+  });
+  unawaited(
+    SchedulerBinding.instance.endOfFrame.whenComplete(() {
+      if (!waited.isCompleted) {
+        waited.complete();
+      }
+    }),
+  );
+  await waited.future;
+  fallback.cancel();
+}
 
 /// A rectangle in the shell's LOGICAL screen space.
 ///
@@ -147,6 +199,10 @@ abstract class HostActions {
   /// A no-op on hosts that cannot change the window style.
   Future<void> setMiniChrome(bool mini) async {}
 
+  /// Match the native title bar to the app appearance: 0 follows the Windows setting, 1 forces light,
+  /// 2 forces dark. A no-op on hosts without native chrome.
+  Future<void> setTitleBarTheme(int mode) async {}
+
   /// The shell window's current rect in logical screen coordinates.
   Future<WindowRect> windowRect();
 
@@ -165,6 +221,11 @@ abstract class HostActions {
   /// True while the window is visible; false during the capture's hide, when a placement must not be
   /// remembered.
   Future<bool> isWindowVisible();
+
+  /// Open the install's `logs/` folder in the OS file manager, optionally selecting [highlight]
+  /// (a bare per-run log file name such as `pet.log`). The runner resolves the install directory
+  /// from its own executable; the shell never invents a path. Hosts without the action are inert.
+  Future<void> openLogsFolder({String? highlight}) async {}
 
   /// Rect changes the runner reports, in logical coordinates: one per settled user move/resize (the
   /// runner sends on `WM_EXITSIZEMOVE`), plus maximize/restore. Silent while the window is hidden.
@@ -230,6 +291,10 @@ class MethodChannelHostActions implements HostActions {
       _channel.invokeMethod<void>('setMiniChrome', mini);
 
   @override
+  Future<void> setTitleBarTheme(int mode) =>
+      _channel.invokeMethod<void>('setTitleBarTheme', mode);
+
+  @override
   Future<WindowRect> windowRect() async {
     final rect = WindowRect.fromChannel(
       await _channel.invokeMethod<Object?>('windowRect'),
@@ -270,4 +335,10 @@ class MethodChannelHostActions implements HostActions {
   @override
   Future<bool> isWindowVisible() async =>
       await _channel.invokeMethod<bool>('isWindowVisible') ?? true;
+
+  @override
+  Future<void> openLogsFolder({String? highlight}) =>
+      _channel.invokeMethod<void>('openLogsFolder', {
+        if (highlight != null && highlight.isNotEmpty) 'file': highlight,
+      });
 }

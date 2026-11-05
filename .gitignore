@@ -8,11 +8,21 @@ sessions/
 state.json
 gem_state.json
 spammer_state.json
-# v3's dev/install config tree: the core writes v3/config/local.yaml (machine state). The seed files
-# beside it are committed; the player's local curve is not.
+# v3's dev/install config tree: the core writes v3/config/local.yaml (legacy machine state) and,
+# after the portable-layout migration, player state under setup/, machine/, artifacts/ plus user.yaml,
+# meta.yaml and the transaction scratch. The seed files beside them are committed; the player's own
+# calibration and run state are not.
 v3/config/local.yaml
 v3/config/local.yaml.backup-*
 v3/config/local.yaml.corrupt-backup
+v3/config/setup/
+v3/config/machine/
+v3/config/artifacts/
+v3/config/user.yaml
+v3/config/meta.yaml
+v3/config/.migration-backup-*
+v3/config/.seal-txn/
+v3/config/.seal-core.lock
 
 # ── Control files ──────────────────────────────────────
 control.txt
@@ -31,6 +41,8 @@ slot_captures/
 # Documentation screenshots ARE committed — the rule above exists to keep runtime captures and
 # calibration images out, and docs/images holds neither. Needs to come after *.png to take effect.
 !v2/docs/images/*.png
+# OCR regression corpus cases are committed test data, not runtime captures (OCR-F11).
+!v3/core/fixtures/ocr/**/*.png
 
 # ── Build artifacts ────────────────────────────────────
 __pycache__/

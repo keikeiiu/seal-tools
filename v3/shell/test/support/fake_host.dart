@@ -82,6 +82,9 @@ class FakeHost implements HostActions {
   /// Every mini-chrome toggle the shell asked for, in order.
   final List<bool> miniChromeCalls = <bool>[];
 
+  /// Every native title-bar theme request: 0 system, 1 light, 2 dark.
+  final List<int> titleBarThemeCalls = <int>[];
+
   /// How many times `windowRect()` was asked (the restore's baseline read).
   int windowRectQueries = 0;
 
@@ -142,6 +145,14 @@ class FakeHost implements HostActions {
   }
 
   @override
+  Future<void> setTitleBarTheme(int mode) async {
+    if (failWindowCalls) {
+      throw StateError('the host refused setTitleBarTheme');
+    }
+    titleBarThemeCalls.add(mode);
+  }
+
+  @override
   Future<WindowRect> windowRect() async {
     if (failWindowCalls) {
       throw StateError('the host refused windowRect');
@@ -177,4 +188,12 @@ class FakeHost implements HostActions {
 
   @override
   Future<bool> isWindowVisible() async => visible;
+
+  /// Every `openLogsFolder` call's highlight argument (`null` = folder only).
+  final List<String?> openedLogsFolders = <String?>[];
+
+  @override
+  Future<void> openLogsFolder({String? highlight}) async {
+    openedLogsFolders.add(highlight);
+  }
 }

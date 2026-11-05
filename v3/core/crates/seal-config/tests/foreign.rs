@@ -137,6 +137,33 @@ fn crlf_is_normalised_to_lf() {
 }
 
 #[test]
+fn non_identifier_and_quoted_top_level_keys_are_foreign_blocks() {
+    // HW-F14: these are legal top-level keys. The old identifier-only scanner missed them, so a
+    // later save dropped the player's block from local.yaml.
+    let text = "\
+my-notes:
+  monitor: left
+\"my notes\":
+  keep: true
+'third.block':
+  quoted: single
+";
+    let extracted = foreign_blocks(text);
+    assert!(extracted.contains("my-notes:"), "{extracted}");
+    assert!(extracted.contains("\"my notes\":"), "{extracted}");
+    assert!(extracted.contains("'third.block':"), "{extracted}");
+    assert!(extracted.contains("monitor: left"), "{extracted}");
+    assert!(extracted.contains("keep: true"), "{extracted}");
+    assert!(extracted.contains("quoted: single"), "{extracted}");
+}
+
+#[test]
+fn a_bom_does_not_hide_the_first_foreign_key() {
+    let text = "\u{feff}my-notes:\n  monitor: left\n";
+    assert_eq!(foreign_blocks(text), "\nmy-notes:\n  monitor: left\n");
+}
+
+#[test]
 fn a_file_that_is_only_a_header_keeps_nothing() {
     assert_eq!(foreign_blocks("# a header\n#\n\n"), "");
 }

@@ -5,12 +5,10 @@
 //! disk and every write re-reads under the save gate, which is v2's `UpdateLocal` shape and the fix
 //! for the lost-block bug that file paid for four times.
 
-use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value};
 
@@ -114,7 +112,28 @@ impl ConfigStore {
     /// Returns [`ConfigError`] when the base/template or `local.yaml` cannot be read or parsed,
     /// when the one-time fold fails with anything but a write error, or when the portable layout's
     /// load fails.
+    /// Loads the config — see [`Self::load_detailed`] — and returns the merged value alone. Callers
+    /// that can show an advisory line (the shell's log, the core's startup) should use
+    /// [`Self::load_detailed`] so a quarantined machine file is not silent (HW-F15).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] for the same reasons as [`Self::load_detailed`].
     pub fn load(&self) -> Result<Value, ConfigError> {
+        Ok(self.load_detailed()?.config)
+    }
+
+    /// Loads the config and the advisory warnings the load produced. The warnings today are a
+    /// machine file that could not be parsed and was quarantined aside (HW-F15); a load that
+    /// succeeds with one has already moved the bad file, so the tool surfaces normally and the
+    /// player is told what happened.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when the base/template or `local.yaml` cannot be read or parsed,
+    /// when the one-time fold fails with anything but a write error, or when the portable layout's
+    /// load fails.
+    pub fn load_detailed(&self) -> Result<crate::layout::Loaded, ConfigError> {
         // A SHIPPED install (it carries the template) with a legacy local.yaml is migrated on the
         // next boot: the migration backs the folder up and writes the LAST marker, so this is the
         // one-time switch. A development checkout has only defaults.yaml and stays on the legacy
@@ -128,13 +147,17 @@ impl ConfigStore {
             && !self.is_new_layout()
         {
             let base = self.read_yaml(DEFAULTS_TEMPLATE)?;
+            // The legacy fold has to happen BEFORE the migration: the migration routes local.yaml
+            // and retires it, so anything still only in defaults.yaml would never be read again
+            // (HW-F3).
+            self.fold_legacy_before_migration(&base)?;
             crate::migrate::migrate(&self.dir, &base)?;
         }
         // The portable layout (PLAN-PORTABLE-SETUP) is the live path once `meta.yaml` says the tree
         // was migrated. A dev tree without it keeps the legacy single-file path below.
         if self.is_new_layout() {
             let base = self.load_base_template()?;
-            return Ok(crate::layout::load(&self.dir, &base)?.config);
+            return crate::layout::load(&self.dir, &base);
         }
         // THE BASE. An install that has taken an update has the shipped template — the zip carries
         // the defaults as config/defaults.yaml.example precisely so that extracting an update
@@ -234,7 +257,12 @@ impl ConfigStore {
 
         resolve_variant(&mut config);
 
-        Ok(config)
+        // The legacy path has no per-file tree, so nothing there can be quarantined; the warnings
+        // slot exists so both paths answer the same shape.
+        Ok(crate::layout::Loaded {
+            config,
+            warnings: Vec::new(),
+        })
     }
 
     /// Parses `local.yaml` on its own — the overlay, not the merged config. `Value::Null` for an
@@ -392,11 +420,15 @@ impl ConfigStore {
     /// The new tree seen through the OLD overlay shape (`settings:` + machine blocks). Every
     /// `update_local` closure in the core speaks this shape; presenting it here is what lets the
     /// writer switch to per-file routing without rewriting dozens of call sites.
+    ///
+    /// A corrupt machine file is quarantined here too, so a save or an overlay read is not blocked
+    /// by the same file that would have blocked startup (HW-F15). The warning belongs to the load
+    /// path ([`Self::load_detailed`]); this view has no slot for it.
     fn new_layout_view(&self) -> Result<Value, ConfigError> {
         let mut view = Map::new();
         let mut settings = Map::new();
         for def in registry::portable_files() {
-            let Some(content) = file::read(&self.dir, def)? else {
+            let Some(content) = file::read_or_quarantine(&self.dir, def)?.0 else {
                 continue;
             };
             if let Some(blocks) = content.as_object() {
@@ -420,7 +452,7 @@ impl ConfigStore {
             view.insert(SETTINGS.to_owned(), Value::Object(settings));
         }
         for def in registry::machine_files() {
-            let Some(content) = file::read(&self.dir, def)? else {
+            let Some(content) = file::read_or_quarantine(&self.dir, def)?.0 else {
                 continue;
             };
             let Value::Object(blocks) = content else {
@@ -592,15 +624,8 @@ impl ConfigStore {
             source,
         })?;
         let path = self.dir.join(name);
-        let temp = temp_path(&path);
-        fs::write(&temp, bytes).map_err(|source| ConfigError::Write {
-            path: temp.clone(),
-            source,
-        })?;
-        if let Err(source) = fs::rename(&temp, &path) {
-            let _ = fs::remove_file(&temp);
-            return Err(ConfigError::Write { path, source });
-        }
+        // One writer for every save, so the artifact cannot be half-written either (HW-F5).
+        file::atomic_replace(&path, bytes)?;
         Ok(path)
     }
 
@@ -813,6 +838,45 @@ impl ConfigStore {
         }
     }
 
+    /// Folds the legacy `defaults.yaml` into `local.yaml` BEFORE the layout migration runs.
+    ///
+    /// The migration routes whatever `local.yaml` holds and then retires it; it never reads the old
+    /// shipped file. On an install that upgrades from a pre-fold release the player's settings
+    /// (hotkeys, tuner behaviour, presets) live ONLY in that file, so folding afterwards can never
+    /// happen — there is no legacy read left on the new layout. This is the pre-step that makes the
+    /// migration lossless (HW-F3).
+    ///
+    /// A failed fold write is a real error here, not the tolerated `false` of the per-session path:
+    /// proceeding would retire the only copy of the values.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when the legacy file or `local.yaml` cannot be read, or when the fold
+    /// write fails.
+    fn fold_legacy_before_migration(&self, base: &Value) -> Result<(), ConfigError> {
+        if !self.path_of(DEFAULTS).is_file() {
+            // Nothing to fold; the migration's marker then truthfully says "folded".
+            return Ok(());
+        }
+        let mut legacy = self.read_yaml(DEFAULTS)?;
+        migrate_spammer_presets(&mut legacy);
+        let mut base = base.clone();
+        migrate_spammer_presets(&mut base);
+        if !self.fold_into_local(&legacy, &base)? {
+            return Err(ConfigError::Write {
+                path: self.path_of(LOCAL),
+                source: io::Error::other(
+                    "the one-time fold of defaults.yaml could not be written, so the layout \
+                     migration was not started and nothing was retired",
+                ),
+            });
+        }
+        // The presets used to live in the shipped file; take them along in the same window the fold
+        // opens, or the migration's save would leave them behind (HW-F3).
+        let mut local = self.read_yaml(LOCAL)?;
+        self.adopt_spammer_presets(&legacy, &mut local)
+    }
+
     /// Adopts spammer presets left in the old shipped file into `local.yaml`, at most once.
     ///
     /// Presets used to be saved into the shipped `defaults.yaml`. The save path stopped writing them,
@@ -921,24 +985,14 @@ impl ConfigStore {
         yaml::parse(&text).map_err(|message| ConfigError::Parse { path, message })
     }
 
-    /// The atomic writer: a unique temp name beside the destination, then a replace. A failure
-    /// removes the temp so it cannot leave litter in the player's config folder or a name for the
-    /// next writer to collide with.
+    /// The atomic writer: a unique temp name beside the destination, an fsync, then a replace that
+    /// waits out a transient holder. The one implementation lives in [`file::atomic_replace`] so the
+    /// legacy store and the portable tree cannot drift apart on durability (HW-F5).
     ///
     /// Callers that do not already hold [`SAVE_GATE`] use [`Self::write_atomically_locked`]; the
     /// gate is not reentrant, so this one is the inner half.
     fn write_atomically(path: &Path, text: &str) -> Result<(), ConfigError> {
-        let temp = temp_path(path);
-        let result = fs::write(&temp, text).and_then(|()| fs::rename(&temp, path));
-        if let Err(source) = result {
-            // The first failure is the one worth reporting; a failed cleanup must not replace it.
-            let _ = fs::remove_file(&temp);
-            return Err(ConfigError::Write {
-                path: path.to_owned(),
-                source,
-            });
-        }
-        Ok(())
+        file::atomic_replace(path, text.as_bytes())
     }
 
     fn write_atomically_locked(path: &Path, text: &str) -> Result<(), ConfigError> {
@@ -954,25 +1008,6 @@ fn lock_save_gate() -> MutexGuard<'static, ()> {
     SAVE_GATE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-/// The unique temp name for one write: `<file>.<pid><nanos><sequence>.tmp` beside the destination.
-/// Unique per call and per process, so a writer that died mid-save cannot leave a name the next one
-/// collides with.
-fn temp_path(path: &Path) -> PathBuf {
-    static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let sequence = SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_nanos())
-        .unwrap_or_default();
-    let mut name = OsString::from(path.file_name().unwrap_or(OsStr::new("")));
-    name.push(format!(
-        ".{:x}{:x}{sequence:x}.tmp",
-        std::process::id(),
-        nanos
-    ));
-    path.with_file_name(name)
 }
 
 /// True when `local.yaml`'s `settings:` block carries the once-only fold marker.
@@ -1033,9 +1068,10 @@ fn portable_sections(base: &Value) -> Vec<String> {
     sections
 }
 
-/// The portable shape of the two post-template setting leaves: `ui.always_on_top` and the shell's
-/// `ui.quick_dock` preference. The projection still reduces the merged config to these leaves, so
-/// the machine `ui` block's geometry can never enter the portable `settings:` half.
+/// The portable shape of the post-template setting leaves: `ui.always_on_top`, the shell's
+/// `ui.quick_dock` preference and the two run-window preferences (`collapse_on_run_start`,
+/// `return_after_run`). The projection still reduces the merged config to these leaves, so the
+/// machine `ui` block's geometry can never enter the portable `settings:` half.
 fn ensure_portable_ui(base: &mut Value) {
     let Some(object) = base.as_object_mut() else {
         return;
@@ -1049,6 +1085,15 @@ fn ensure_portable_ui(base: &mut Value) {
     ui_object
         .entry("always_on_top".to_owned())
         .or_insert(Value::Bool(false));
+    ui_object
+        .entry("collapse_on_run_start".to_owned())
+        .or_insert(Value::Bool(true));
+    ui_object
+        .entry("return_after_run".to_owned())
+        .or_insert(Value::Bool(false));
+    ui_object
+        .entry("theme".to_owned())
+        .or_insert(Value::String("dark".to_owned()));
     ui_object.entry("quick_dock".to_owned()).or_insert_with(|| {
         let mut shape = Map::new();
         shape.insert(
@@ -1089,6 +1134,22 @@ fn ensure_portable_ui(base: &mut Value) {
 
 fn is_portable_section(name: &str) -> bool {
     name != "spammer" && name != SETTINGS
+}
+
+/// The merged config the LEGACY loader would serve from `local` over `base` — the "old" half of the
+/// migration's verify-before-retire comparison (HW-F4). Pure: no disk.
+///
+/// `local` is the overlay the migration is routing, with its crops already rewritten to artifact
+/// references, so both sides of the comparison are in the same shape. The legacy `defaults.yaml`
+/// layer is not applied here because the migration only runs after
+/// [`ConfigStore::fold_legacy_before_migration`] has folded it into `local`.
+pub(crate) fn legacy_merged_config(base: &Value, local: &Value) -> Value {
+    let mut config = base.clone();
+    let portable = portable_sections(&config);
+    apply_settings(&mut config, local, &portable);
+    apply_machine_blocks(&mut config, local);
+    resolve_variant(&mut config);
+    config
 }
 
 /// Applies the `settings:` block (the portable half) onto the merged config, in the template's
@@ -1296,26 +1357,7 @@ fn changed_fields(before: Option<&Value>, after: &Value) -> Option<Value> {
 /// Recursive field-wise overlay: objects merge, everything else replaces, and `null` means "not
 /// stated" — the YAML spelling of v2's unset optionals, so it leaves the value below it standing.
 fn merge_overlay(target: &mut Value, overlay: &Value) {
-    match overlay {
-        Value::Object(overlay_object) => match target {
-            Value::Object(target_object) => {
-                for (key, value) in overlay_object {
-                    if value.is_null() {
-                        continue;
-                    }
-                    match target_object.get_mut(key) {
-                        Some(slot) => merge_overlay(slot, value),
-                        None => {
-                            target_object.insert(key.clone(), value.clone());
-                        }
-                    }
-                }
-            }
-            _ => *target = overlay.clone(),
-        },
-        Value::Null => {}
-        _ => *target = overlay.clone(),
-    }
+    crate::layout::merge_with_policy(target, overlay);
 }
 
 /// THE VARIANT RESOLVES THE TITLE, once, here — `window.title` stays the single value every tool

@@ -23,8 +23,16 @@ use seal_board::transport::{Deadline, LineRead, Transport, TransportError};
 struct Board {
     x: i32,
     y: i32,
-    /// Multiplies each `D` move: 1 is a healthy 1:1 board, 2 is a machine that doubles HID counts.
-    gain: i32,
+    /// How many cursor pixels one asked HID count produces, in percent (`100` is the reference
+    /// machine, `50` a machine that under-moves, `150` one that over-moves).
+    gain_percent: i32,
+    /// A board whose first move after the open is swallowed entirely: a missed settle or a stalled
+    /// frame.
+    swallow_first: bool,
+    swallowed: bool,
+    /// Moves whose largest count is below this land at HALF scale: the "Enhance pointer precision"
+    /// curve, where small HID counts are accelerated away.
+    epp_below: i32,
     /// A wedged board: it accepts moves and moves nothing.
     stuck: bool,
     /// One absolute X per move, used to script an overshoot/worsening correction.
@@ -37,12 +45,34 @@ struct Board {
     fail_writes: Option<String>,
 }
 
+impl Board {
+    fn scaled(value: i32, percent: i32) -> i32 {
+        #[allow(clippy::cast_possible_truncation)]
+        let scaled = (f64::from(value) * f64::from(percent) / 100.0).round() as i32;
+        scaled
+    }
+
+    fn apply_move(&mut self, dx: i32, dy: i32) {
+        if self.swallow_first && !self.swallowed {
+            self.swallowed = true;
+            return;
+        }
+        let percent = if self.epp_below > 0 && dx.abs().max(dy.abs()) < self.epp_below {
+            self.gain_percent / 2
+        } else {
+            self.gain_percent
+        };
+        self.x += Self::scaled(dx, percent);
+        self.y += Self::scaled(dy, percent);
+    }
+}
+
 struct Rig(Rc<RefCell<Board>>);
 
 impl Rig {
     fn new() -> Self {
         Self(Rc::new(RefCell::new(Board {
-            gain: 1,
+            gain_percent: 100,
             ..Board::default()
         })))
     }
@@ -85,6 +115,18 @@ impl Rig {
         board.y = y;
     }
 
+    fn set_gain_percent(&self, percent: i32) {
+        self.0.borrow_mut().gain_percent = percent;
+    }
+
+    fn swallow_first_move(&self) {
+        self.0.borrow_mut().swallow_first = true;
+    }
+
+    fn epp_below(&self, counts: i32) {
+        self.0.borrow_mut().epp_below = counts;
+    }
+
     fn set_stuck(&self) {
         self.0.borrow_mut().stuck = true;
     }
@@ -113,8 +155,7 @@ impl Transport for RigTransport {
             if let Some(absolute_x) = board.responses.pop_front() {
                 board.x = absolute_x;
             } else if !board.stuck {
-                board.x += dx * board.gain;
-                board.y += dy * board.gain;
+                board.apply_move(dx, dy);
             }
         }
         Ok(())
@@ -248,9 +289,11 @@ fn the_settle_wait_comes_between_the_move_and_the_next_correction() {
 }
 
 #[test]
-fn an_overshoot_is_corrected_rather_than_left() {
+fn an_overshoot_is_corrected_with_the_measured_gain_not_chased() {
+    // The first move overshoots to 140 because the board scales the counts by 1.4. The loop measures
+    // that gain, damps once for the sign flip, and asks for a small correction instead of chasing
+    // the pointer back and forth (HW-F9).
     let rig = Rig::new();
-    // The first move overshoots to 140 (the board scaled the counts); the loop should ask for -40.
     rig.script_moves(vec![140]);
     let mut transport = rig.transport();
     let mut cursor = rig.cursor();
@@ -258,16 +301,28 @@ fn an_overshoot_is_corrected_rather_than_left() {
     let placement = place(&mut transport, &mut cursor, &rig.clock(), goal(100, 0));
 
     assert!(placement.ok);
-    assert_eq!(placement.steps, 2);
-    assert_eq!(rig.writes(), vec!["D 100 0\n", "D -40 0\n"]);
-    assert_eq!((placement.x, placement.y), (Some(100), Some(0)));
+    assert!(
+        (placement.x.expect("read") - 100).abs() <= TOLERANCE_PX,
+        "landed within tolerance: {:?}",
+        placement.x
+    );
+    assert!(
+        placement.steps <= 4,
+        "the gain estimate converges in a few steps: {}",
+        placement.steps
+    );
+    let first_correction = &rig.writes()[1];
+    assert!(
+        first_correction != "D -40 0\n" && first_correction.starts_with("D -"),
+        "the correction asks BACK, scaled by the measured gain: {first_correction}"
+    );
 }
 
 #[test]
-fn a_correction_that_makes_things_worse_is_damped() {
-    // Step 1 asks for 100 and lands at -20: the error GREW from 100 to 120, so the loop must double
-    // the divisor and ask for 60, not 120. (HidPointer.cs:93-97 — on the reference machine this never
-    // triggers; the damping is for the machine where it does.)
+fn a_move_in_the_wrong_direction_damps_instead_of_inverting_the_gain() {
+    // A sample that says nothing about the gain — the pointer moved AGAINST the ask (a missed
+    // settle, a game warp, a mis-signed calibration) — must halve the estimate, never invert it:
+    // inverting would ask for 400 here (HW-F9).
     let rig = Rig::new();
     rig.script_moves(vec![-20, 40, 70, 85, 92, 96, 98]);
     let mut transport = rig.transport();
@@ -275,21 +330,122 @@ fn a_correction_that_makes_things_worse_is_damped() {
 
     let placement = place(&mut transport, &mut cursor, &rig.clock(), goal(100, 0));
 
-    assert!(placement.ok);
+    assert!(placement.ok, "{placement:?}");
+    let writes = rig.writes();
     assert_eq!(
-        rig.writes(),
-        vec![
-            "D 100 0\n",
-            "D 60 0\n",
-            "D 30 0\n",
-            "D 15 0\n",
-            "D 7 0\n",
-            "D 4 0\n",
-            "D 2 0\n"
-        ],
-        "the first correction after the worsening move is halved, not doubled"
+        writes[1], "D 240 0\n",
+        "halving the gain asks twice the remaining error, not four times it: {writes:?}"
     );
-    assert!(placement.ok);
+    assert!(
+        placement.steps <= 8,
+        "the loop converges after the bad sample: {} steps, {writes:?}",
+        placement.steps
+    );
+}
+
+#[test]
+fn a_half_gain_machine_converges_within_eight_steps() {
+    // The machine moves half of what was asked (a HID-to-cursor scale below 1:1). The old divisor
+    // could only grow, so it needed ~40 steps from 600 px — more than MAX_STEPS (HW-F9).
+    let rig = Rig::new();
+    rig.set_gain_percent(50);
+    let mut transport = rig.transport();
+    let mut cursor = rig.cursor();
+
+    let placement = place(&mut transport, &mut cursor, &rig.clock(), goal(600, 0));
+
+    assert!(placement.ok, "{placement:?}");
+    assert!(
+        placement.steps <= 8,
+        "converged in {} steps: {:?}",
+        placement.steps,
+        rig.writes()
+    );
+    assert!(
+        placement.x.is_some_and(|x| (x - 600).abs() <= TOLERANCE_PX),
+        "{:?}",
+        placement.x
+    );
+}
+
+#[test]
+fn a_one_and_a_half_gain_machine_does_not_oscillate() {
+    let rig = Rig::new();
+    rig.set_gain_percent(150);
+    let mut transport = rig.transport();
+    let mut cursor = rig.cursor();
+
+    let placement = place(&mut transport, &mut cursor, &rig.clock(), goal(600, 0));
+
+    assert!(placement.ok, "{placement:?}");
+    assert!(
+        placement.steps <= 8,
+        "converged in {} steps: {:?}",
+        placement.steps,
+        rig.writes()
+    );
+}
+
+#[test]
+fn a_swallowed_move_is_measured_as_no_motion_and_the_loop_recovers() {
+    // "Enhance pointer precision" can round a whole correction away. The old loop doubled its
+    // divisor permanently on that sample; the gain estimate halves once, asks bigger, and the next
+    // clean move brings it back (HW-F9).
+    let rig = Rig::new();
+    rig.swallow_first_move();
+    let mut transport = rig.transport();
+    let mut cursor = rig.cursor();
+
+    let placement = place(&mut transport, &mut cursor, &rig.clock(), goal(100, 0));
+
+    assert!(placement.ok, "{placement:?}");
+    assert!(
+        placement.steps <= 8,
+        "converged in {} steps: {:?}",
+        placement.steps,
+        rig.writes()
+    );
+}
+
+#[test]
+fn an_epp_curve_that_halves_small_moves_still_converges() {
+    // "Enhance pointer precision" accelerates small counts away: a 5-count ask lands as 2. The gain
+    // estimate must still converge, not stall (HW-F9).
+    let rig = Rig::new();
+    rig.epp_below(10);
+    let mut transport = rig.transport();
+    let mut cursor = rig.cursor();
+
+    let placement = place(&mut transport, &mut cursor, &rig.clock(), goal(605, 0));
+
+    assert!(placement.ok, "{placement:?}");
+    assert!(
+        placement.steps <= 8,
+        "converged in {} steps: {:?}",
+        placement.steps,
+        rig.writes()
+    );
+}
+
+#[test]
+fn a_small_ask_that_is_swallowed_does_not_burn_the_full_settle_budget() {
+    // A ≤3 count ask that produces no motion is swallowed, not "still arriving": waiting the full
+    // 24 × 15 ms for it costs 360 ms per correction and tells the loop nothing (HW-F9).
+    let rig = Rig::new();
+    rig.swallow_first_move();
+    let mut transport = rig.transport();
+    let mut cursor = rig.cursor();
+
+    // Goal 3: the first ask is 3 (inside the small-ask band) and this board swallows it.
+    let placement = place(&mut transport, &mut cursor, &rig.clock(), goal(3, 0));
+
+    assert!(placement.ok, "{placement:?}");
+    assert_eq!(placement.steps, 3, "{:?}", rig.writes());
+    assert!(
+        rig.sleeps().len() <= 6,
+        "the swallowed small ask gave up after {} polls instead of the full budget",
+        rig.sleeps().len()
+    );
 }
 
 #[test]

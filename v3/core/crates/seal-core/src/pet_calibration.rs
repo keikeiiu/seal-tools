@@ -242,7 +242,7 @@ fn crop_rgba(frame: &Value, rect: Rect) -> Result<(u32, u32, Vec<u8>, String), S
 
 fn frame_from(state: &CoreState, request: &Request) -> Result<Value, Box<Response>> {
     if let Some(frame_id) = request.args.get("frame_id").and_then(Value::as_str) {
-        return state.frames.get(frame_id).cloned().ok_or_else(|| {
+        return state.frames.get_value(frame_id).ok_or_else(|| {
             Box::new(fail(
                 &request.id,
                 format!("unknown frame_id {frame_id:?} — capture the window again"),

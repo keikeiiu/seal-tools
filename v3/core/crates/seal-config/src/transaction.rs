@@ -37,6 +37,11 @@ use crate::registry::FileDef;
 /// The directory under the config root; hidden from the player and never in a release zip.
 pub const JOURNAL_DIR: &str = ".seal-txn";
 
+/// The commit marker: a finished commit renames `journal.json` to this BEFORE the best-effort
+/// cleanup. Recovery treats it as committed and only cleans up, never rolls back a save the player
+/// already saw succeed (HW-F2).
+const JOURNAL_DONE: &str = "journal.done";
+
 /// One file's new content, ready to be committed together with the others.
 pub struct PendingWrite {
     pub file: &'static FileDef,
@@ -98,9 +103,15 @@ pub fn commit(root: &Path, writes: &[PendingWrite]) -> Result<(), ConfigError> {
         let backup_name = format!("{index}.bak");
         let temp_name = format!("{index}.tmp");
         if existed {
-            fs::copy(&target, directory.join(&backup_name)).map_err(|source| {
+            // A backup must be DURABLE before the journal points at it: a power loss must not leave
+            // a zero-filled .bak that recovery would copy over the good target (HW-F2).
+            let bytes = fs::read(&target).map_err(|source| ConfigError::Read {
+                path: target.clone(),
+                source,
+            })?;
+            write_synced(&directory.join(&backup_name), &bytes).map_err(|source| {
                 ConfigError::Write {
-                    path: target.clone(),
+                    path: directory.join(&backup_name),
                     source,
                 }
             })?;
@@ -132,7 +143,9 @@ pub fn commit(root: &Path, writes: &[PendingWrite]) -> Result<(), ConfigError> {
         path: journal_temp.clone(),
         source,
     })?;
-    fs::rename(&journal_temp, &journal_path).map_err(|source| ConfigError::Write {
+    // Every replace goes through the one retrying rename: a two-file save was just as exposed to a
+    // transient holder as a single-file one (HW-F5).
+    file::rename_with_retry(&journal_temp, &journal_path).map_err(|source| ConfigError::Write {
         path: journal_path.clone(),
         source,
     })?;
@@ -149,7 +162,9 @@ pub fn commit(root: &Path, writes: &[PendingWrite]) -> Result<(), ConfigError> {
             });
             break;
         }
-        if let Err(source) = fs::rename(directory.join(format!("{index}.tmp")), &target) {
+        if let Err(source) =
+            file::rename_with_retry(&directory.join(format!("{index}.tmp")), &target)
+        {
             failure = Some(ConfigError::Write {
                 path: target,
                 source,
@@ -162,6 +177,13 @@ pub fn commit(root: &Path, writes: &[PendingWrite]) -> Result<(), ConfigError> {
         let _ = recover(root);
         return Err(error);
     }
+    // The renames are the commit. Mark it explicitly and check that step: removing the journal only
+    // best-effort would let a surviving journal roll back a save the player was told succeeded.
+    let done_marker = directory.join(JOURNAL_DONE);
+    file::rename_with_retry(&journal_path, &done_marker).map_err(|source| ConfigError::Write {
+        path: done_marker,
+        source,
+    })?;
     let _ = fs::remove_dir_all(&directory);
     // The container is machine-local scratch; leave no empty `.seal-txn/` behind on a clean tree.
     let _ = fs::remove_dir(root.join(JOURNAL_DIR));
@@ -188,6 +210,16 @@ pub fn recover(root: &Path) -> Result<usize, ConfigError> {
             continue;
         }
         let journal_path = directory.join("journal.json");
+        let done_path = directory.join(JOURNAL_DONE);
+        if done_path.is_file() {
+            // The renames completed; only the best-effort cleanup was interrupted. Never roll back.
+            fs::remove_dir_all(&directory).map_err(|source| ConfigError::Write {
+                path: directory.clone(),
+                source,
+            })?;
+            recovered += 1;
+            continue;
+        }
         if !journal_path.is_file() {
             // No journal means no rename happened; only unprepared files are inside.
             let _ = fs::remove_dir_all(&directory);
@@ -220,15 +252,27 @@ pub fn recover(root: &Path) -> Result<usize, ConfigError> {
                     .get("backup")
                     .and_then(Value::as_str)
                     .map(|name| directory.join(name));
-                if let Some(backup) = backup
-                    && backup.is_file()
-                {
-                    let bytes = fs::read(&backup).map_err(|source| ConfigError::Read {
-                        path: backup.clone(),
-                        source,
-                    })?;
-                    file::write_bytes(&target, &bytes)?;
+                let Some(backup) = backup else {
+                    return Err(ConfigError::Parse {
+                        path: journal_path.clone(),
+                        message: format!("{path} existed but the journal names no backup"),
+                    });
+                };
+                if !backup.is_file() {
+                    // Restoring one side from a missing backup would produce a HALF-applied save.
+                    return Err(ConfigError::Parse {
+                        path: backup,
+                        message: format!(
+                            "{path} had a backup in the journal, but it is missing; refusing to \
+                             restore a partial save"
+                        ),
+                    });
                 }
+                let bytes = fs::read(&backup).map_err(|source| ConfigError::Read {
+                    path: backup.clone(),
+                    source,
+                })?;
+                file::write_bytes(&target, &bytes)?;
             } else {
                 let _ = fs::remove_file(&target);
             }

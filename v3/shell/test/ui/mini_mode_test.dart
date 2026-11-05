@@ -99,6 +99,29 @@ void main() {
     },
   );
 
+  testWidgets('the running bar shows the live read detail', (tester) async {
+    final harness = await _pumpBar(tester);
+    harness.emitState(
+      tool: ToolId.tuner,
+      message: 'reading the grade line',
+      countdown: 12,
+      detail: const [
+        {'label': 'Grade', 'value': 'DG'},
+        {'label': 'Remaining', 'value': '9'},
+        {'label': 'Attempt', 'value': '4'},
+      ],
+    );
+    await _flush(tester);
+
+    expect(find.text('DG · 9 left · attempt 4'), findsOneWidget);
+    expect(find.text('reading the grade line'), findsNothing);
+    // The message is still available as the tooltip rather than being silently lost.
+    expect(find.byTooltip('reading the grade line'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
   testWidgets(
     'the resident Pet Feeder gets a badge; Stop targets the foreground run',
     (tester) async {

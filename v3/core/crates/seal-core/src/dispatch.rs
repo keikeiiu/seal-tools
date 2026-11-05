@@ -14,6 +14,7 @@
 //! `ToolId::ALL` (the ONE accept-and-dispatch list, `OPEN.md` 禮1 item 7) and translate the
 //! supervisor's typed answer into the protocol's `tool_busy`/`not_running`/`bad_request` and events.
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
@@ -46,6 +47,17 @@ const WINDOW_FIELDS: &[(&str, &str)] = &[
     ("height", "expanded_height"),
     ("pinned", "pinned"),
 ];
+
+/// What the cached OCR pipeline was built from (CORE-F7). [`seal_ocr::pipeline::OcrPipeline::load`]
+/// bakes in the active dictionary's `text_fixes` (the cleaner's tables) and `tuner.ocr.row_height`
+/// (the line bucketing), so both are part of its identity: a variant switch or a tuner calibration
+/// must reload the pipeline instead of serving the old dictionary until the core restarts.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OcrIdentity {
+    dictionary: String,
+    row_height: u32,
+    attributes: AttributesConfig,
+}
 
 /// The state one connection's dispatcher works on: the root it bound to, the config store that owns
 /// the files, the merged config as the shell sees it, and the session revision.
@@ -91,6 +103,11 @@ pub struct CoreState {
     /// The lazily-loaded OCR pipeline (`ocr.scan`): loading costs ~330 ms, so the first scan
     /// builds it and later scans reuse it. `None` until then, and in dispatcher tests.
     pub ocr: Option<seal_ocr::pipeline::OcrPipeline>,
+    /// The parts of the config the cached pipeline was BUILT FROM: the active dictionary (its
+    /// `text_fixes` feed the cleaner) and the row height. A config change that alters either must
+    /// rebuild the pipeline instead of serving the old dictionary until the core restarts
+    /// (CORE-F7).
+    pub ocr_build: Option<OcrIdentity>,
     /// The per-run FILE logs (`logs.rs`): opened at boot from the config root. Disabled in
     /// `new()` (the config-only dispatcher tests write no files); the binary uses `load()`.
     pub logs: std::sync::Arc<crate::logs::Logs>,
@@ -125,6 +142,7 @@ impl CoreState {
             attributes: AttributesConfig::default(),
             frames: win::FrameCache::default(),
             ocr: None,
+            ocr_build: None,
             logs: std::sync::Arc::new(crate::logs::Logs::disabled()),
             events: None,
             queued_events: Vec::new(),
@@ -161,6 +179,7 @@ impl CoreState {
             attributes,
             frames: win::FrameCache::default(),
             ocr: None,
+            ocr_build: None,
             logs,
             events: None,
             queued_events: Vec::new(),
@@ -274,19 +293,24 @@ impl CoreState {
     /// One revision for a write this dispatcher performed; also publishes it to the shared counter so
     /// a later worker write cannot move the session backwards.
     pub(crate) fn bump_revision(&mut self) -> u64 {
-        self.rev += 1;
-        self.revision.store(self.rev, Ordering::SeqCst);
-        self.rev
+        // A worker's mid-run write can bump the shared counter while a command is running. fetch_add
+        // gives this write a unique revision instead of overwriting the worker's value with rev+1
+        // (CORE-F4).
+        let next = self.revision.fetch_add(1, Ordering::SeqCst) + 1;
+        self.rev = next;
+        next
     }
 
-    /// Stops every run, waits for the workers and emits `core.stopping`, then joins the supervisor
-    /// thread. Called by the binary after the final response is queued and before the writer is
-    /// finished ??the supervisor is the other `EventBus` holder, and the writer only stops when the
-    /// last one is gone.
-    pub fn shutdown_tools(&mut self, reason: &str) {
-        if let Some(mut supervisor) = self.supervisor.take() {
-            supervisor.shutdown(reason);
-        }
+    /// Stops every run, waits for the workers (bounded by the supervisor's shutdown budget) and
+    /// emits `core.stopping`, then joins the supervisor thread. Called by the binary after the final
+    /// response is queued and before the writer is finished -- the supervisor is the other
+    /// `EventBus` holder, and the writer only stops when the last one is gone. The outcome tells
+    /// `main` whether a worker outlived the deadline (CORE-F8).
+    pub fn shutdown_tools(&mut self, reason: &str) -> crate::supervisor::ShutdownOutcome {
+        let Some(mut supervisor) = self.supervisor.take() else {
+            return crate::supervisor::ShutdownOutcome::Drained;
+        };
+        supervisor.shutdown(reason)
     }
 }
 
@@ -335,56 +359,56 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
         Ok(region) => region,
         Err(error) => return win_error_response(&request.id, error),
     };
-    let frame = if let Some(frame_id) = request.args.get("frame_id").and_then(Value::as_str) {
-        match state.frames.get(frame_id) {
-            Some(frame) => frame.clone(),
-            None => {
+    // CORE-F11: a cached frame is one multi-megabyte base64 string inside a `Value`; it is decoded
+    // from the borrow instead of being cloned per scan, and the optional capture PNG is decoded from
+    // the same borrow. A region capture is owned here anyway.
+    let save_captures = state
+        .config
+        .pointer("/tuner/save_captures")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let (width, height, rgba, frame_png) =
+        if let Some(frame_id) = request.args.get("frame_id").and_then(Value::as_str) {
+            let Some(frame) = state.frames.get(frame_id) else {
                 return bad_request(
                     &request.id,
                     &format!("unknown frame_id {frame_id:?}"),
                     json!({}),
                 );
-            }
-        }
-    } else if request.args.get("region").is_some() {
-        let title = match win::configured_title(&state.config) {
-            Ok(title) => title,
-            Err(error) => return win_error_response(&request.id, error),
+            };
+            let (width, height, rgba) = match frame.rgba() {
+                Ok((width, height, rgba)) => (width, height, rgba.to_vec()),
+                Err(message) => return internal(&request.id, &message),
+            };
+            let frame_png = save_captures.then(|| frame.png().to_vec());
+            (width, height, rgba, frame_png)
+        } else if request.args.get("region").is_some() {
+            let title = match win::configured_title(&state.config) {
+                Ok(title) => title,
+                Err(error) => return win_error_response(&request.id, error),
+            };
+            let frame = match win::capture(&title, region) {
+                Ok((frame, _display)) => frame,
+                Err(error) => return win_error_response(&request.id, error),
+            };
+            let (width, height, rgba) = match frame_rgba(&frame) {
+                Ok(image) => image,
+                Err(message) => return internal(&request.id, &message),
+            };
+            (width, height, rgba, png_of(&frame, save_captures))
+        } else {
+            return bad_request(
+                &request.id,
+                "ocr.scan needs a frame_id or a region",
+                json!({}),
+            );
         };
-        match win::capture(&title, region) {
-            Ok((frame, _display)) => frame,
-            Err(error) => return win_error_response(&request.id, error),
-        }
-    } else {
-        return bad_request(
-            &request.id,
-            "ocr.scan needs a frame_id or a region",
-            json!({}),
-        );
-    };
-    let (width, height, rgba) = match frame_rgba(&frame) {
-        Ok(image) => image,
-        Err(message) => return internal(&request.id, &message),
-    };
     let geometry = ocr_geometry(&state.config);
-    if state.ocr.is_none() {
-        match seal_ocr::pipeline::OcrPipeline::load_for_root(
-            &state.root,
-            &state.attributes,
-            geometry.row_height,
-        ) {
-            Ok(pipeline) => state.ocr = Some(pipeline),
-            Err(error) => {
-                return Response::err(
-                    &request.id,
-                    Error::new(
-                        "ocr_unavailable",
-                        "the OCR models are not available",
-                        json!({"reason": error.reason, "message": error.message}),
-                    ),
-                );
-            }
-        }
+    // CORE-F7: one loader for every scan path, so this scan also rebuilds the pipeline when the
+    // config changed its dictionary/row height (the duplicated inline load used to serve the old
+    // one forever).
+    if let Some(response) = ensure_ocr(state, &request.id) {
+        return response;
     }
     let Some(pipeline) = state.ocr.as_mut() else {
         return internal(&request.id, "the OCR pipeline is not loaded");
@@ -402,13 +426,12 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
             .cloned()
             .and_then(|block| serde_json::from_value(block).ok())
             .unwrap_or_default();
-        geometry.grade_area.and_then(|area| {
-            let width = area.x2.saturating_sub(area.x1).max(1) as u32;
-            let height = area.y2.saturating_sub(area.y1).max(1) as u32;
-            let rect =
-                seal_domain::geometry::Rect::new(area.x1, area.y1, width as i32, height as i32);
-            seal_win::pure::crop_rgba(width, height, &rgba, rect)
-                .ok()
+        geometry.grade_area.as_ref().and_then(|area| {
+            // `crop_rgba` takes the IMAGE dimensions; the area's own width/height are the crop's
+            // size, not the buffer stride. Passing the area size as the image size made every
+            // grade area not starting at (0,0) crop out of bounds and silently disable the colour
+            // fallback (CORE-F5).
+            crop_grade_area(area, width, height, &rgba)
                 .map(|(w, h, pixels)| (colors, w as usize, h as usize, pixels))
         })
     } else {
@@ -431,19 +454,6 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
     // v2 wrote one `ocr_log.jsonl` record per completed scan and an `ocr_errors.jsonl` record when
     // it stayed unconfirmed; a capture PNG is saved only while `tuner.save_captures` is on. The
     // scan's own PNG bytes are already in the frame, so a capture is a byte copy, not a re-encode.
-    let save_captures = state
-        .config
-        .pointer("/tuner/save_captures")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let frame_png = if save_captures {
-        frame
-            .get("data")
-            .and_then(Value::as_str)
-            .and_then(|data| base64::engine::general_purpose::STANDARD.decode(data).ok())
-    } else {
-        None
-    };
     let result = state
         .logs
         .record_scan(mode, &outcome, frame_png.as_deref(), save_captures);
@@ -474,6 +484,27 @@ pub fn ocr_geometry(config: &Value) -> seal_ocr::modes::OcrGeometry {
         remaining_y: band("remaining_y"),
         row_height,
     }
+}
+
+/// Crop the tuner's grade box out of a captured image. The IMAGE's width/height size the source
+/// buffer; the area supplies only the crop rectangle. CORE-F5.
+fn crop_grade_area(
+    area: &seal_ocr::modes::GradeArea,
+    image_width: usize,
+    image_height: usize,
+    rgba: &[u8],
+) -> Option<(u32, u32, Vec<u8>)> {
+    let image_width = u32::try_from(image_width).ok()?;
+    let image_height = u32::try_from(image_height).ok()?;
+    let region_width = u32::try_from(area.x2.saturating_sub(area.x1).max(1)).ok()?;
+    let region_height = u32::try_from(area.y2.saturating_sub(area.y1).max(1)).ok()?;
+    let rect = seal_domain::geometry::Rect::new(
+        area.x1,
+        area.y1,
+        i32::try_from(region_width).ok()?,
+        i32::try_from(region_height).ok()?,
+    );
+    seal_win::pure::crop_rgba(image_width, image_height, rgba, rect).ok()
 }
 
 /// The v2 `tuner.ocr.grade_area` box, in the same region-relative space as `region` and the bands.
@@ -512,17 +543,56 @@ pub(crate) fn frame_rgba(frame: &Value) -> Result<(usize, usize, Vec<u8>), Strin
         .map_err(|error| format!("the frame PNG could not be decoded: {error}"))?;
     Ok((width as usize, height as usize, rgba))
 }
-/// Answers one request. Never panics: a bad request is a refusal the client can show.
+
+/// The PNG bytes a scan records when `tuner.save_captures` is on, decoded out of the frame's base64
+/// once. CORE-F11: the frame itself stays borrowed, never cloned.
+fn png_of(frame: &Value, save_captures: bool) -> Option<Vec<u8>> {
+    if !save_captures {
+        return None;
+    }
+    let data = frame.get("data").and_then(Value::as_str)?;
+    base64::engine::general_purpose::STANDARD.decode(data).ok()
+}
+/// Answers one request. Never panics: a bad request is a refusal the client can show. CORE-F3: a
+/// dispatcher panic is contained and answered with `internal`, instead of killing the core with a
+/// tool/COM port still open.
 #[allow(
     clippy::needless_pass_by_value,
     reason = "the protocol entry point owns the decoded request; the frame loop and every test call it with a constructed value"
 )]
 pub fn handle(state: &mut CoreState, request: Request) -> Response {
-    // A mid-run pet write can bump the shared revision between requests; every boundary starts from
-    // that value so `hello`, conflict checks and echoes never report a pre-write revision.
-    state.rev = state.revision.load(Ordering::SeqCst);
+    let id = request.id.clone();
+    if request.v != PROTOCOL_VERSION {
+        return Response::err(
+            &id,
+            Error::new(
+                "bad_version",
+                &format!("protocol {} is not {}", request.v, PROTOCOL_VERSION),
+                json!({"expected": PROTOCOL_VERSION}),
+            ),
+        );
+    }
+    match catch_unwind(AssertUnwindSafe(|| handle_inner(state, &request))) {
+        Ok(response) => response,
+        Err(_) => internal(&id, "internal error — see error.log"),
+    }
+}
+
+fn handle_inner(state: &mut CoreState, request: &Request) -> Response {
+    // A mid-run pet write can bump the shared revision between requests. If it did, the dispatcher's
+    // copy is stale: refresh it from the shared mirror BEFORE the command can read or republish it.
+    // This is the CORE-F4 fix; it also makes `board.details` (a read-only command) harmless after a
+    // worker persisted `food_slots_used`.
+    let shared_rev = state.revision.load(Ordering::SeqCst);
+    if shared_rev > state.rev {
+        if let Ok(shared) = state.shared_config.read() {
+            state.config = shared.as_ref().clone();
+        }
+        state.rev = shared_rev;
+    }
+    let rev_before = state.rev;
     if request.cmd == "hello" {
-        return hello(state, &request);
+        return hello(state, request);
     }
 
     if !state.handshaken {
@@ -537,61 +607,62 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
             state.stopping = true;
             Response::ok(&request.id, json!({}))
         }
-        "config.validate" => config_validate(state, &request),
-        "config.apply" => config_apply(state, &request),
-        "config.reload" => config_reload(state, &request),
-        "ui.window" => ui_window(state, &request),
-        "window.find" => window_find(state, &request),
-        "window.measure" => window_measure(state, &request),
-        "capture" => capture_command(state, &request),
-        "ocr.scan" => ocr_scan(state, &request),
-        "keys.parse" => keys_parse(state, &request),
-        "keys.names" => keys_names(state, &request),
-        "attributes.get" => attributes_get(state, &request),
-        "logs.cleanup_captures" => logs_cleanup_captures(state, &request),
-        "calibration.save" => crate::calibration::save(state, &request),
-        "calibration.fetch" => crate::calibration::fetch(state, &request),
-        "calibration.fetch_all" => crate::calibration::fetch_all(state, &request),
-        "calibration.kinds" => crate::calibration::kinds(&request),
-        "calibration.check" => crate::calibration::check(state, &request),
+        "config.validate" => config_validate(state, request),
+        "config.apply" => config_apply(state, request),
+        "config.reload" => config_reload(state, request),
+        "ui.window" => ui_window(state, request),
+        "window.find" => window_find(state, request),
+        "window.measure" => window_measure(state, request),
+        "capture" => capture_command(state, request),
+        "capture.discard" => capture_discard_command(state, request),
+        "ocr.scan" => ocr_scan(state, request),
+        "keys.parse" => keys_parse(state, request),
+        "keys.names" => keys_names(state, request),
+        "attributes.get" => attributes_get(state, request),
+        "logs.cleanup_captures" => logs_cleanup_captures(state, request),
+        "calibration.save" => crate::calibration::save(state, request),
+        "calibration.fetch" => crate::calibration::fetch(state, request),
+        "calibration.fetch_all" => crate::calibration::fetch_all(state, request),
+        "calibration.kinds" => crate::calibration::kinds(request),
+        "calibration.check" => crate::calibration::check(state, request),
         "calibration.tooltip.hover_capture" => {
-            crate::tooltip_session::hover_capture(state, &request)
+            crate::tooltip_session::hover_capture(state, request)
         }
-        "calibration.tooltip.save" => crate::tooltip_session::save(state, &request),
-        "calibration.tooltip.test" => crate::tooltip_session::test(state, &request),
-        "calibration.tuner.check" => crate::tuner_session::check(state, &request),
-        "calibration.tuner.save" => crate::tuner_session::save(state, &request),
-        "calibration.pet.preview" => crate::pet_calibration::preview(state, &request),
-        "calibration.pet.save" => crate::pet_calibration::save(state, &request),
-        "calibration.pet.test_read" => crate::pet_calibration::test_read(state, &request),
-        "calibration.gem.moves.save" => crate::gem_session::save(state, &request),
-        "calibration.gem.check_result" => crate::gem_session::check_result(state, &request),
-        "calibration.gem.save" => crate::gem_save::save(state, &request),
-        "calibration.gem.test_route" => crate::gem_routes_session::test_route(state, &request),
-        "calibration.gem.cycle" => crate::gem_routes_session::cycle(state, &request),
-        "calibration.buysell.preview" => crate::buysell_session::preview(state, &request),
-        "calibration.shop.test_scroll" => crate::buysell_session::test_scroll(state, &request),
+        "calibration.tooltip.save" => crate::tooltip_session::save(state, request),
+        "calibration.tooltip.test" => crate::tooltip_session::test(state, request),
+        "calibration.tuner.check" => crate::tuner_session::check(state, request),
+        "calibration.tuner.save" => crate::tuner_session::save(state, request),
+        "calibration.pet.preview" => crate::pet_calibration::preview(state, request),
+        "calibration.pet.save" => crate::pet_calibration::save(state, request),
+        "calibration.pet.test_read" => crate::pet_calibration::test_read(state, request),
+        "calibration.gem.moves.save" => crate::gem_session::save(state, request),
+        "calibration.gem.check_result" => crate::gem_session::check_result(state, request),
+        "calibration.gem.save" => crate::gem_save::save(state, request),
+        "calibration.gem.test_route" => crate::gem_routes_session::test_route(state, request),
+        "calibration.gem.cycle" => crate::gem_routes_session::cycle(state, request),
+        "calibration.buysell.preview" => crate::buysell_session::preview(state, request),
+        "calibration.shop.test_scroll" => crate::buysell_session::test_scroll(state, request),
         "buy_sell.preflight" => Response::ok(
             &request.id,
             crate::buysell_session::preflight(&state.config),
         ),
-        "pointer.place" => pointer_command(state, &request, false),
-        "pointer.click" => pointer_command(state, &request, true),
-        "board.probe" => board_probe(state, &request),
-        "board.details" => board_details(state, &request),
-        "board.test" => board_test(state, &request),
-        "pet.preflight" => pet_preflight(state, &request),
-        "pet.set_boarding" => pet_set_boarding(state, &request),
-        "pet.capture_icon" => pet_capture_icon(state, &request),
-        "pet.scan_food_page" => pet_scan_page(state, &request, false),
-        "pet.scan_queue_page" => pet_scan_page(state, &request, true),
-        "pet.apply_food_scan" => pet_apply_food_scan(state, &request),
-        "pet.scan_feeding_page" => pet_scan_feeding_page(state, &request),
-        "pet.scan_apply_queue" => pet_scan_apply_queue(state, &request),
-        "pet.test_read_panel" => pet_test_read_panel(state, &request),
-        "pet.select_page" => crate::pet_session::select_page(state, &request),
-        "tool.start" => tool_start(state, &request),
-        "tool.stop" => tool_stop(state, &request),
+        "pointer.place" => pointer_command(state, request, false),
+        "pointer.click" => pointer_command(state, request, true),
+        "board.probe" => board_probe(state, request),
+        "board.details" => board_details(state, request),
+        "board.test" => board_test(state, request),
+        "pet.preflight" => pet_preflight(state, request),
+        "pet.set_boarding" => pet_set_boarding(state, request),
+        "pet.capture_icon" => pet_capture_icon(state, request),
+        "pet.scan_food_page" => pet_scan_page(state, request, false),
+        "pet.scan_queue_page" => pet_scan_page(state, request, true),
+        "pet.apply_food_scan" => pet_apply_food_scan(state, request),
+        "pet.scan_feeding_page" => pet_scan_feeding_page(state, request),
+        "pet.scan_apply_queue" => pet_scan_apply_queue(state, request),
+        "pet.test_read_panel" => pet_test_read_panel(state, request),
+        "pet.select_page" => crate::pet_session::select_page(state, request),
+        "tool.start" => tool_start(state, request),
+        "tool.stop" => tool_stop(state, request),
         other => bad_request(
             &request.id,
             &format!("unknown command {other:?}"),
@@ -607,7 +678,11 @@ pub fn handle(state: &mut CoreState, request: Request) -> Response {
             .logs
             .error_line(&format!("{}: {}", request.cmd, error.message));
     }
-    state.publish_config();
+    // Publish only when THIS command changed the config. A read-only command must not write the
+    // dispatcher's old copy over a mid-run worker write (CORE-F4).
+    if state.rev != rev_before {
+        state.publish_config();
+    }
     response
 }
 
@@ -616,8 +691,24 @@ impl CoreState {
     /// called once per command, so registry and shell can never disagree about which preset is active.
     pub fn publish_config(&self) {
         if let Ok(mut shared) = self.shared_config.write() {
-            *shared = self.config.clone();
+            *shared = Arc::new(self.config.clone());
         }
+    }
+
+    /// The OCR pipeline's identity under the CURRENT config (CORE-F7).
+    fn ocr_identity(&self) -> OcrIdentity {
+        OcrIdentity {
+            dictionary: self.dictionary.clone(),
+            row_height: ocr_geometry(&self.config).row_height,
+            attributes: self.attributes.clone(),
+        }
+    }
+
+    /// Whether the cached pipeline was built from a different dictionary/row height than the config
+    /// now names (CORE-F7). `false` only when a cache exists AND matches; `ensure_ocr` pairs this
+    /// with the pipeline being present.
+    fn ocr_is_stale(&self) -> bool {
+        self.ocr_build.as_ref() != Some(&self.ocr_identity())
     }
 }
 
@@ -772,7 +863,9 @@ fn config_apply(state: &mut CoreState, request: &Request) -> Response {
 
     Response::ok(
         &request.id,
-        json!({"rev": state.rev, "sections": echo_sections(&state.config.clone(), &sections)}),
+        // CORE-F11: `echo_sections` only reads the merged config, so the whole JSON tree is no
+        // longer cloned just to be read from.
+        json!({"rev": state.rev, "sections": echo_sections(&state.config, &sections)}),
     )
 }
 
@@ -1166,6 +1259,7 @@ fn tool_stop(state: &mut CoreState, request: &Request) -> Response {
             &request.id,
             Error::new("not_running", "nothing is running", json!({})),
         ),
+        StopReply::Internal { line } => internal(&request.id, &line),
     }
 }
 
@@ -1180,6 +1274,9 @@ fn pet_preflight(state: &CoreState, request: &Request) -> Response {
 /// answers `{rev, block:<merged pet>}`. A bad row/type is `bad_request`; an I/O failure is logged
 /// and answered `io` (the file is never partially written by the store).
 fn pet_set_boarding(state: &mut CoreState, request: &Request) -> Response {
+    if let Some(refusal) = input_lease_refusal(state, request) {
+        return refusal;
+    }
     let (row, running) = match crate::pet_session::boarding_arguments(&request.args) {
         Ok(argument) => argument,
         Err((message, field)) => {
@@ -1474,10 +1571,16 @@ fn pet_test_read_panel(state: &mut CoreState, request: &Request) -> Response {
 /// Load the shared OCR pipeline for the panel diagnostic, if it is not cached yet. Failing here is
 /// the existing `ocr_unavailable`; no hover or capture happens first. `Some(response)` means the
 /// diagnostic is over before it touched the game.
+///
+/// CORE-F7: the cache is also invalidated here. The pipeline bakes in the dictionary's `text_fixes`
+/// and `tuner.ocr.row_height`, so a variant switch (`config.apply`), a `config.reload` or a
+/// `calibration.tuner.save` must rebuild it. Reloading the ONNX sessions is the honest refresh —
+/// `seal-ocr` exposes no cheaper `reconfigure` today.
 pub(crate) fn ensure_ocr(state: &mut CoreState, id: &str) -> Option<Response> {
-    if state.ocr.is_some() {
+    if state.ocr.is_some() && !state.ocr_is_stale() {
         return None;
     }
+    let identity = state.ocr_identity();
     let geometry = ocr_geometry(&state.config);
     match seal_ocr::pipeline::OcrPipeline::load_for_root(
         &state.root,
@@ -1486,16 +1589,23 @@ pub(crate) fn ensure_ocr(state: &mut CoreState, id: &str) -> Option<Response> {
     ) {
         Ok(pipeline) => {
             state.ocr = Some(pipeline);
+            state.ocr_build = Some(identity);
             None
         }
-        Err(error) => Some(Response::err(
-            id,
-            Error::new(
-                "ocr_unavailable",
-                "the OCR models are not available",
-                json!({"reason": error.reason, "message": error.message}),
-            ),
-        )),
+        Err(error) => {
+            // The cache cannot be trusted any more: a stale pipeline would read with the dictionary
+            // the config no longer names, so it is dropped rather than used behind the refusal.
+            state.ocr = None;
+            state.ocr_build = None;
+            Some(Response::err(
+                id,
+                Error::new(
+                    "ocr_unavailable",
+                    "the OCR models are not available",
+                    json!({"reason": error.reason, "message": error.message}),
+                ),
+            ))
+        }
     }
 }
 
@@ -1541,8 +1651,10 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
         Ok(grid) => grid,
         Err(error) => return icon_error_response(&request.id, error),
     };
-    let config = state.config.clone();
-    let tooltip: seal_domain::config::TooltipConfig = config
+    // CORE-F11: this used to clone the WHOLE merged config just to keep it alive across the OCR
+    // pipeline borrow; every use below reads `state.config` directly and the borrows do not overlap.
+    let tooltip: seal_domain::config::TooltipConfig = state
+        .config
         .get("tooltip")
         .cloned()
         .and_then(|value| serde_json::from_value(value).ok())
@@ -1555,7 +1667,8 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
         );
     }
     let point = |path: &str, label: &str| -> Result<(i32, i32), Box<Response>> {
-        let values = config
+        let values = state
+            .config
             .pointer(path)
             .and_then(Value::as_array)
             .filter(|values| values.len() == 2)
@@ -1599,7 +1712,7 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
         Err(error) => return win_error_response(&request.id, error),
     };
     if let Err(error) = pointer::system_perform(
-        &config,
+        &state.config,
         seal_domain::geometry::Point::new(focus.0, focus.1),
         true,
     ) {
@@ -1607,7 +1720,7 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
     }
     std::thread::sleep(std::time::Duration::from_millis(400));
     if let Err(error) = pointer::system_perform(
-        &config,
+        &state.config,
         seal_domain::geometry::Point::new(tab.0, tab.1),
         true,
     ) {
@@ -1615,7 +1728,7 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
     }
     std::thread::sleep(std::time::Duration::from_millis(900));
     if let Err(error) = pointer::system_perform(
-        &config,
+        &state.config,
         seal_domain::geometry::Point::new(focus.0, focus.1),
         false,
     ) {
@@ -1632,7 +1745,7 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
     };
     let mut matched: std::collections::BTreeMap<usize, (String, f64)> =
         std::collections::BTreeMap::new();
-    for (label, icon) in crate::pet_scan::queue_entries(&config) {
+    for (label, icon) in crate::pet_scan::queue_entries(&state.config) {
         let Some(icon) = icon else { continue };
         for (cell, score) in crate::pet::score_all_scores(&page_image, &grid, &icon) {
             if score > seal_domain::tools::pet::MATCH_LIMIT {
@@ -1656,7 +1769,7 @@ fn pet_scan_feeding_page(state: &mut CoreState, request: &Request) -> Response {
         let mut panel = None;
         let mut crop = None;
         if pointer::system_perform(
-            &config,
+            &state.config,
             seal_domain::geometry::Point::new(centre.x, centre.y),
             false,
         )
@@ -1830,6 +1943,11 @@ fn pointer_failure(id: &str, error: pointer::PointerFailure) -> Response {
 /// ZERO-BASED config pairs and resets `food_slots_used`, one A1 field-precise write + one
 /// `config.changed` after the response. Empty is refused (nothing found means nothing written).
 fn pet_apply_food_scan(state: &mut CoreState, request: &Request) -> Response {
+    // A live feeder owns the game; accepting this write would let the run's next fold overwrite the
+    // new cell list with its own snapshot (PET-F11). The same lease refusal board diagnostics use.
+    if let Some(refusal) = input_lease_refusal(state, request) {
+        return refusal;
+    }
     let cells = match crate::pet_scan::apply_cells(&state.config, &request.args) {
         Ok(cells) => cells,
         Err((message, field)) => {
@@ -2035,7 +2153,36 @@ fn attributes_get(state: &CoreState, request: &Request) -> Response {
     )
 }
 
+/// The per-command input lease shared by the pointer actions, the captures and the board
+/// diagnostics: `Some(refusal)` while a foreground tool is running/stopping or the resident feeder
+/// holds the game. `None` when no supervisor is attached (a config-only state has no tools to
+/// collide with). The `tool_busy` line names the holder and `detail.command` names the refused
+/// command.
+fn input_lease_refusal(state: &CoreState, request: &Request) -> Option<Response> {
+    let supervisor = state.supervisor.as_ref()?;
+    match supervisor.input_lease() {
+        Ok(None) => None,
+        Ok(Some(line)) => Some(Response::err(
+            &request.id,
+            Error::new(
+                "tool_busy",
+                &line,
+                json!({"line": line, "command": request.cmd}),
+            ),
+        )),
+        Err(line) => Some(internal(&request.id, &line)),
+    }
+}
+
+/// `board.probe`: which port, which baud, which IDs, and the firmware level from `V` (silence = level
+/// 1). The board crate owns the choice and the open; this only maps its failure to the protocol.
 fn board_probe(state: &CoreState, request: &Request) -> Response {
+    // CORE-F14: the probe opens the port and sends `V`. While a run holds the board that fails with a
+    // raw OS "access denied" as `board_unavailable`, which reads like a broken install; the lease
+    // turns it into the same `tool_busy` line a start gets.
+    if let Some(refusal) = input_lease_refusal(state, request) {
+        return refusal;
+    }
     match board::probe(&state.config) {
         Ok(result) => {
             if let Some(level) = result.get("level").and_then(Value::as_u64)
@@ -2060,8 +2207,12 @@ fn board_details(state: &CoreState, request: &Request) -> Response {
 }
 
 /// `board.test`: send the calibrator's test command. A command is sent only after the port opens, so
-/// a failure means nothing reached a board.
+/// a failure means nothing reached a board. CORE-F14: the lease is checked FIRST, because opening the
+/// port behind a running tool is exactly the raw "access denied" this command used to report.
 fn board_test(state: &CoreState, request: &Request) -> Response {
+    if let Some(refusal) = input_lease_refusal(state, request) {
+        return refusal;
+    }
     match board::test(&state.config, &request.args) {
         Ok(result) => Response::ok(&request.id, result),
         Err(error) => board_error_response(&request.id, error),
@@ -2112,22 +2263,45 @@ fn capture_command(state: &mut CoreState, request: &Request) -> Response {
         Ok(region) => region,
         Err(error) => return win_error_response(&request.id, error),
     };
+    let allow_covered = match win::parse_allow_covered(&request.args) {
+        Ok(allow) => allow,
+        Err(error) => return win_error_response(&request.id, error),
+    };
     let title = match win::configured_title(&state.config) {
         Ok(title) => title,
         Err(error) => return win_error_response(&request.id, error),
     };
-    let (frame, display) = match win::capture(&title, region) {
+    let (frame, display) = match win::capture_with(&title, region, allow_covered) {
         Ok(result) => result,
         Err(error) => return win_error_response(&request.id, error),
     };
     let frame_id = state.frames.insert(frame);
-    let Some(frame) = state.frames.get(&frame_id).cloned() else {
+    let Some(frame) = state.frames.get_value(&frame_id) else {
         return internal(&request.id, "the captured frame left the frame cache");
     };
     Response::ok(&request.id, json!({"frame": frame, "display": display}))
 }
 
-/// Maps a window/capture failure to the protocol's error codes (`PROTOCOL.md` 禮6). The Win32 detail
+/// `capture.discard`: remove one live frame from the cache at the shell's explicit request. The
+/// command touches ONLY the in-memory frame cache; saved calibration marks and coordinates are
+/// config data and are deliberately untouched. A missing/evicted id is `discarded:false`, so the
+/// shell can still clear its local tile after an eviction race.
+fn capture_discard_command(state: &mut CoreState, request: &Request) -> Response {
+    let Some(frame_id) = request.args.get("frame_id").and_then(Value::as_str) else {
+        return bad_request(
+            &request.id,
+            "capture.discard needs the frame_id to discard",
+            json!({"field": "frame_id"}),
+        );
+    };
+    let discarded = state.frames.discard(frame_id);
+    Response::ok(
+        &request.id,
+        json!({"frame_id": frame_id, "discarded": discarded}),
+    )
+}
+
+/// Maps a window/capture failure to the protocol's error codes (`PROTOCOL.md` §6). The Win32 detail
 /// stays in the message so a log is debuggable; the player sees what the shell chooses to show.
 pub(crate) fn win_error_response(id: &str, error: win::CommandError) -> Response {
     let line = error.line();
@@ -2264,7 +2438,9 @@ fn config_error_path(error: &ConfigError) -> Option<&Path> {
         | ConfigError::Serialize { path, .. }
         | ConfigError::Write { path, .. }
         | ConfigError::SchemaTooNew { path, .. } => Some(path.as_path()),
-        ConfigError::SectionNotOwned(_) => None,
+        // Neither names a file this command was asked to touch: a section refusal has no path, and
+        // HW-F4's verify-before-retire message already carries the pointers and the backup.
+        ConfigError::SectionNotOwned(_) | ConfigError::MigrationMismatch { .. } => None,
     }
 }
 
@@ -2291,6 +2467,7 @@ fn internal(id: &str, message: &str) -> Response {
 mod tests {
     use std::sync::{Arc, Mutex, mpsc};
 
+    use seal_domain::config::TextFix;
     use seal_domain::decision::{Decision, Key, StopReason};
     use seal_domain::geometry::Point;
     use seal_tools::game::GamePort;
@@ -2631,5 +2808,113 @@ mod tests {
             "no capture/evidence file was written before the icon check"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// CORE-F4: a worker's mid-run config write must survive the next read-only command. The
+    /// dispatcher used to republish its stale copy after every command and overwrite the mirror.
+    #[test]
+    fn a_read_only_command_does_not_republish_over_a_worker_config_write() {
+        let mut state = CoreState::new(std::path::PathBuf::from(r"C:\repo"));
+        let _ = handle(
+            &mut state,
+            Request::new("1", "hello", json!({"protocol": 1, "client": "0.1.0"})),
+        );
+        let worker_config = json!({"pet": {"food_slots_used": 5}});
+        *state.shared_config.write().expect("not poisoned") = Arc::new(worker_config.clone());
+        state.revision.fetch_add(1, Ordering::SeqCst);
+
+        let _ = handle(&mut state, Request::new("2", "board.details", json!({})));
+
+        assert_eq!(
+            state.config["pet"]["food_slots_used"], 5,
+            "the dispatcher refreshed its config from the worker mirror"
+        );
+        assert_eq!(
+            **state.shared_config.read().expect("not poisoned"),
+            worker_config,
+            "a read-only command must not republish the old dispatcher copy"
+        );
+    }
+
+    #[test]
+    fn bump_revision_uses_the_shared_counter_not_the_local_snapshot() {
+        let mut state = CoreState::new(std::path::PathBuf::from(r"C:\repo"));
+        state.rev = 3;
+        state.revision.store(9, Ordering::SeqCst);
+        assert_eq!(state.bump_revision(), 10);
+        assert_eq!(state.rev, 10);
+        assert_eq!(state.revision.load(Ordering::SeqCst), 10);
+    }
+
+    /// CORE-F5: the grade crop must use the captured IMAGE size, not the area's own width/height.
+    /// With the old shadowed values an area at (50,50) was cropped out of a 20×20 "image" and the
+    /// colour fallback silently never ran.
+    #[test]
+    fn the_grade_colour_crop_uses_the_image_dimensions() {
+        let mut rgba = vec![0u8; 100 * 100 * 4];
+        for y in 50..70 {
+            for x in 50..70 {
+                let offset = (y * 100 + x) * 4;
+                rgba[offset] = 200;
+                rgba[offset + 1] = 100;
+                rgba[offset + 2] = 50;
+                rgba[offset + 3] = 255;
+            }
+        }
+        let area = seal_ocr::modes::GradeArea {
+            x1: 50,
+            y1: 50,
+            x2: 70,
+            y2: 70,
+        };
+        let (width, height, pixels) =
+            crop_grade_area(&area, 100, 100, &rgba).expect("a valid crop inside the image");
+        assert_eq!((width, height), (20, 20));
+        assert_eq!(&pixels[0..4], &[200, 100, 50, 255]);
+    }
+
+    /// CORE-F7: the cached OCR pipeline bakes in the active dictionary's `text_fixes` (its cleaner)
+    /// and `tuner.ocr.row_height` (line bucketing). Every trigger the review names — a variant switch,
+    /// `config.reload`, `calibration.tuner.save` — changes one of those, so the cache must be
+    /// recognised as stale; before this nothing ever cleared it and the calibrator's test reads kept
+    /// the old dictionary until the core restarted.
+    #[test]
+    fn a_config_change_makes_the_cached_ocr_pipeline_stale() {
+        let mut state = CoreState::new(std::path::PathBuf::from(r"C:\repo"));
+        state.config = json!({"tuner": {"ocr": {"row_height": 10}}});
+        state.dictionary = "attributes.tw.yaml".to_owned();
+        state.ocr_build = Some(state.ocr_identity());
+        assert!(
+            !state.ocr_is_stale(),
+            "a cache built from this config is current"
+        );
+
+        // A variant switch changes the dictionary file and its text fixes.
+        state.dictionary = "attributes.us.yaml".to_owned();
+        assert!(
+            state.ocr_is_stale(),
+            "a variant switch must rebuild the pipeline"
+        );
+
+        state.ocr_build = Some(state.ocr_identity());
+        assert!(!state.ocr_is_stale());
+        // `calibration.tuner.save` derives and writes a new row height.
+        state.config["tuner"]["ocr"]["row_height"] = json!(14);
+        assert!(
+            state.ocr_is_stale(),
+            "a tuner calibration must rebuild the pipeline"
+        );
+
+        state.ocr_build = Some(state.ocr_identity());
+        assert!(!state.ocr_is_stale());
+        // `config.reload` can change only the cleanup table, with the same dictionary file name.
+        state.attributes.text_fixes.whole.push(TextFix {
+            from: "攻孽".to_owned(),
+            to: "攻擊".to_owned(),
+        });
+        assert!(
+            state.ocr_is_stale(),
+            "an edited text-fix table must rebuild the cleaner"
+        );
     }
 }

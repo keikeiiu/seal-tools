@@ -26,6 +26,7 @@ import 'arduino_details.dart';
 import 'attributes_result.dart';
 import 'calibration_result.dart';
 import 'config.dart';
+import 'config_draft.dart';
 import 'config_json.dart';
 import 'connection.dart';
 import 'core_actions.dart';
@@ -34,6 +35,7 @@ import 'host_actions.dart';
 import 'key_names_result.dart';
 import 'logs.dart';
 import 'pet_preflight.dart';
+import 'theme_preference.dart';
 import 'tools.dart';
 import 'version.dart';
 
@@ -54,9 +56,10 @@ class ShellModel extends ChangeNotifier {
     this.windowSaveDebounce = const Duration(milliseconds: 600),
   }) : host = host ?? const MethodChannelHostActions() {
     connection.addListener(_onSubmodelChanged);
-    tools.addListener(_onSubmodelChanged);
+    // Config writes are infrequent and several chrome surfaces read the mirror; run/status events
+    // (tools) must NOT notify the root (SHELL-F5). Logs have no model listener at all.
     config.addListener(_onSubmodelChanged);
-    logs.addListener(_onSubmodelChanged);
+    tools.addListener(_onRunAffectingChanged);
   }
 
   /// How a connection is created: the shell's `main.dart` supplies the process spawner, tests a
@@ -99,6 +102,11 @@ class ShellModel extends ChangeNotifier {
   Future<void>? _connectInFlight;
   bool _closing = false;
   bool _disposed = false;
+  final Set<ConfigDraftGroup> _dirtyDraftGroups = <ConfigDraftGroup>{};
+
+  /// Set by the first failure of this connection; the crash tail and the handshake catch can both
+  /// notice the same dead pipe, and only one of them may count (SHELL-F4).
+  bool _failureReported = false;
 
   /// The live client, for the wiring and for tests; widgets use the commands below.
   ProtocolClient? get client => _client;
@@ -107,6 +115,21 @@ class ShellModel extends ChangeNotifier {
 
   /// True once [shutdown] started; the app is going away and no reconnect is attempted.
   bool get isClosing => _closing;
+
+  /// True when at least one kept-alive config tab has unsaved edits (SHELL-F6). The tabs register
+  /// themselves through [setDraftDirty]; the exit guard uses this before shutting the core down.
+  bool get hasDirtyDrafts => _dirtyDraftGroups.isNotEmpty;
+
+  /// Called by [ConfigTabState] when a tab's draft-group dirty state changes. Only a CHANGE notifies;
+  /// the app bar and the close guard do not need a rebuild per keystroke.
+  void setDraftDirty(ConfigDraftGroup group, bool dirty) {
+    final changed = dirty
+        ? _dirtyDraftGroups.add(group)
+        : _dirtyDraftGroups.remove(group);
+    if (changed) {
+      notifyListeners();
+    }
+  }
 
   /// The persisted always-on-top preference from the merged config mirror
   /// (`settings.ui.always_on_top`, false when the block or field is absent).
@@ -181,6 +204,34 @@ class ShellModel extends ChangeNotifier {
   bool _miniSuppressed = false;
   bool _miniSyncing = false;
   ToolId? _miniTool;
+
+  /// The per-run file log the Logs drawer should point at: the most recently finished tool's
+  /// `<tool>.log`, or null before any run has finished. The file lives in the install's `logs/`.
+  String? get lastRunLogFile {
+    // Prefer the run that is happening right now (its log is growing); otherwise the most recent
+    // finished run, so the label still points at the file the player just asked about.
+    for (final entry in tools.snapshots.entries) {
+      if (entry.value.running) {
+        return '${entry.key.wire}.log';
+      }
+    }
+    final finished = tools.lastFinished;
+    return finished == null ? null : '${finished.tool.wire}.log';
+  }
+
+  /// Open the install's `logs/` folder (selecting the last run's log when known). A host failure is
+  /// only a log note: the action is a convenience, never shell state.
+  Future<void> openLogsFolder() async {
+    try {
+      await host.openLogsFolder(highlight: lastRunLogFile);
+    } catch (error) {
+      logs.addShellNote('cannot open the logs folder: $error');
+    }
+  }
+
+  /// True when the run was started from the quick dock, so an optional after-run return can go back
+  /// to the dock instead of the full window. Session state, not config.
+  bool _miniReturnToDock = false;
   WindowRect? _miniRestoreRect;
   WindowRect? _miniRect;
 
@@ -199,6 +250,9 @@ class ShellModel extends ChangeNotifier {
   WindowRect? _dockRestoreRect;
   WindowRect? _dockWorkArea;
   WindowRect? _dockRectValue;
+
+  // The app appearance, persisted as `settings.ui.theme` (dark is the pre-setting default).
+  ShellThemeMode _themeMode = ShellThemeMode.dark;
 
   // Last-used Buy choice for the dock's next run (per-run args; session state, not config).
   String? _dockBuyPreset;
@@ -369,6 +423,7 @@ class ShellModel extends ChangeNotifier {
     if (_closing || _disposed) {
       return;
     }
+    _failureReported = false;
     connection.markStarting();
     final Transport transport;
     try {
@@ -422,6 +477,7 @@ class ShellModel extends ChangeNotifier {
     // The shell owns its own placement preference in the portable `settings.ui.quick_dock` block
     // (`placement` + `collapsed`); take it before any compact window is shown.
     _restoreDockPreference();
+    _restoreThemePreference();
     // The config mirror is now the truth; apply the persisted pin exactly once. Hide/show stays
     // untouched: this is one SetWindowPos, not part of the capture's frame lifecycle.
     await _applyAlwaysOnTopFromMirror();
@@ -697,13 +753,27 @@ class ShellModel extends ChangeNotifier {
       _coreAction('pointer.click', (result) => result, args: {'x': x, 'y': y});
 
   /// `capture`: the game client as PNG plus the `DisplayInfo` measurement. The full client is the
-  /// calibration frame; a region is only for the capture command's general use.
-  Future<CoreActionResult<CaptureResult>> captureFrame({Rect? region}) =>
-      _coreAction(
-        'capture',
-        CaptureResult.fromJson,
-        args: region == null ? const {} : {'region': region.toJson()},
-      );
+  /// calibration frame; a region is only for the capture command's general use. `allowCovered` is
+  /// the calibration exemption: the shell hides itself first, but Windows can still report the
+  /// hidden shell as the foreground window, so only the calibration screens ask to skip the gate.
+  Future<CoreActionResult<CaptureResult>> captureFrame({
+    Rect? region,
+    bool allowCovered = false,
+  }) {
+    final args = <String, dynamic>{
+      if (region != null) 'region': region.toJson(),
+      if (allowCovered) 'allow_covered': true,
+    };
+    return _coreAction('capture', CaptureResult.fromJson, args: args);
+  }
+
+  /// `capture.discard`: remove one live screen from the core cache. This does NOT touch saved
+  /// calibration marks/coordinates — only the in-memory frame and the shell-side assignment.
+  Future<CoreActionResult<JsonMap>> discardFrame(String frameId) => _coreAction(
+    'capture.discard',
+    (result) => result,
+    args: {'frame_id': frameId},
+  );
 
   /// `calibration.save`: the mark drawn on the captured frame, plus the capture's measured display so
   /// the core records the environment. Refusals (bag-slot pitch disagreement, unknown frame_id, …)
@@ -749,12 +819,14 @@ class ShellModel extends ChangeNotifier {
     required int x,
     required int y,
     int? hoverDelayMs,
+    bool allowCovered = false,
   }) => _coreAction(
     'calibration.tooltip.hover_capture',
     (result) => result,
     args: {
       'point': {'x': x, 'y': y},
       'hover_delay_ms': ?hoverDelayMs,
+      if (allowCovered) 'allow_covered': true,
     },
   );
 
@@ -784,6 +856,7 @@ class ShellModel extends ChangeNotifier {
     required int x,
     required int y,
     int? hoverDelayMs,
+    bool allowCovered = false,
   }) => _coreAction(
     'calibration.tooltip.test',
     (result) => result,
@@ -791,6 +864,7 @@ class ShellModel extends ChangeNotifier {
       'point': {'x': x, 'y': y},
       'hover_delay_ms': ?hoverDelayMs,
       'debug': true,
+      if (allowCovered) 'allow_covered': true,
     },
   );
 
@@ -1060,6 +1134,8 @@ class ShellModel extends ChangeNotifier {
       return;
     }
     final tail = List<String>.of(client.stderrTail);
+    final exit = client.exitCode;
+    final exitSuffix = exit == null ? '' : ' (exit $exit)';
     logs.captureStderrTail(tail);
     if (client.protocolFailure) {
       // The output could not be understood (an undecodable RESPONSE or a broken write path): report a
@@ -1067,16 +1143,18 @@ class ShellModel extends ChangeNotifier {
       // so a live core is never left running unreferenced (SHELL-F1).
       _fail(
         ConnectionFailure.protocol,
-        client.closeReason ?? 'the core output could not be decoded',
+        '${client.closeReason ?? 'the core output could not be decoded'}$exitSuffix',
         stderrTail: tail,
+        exitCode: exit,
       );
     } else {
       _fail(
         ConnectionFailure.coreExit,
         tail.isEmpty
-            ? 'the core exited'
-            : 'the core exited — last line on stderr: ${tail.last}',
+            ? 'the core exited$exitSuffix'
+            : 'the core exited$exitSuffix — last line on stderr: ${tail.last}',
         stderrTail: tail,
+        exitCode: exit,
       );
     }
     // The last rendered state is deliberately kept (PLAN §2): the crash view replaces the grid but a
@@ -1203,12 +1281,22 @@ class ShellModel extends ChangeNotifier {
     ConnectionFailure failure,
     String message, {
     List<String> stderrTail = const [],
+    int? exitCode,
   }) {
+    if (_failureReported) {
+      return;
+    }
+    _failureReported = true;
     final tail = stderrTail.isEmpty
         ? List<String>.of(_client?.stderrTail ?? const [])
         : stderrTail;
     logs.captureStderrTail(tail);
-    connection.markFailed(failure: failure, message: message, stderrTail: tail);
+    connection.markFailed(
+      failure: failure,
+      message: message,
+      stderrTail: tail,
+      exitCode: exitCode,
+    );
     logs.addShellNote(message);
   }
 
@@ -1305,6 +1393,19 @@ class ShellModel extends ChangeNotifier {
     }
     final active = _foregroundTool();
     if (active == null) {
+      // Optional after-run return: restore the window the player was in before Start. The default
+      // keeps the bar until its Full window action; the switch is a persisted Setup preference.
+      if (_miniActive && returnAfterRun && !_miniSuppressed) {
+        final toDock = _miniReturnToDock;
+        _miniReturnToDock = false;
+        _miniSyncing = true;
+        unawaited(
+          (toDock ? openDockFromMini() : exitMiniMode()).whenComplete(
+            () => _miniSyncing = false,
+          ),
+        );
+        return;
+      }
       // A new run may collapse again; if the bar is showing a finished run, it stays until expanded.
       if (!_miniActive) {
         _miniSuppressed = false;
@@ -1321,6 +1422,11 @@ class ShellModel extends ChangeNotifier {
     if (_miniSuppressed) {
       return;
     }
+    // The persistent Setup switch can keep the full window. The dock is already the compact window,
+    // so it still hands over to the run bar (never two windows / two Stops).
+    if (!_dockActive && !collapseOnRunStart) {
+      return;
+    }
     // The dock is the idle launcher: when something starts, the same compact window becomes the
     // run bar (it must never show two windows, or a duplicate Stop).
     if (_dockActive) {
@@ -1331,6 +1437,42 @@ class ShellModel extends ChangeNotifier {
     _miniSyncing = true;
     unawaited(enterMiniMode(active).whenComplete(() => _miniSyncing = false));
   }
+
+  /// The persisted Setup preference for automatic collapse on a run start
+  /// (`settings.ui.collapse_on_run_start`, default true). Off keeps the full window until the
+  /// player presses the app-bar Mini action; the dock still turns into the run bar because the dock
+  /// itself is the compact window.
+  bool get collapseOnRunStart => _uiBool('collapse_on_run_start', true);
+
+  /// The persisted after-run preference (`settings.ui.return_after_run`, default false): when on,
+  /// a finished/stopped run restores the window the player was in before Start (the quick dock if it
+  /// started there, otherwise the full window). Off keeps the documented "bar stays until Full
+  /// window" behaviour.
+  bool get returnAfterRun => _uiBool('return_after_run', false);
+
+  bool _uiBool(String key, bool fallback) {
+    final settings = asJsonMap(config.config['settings']);
+    final portable = asBool(asJsonMap(settings['ui'])[key]);
+    if (portable != null) {
+      return portable;
+    }
+    return asBool(asJsonMap(config.config['ui'])[key]) ?? fallback;
+  }
+
+  /// Persists a Setup window-behaviour switch through the normal validate → apply path.
+  Future<ConfigSaveOutcome> setCollapseOnRunStart(bool enabled) =>
+      _saveUiBool('collapse_on_run_start', enabled);
+
+  /// Persists the after-run switch (see [returnAfterRun]).
+  Future<ConfigSaveOutcome> setReturnAfterRun(bool enabled) =>
+      _saveUiBool('return_after_run', enabled);
+
+  Future<ConfigSaveOutcome> _saveUiBool(String key, bool enabled) =>
+      saveConfig({
+        'settings': {
+          'ui': {key: enabled},
+        },
+      });
 
   /// The full window's "Mini" action: collapse onto the current foreground run, if there is one.
   Future<void> collapseToMini() async {
@@ -1349,6 +1491,7 @@ class ShellModel extends ChangeNotifier {
     }
     _miniActive = true;
     _miniTool = tool;
+    _miniReturnToDock = false;
     notifyListeners();
     try {
       _miniRestoreRect = await host.windowRect();
@@ -1386,6 +1529,7 @@ class ShellModel extends ChangeNotifier {
     }
     _miniActive = false;
     _miniTool = null;
+    _miniReturnToDock = false;
     notifyListeners();
     final restore = _miniRestoreRect;
     _miniRestoreRect = null;
@@ -1480,6 +1624,58 @@ class ShellModel extends ChangeNotifier {
       await _resizeDockGeometry();
     }
     await _saveDockPreference();
+  }
+
+  /// The app appearance, persisted as the portable `settings.ui.theme` value.
+  ShellThemeMode get themeMode => _themeMode;
+
+  /// Switch the whole shell (and the native title bar) between light, dark and the Windows setting.
+  Future<void> setThemeMode(ShellThemeMode mode) async {
+    if (mode == _themeMode) {
+      return;
+    }
+    _themeMode = mode;
+    notifyListeners();
+    unawaited(_applyTitleBarTheme());
+    final outcome = await saveConfig({
+      'settings': {
+        'ui': {'theme': mode.wire},
+      },
+    });
+    if (!outcome.saved) {
+      logs.addShellNote(
+        'theme preference was not saved: ${outcome.errorLines.join(' · ')}',
+      );
+    }
+  }
+
+  /// Reads the portable `settings.ui.theme`; absent/invalid values keep the dark default.
+  void _restoreThemePreference() {
+    final settings = asJsonMap(config.config['settings']);
+    var ui = asJsonMap(settings['ui']);
+    if (ui['theme'] == null) {
+      ui = asJsonMap(config.config['ui']);
+    }
+    final mode = ShellThemeMode.fromWire(asString(ui['theme']));
+    if (mode != _themeMode) {
+      _themeMode = mode;
+      notifyListeners();
+    }
+    unawaited(_applyTitleBarTheme());
+  }
+
+  /// 0 follows the Windows setting, 1 forces light, 2 forces dark (the runner owns DWM).
+  Future<void> _applyTitleBarTheme() async {
+    final mode = switch (_themeMode) {
+      ShellThemeMode.system => 0,
+      ShellThemeMode.light => 1,
+      ShellThemeMode.dark => 2,
+    };
+    try {
+      await host.setTitleBarTheme(mode);
+    } catch (error) {
+      logs.addShellNote('cannot match the title bar to the theme: $error');
+    }
   }
 
   /// Last-used Buy preset/count, kept for the dock session so reopening the dock after a run does
@@ -1828,6 +2024,7 @@ class ShellModel extends ChangeNotifier {
     _miniRestoreRect = null;
     _miniActive = false;
     _miniTool = null;
+    _miniReturnToDock = false;
     _dockActive = true;
     _dockWorkArea ??= _miniWorkArea;
     notifyListeners();
@@ -1858,6 +2055,7 @@ class ShellModel extends ChangeNotifier {
     _dockActive = false;
     _miniActive = true;
     _miniTool = tool;
+    _miniReturnToDock = true;
     _miniWorkArea ??= _dockWorkArea;
     notifyListeners();
     try {
@@ -1980,15 +2178,28 @@ class ShellModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Tools/config can change the mini/dock transition, but a status event must not rebuild the
+  /// whole shell (SHELL-F5). Notify only when the mode flags actually changed.
+  void _onRunAffectingChanged() {
+    if (_disposed) {
+      return;
+    }
+    final mini = _miniActive;
+    final dock = _dockActive;
+    _syncMiniMode();
+    if (mini != _miniActive || dock != _dockActive) {
+      notifyListeners();
+    }
+  }
+
   @override
   void dispose() {
     _disposed = true;
     _windowSaveTimer?.cancel();
     unawaited(_windowMoveSubscription?.cancel());
     connection.removeListener(_onSubmodelChanged);
-    tools.removeListener(_onSubmodelChanged);
+    tools.removeListener(_onRunAffectingChanged);
     config.removeListener(_onSubmodelChanged);
-    logs.removeListener(_onSubmodelChanged);
     unawaited(_eventSubscription?.cancel());
     unawaited(_logSubscription?.cancel());
     _setupRequest.dispose();

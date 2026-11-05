@@ -1,19 +1,24 @@
 /// The Calibrate workspace's session-shaped calibrations panel.
 ///
-/// G01 is wired: **Tooltip offset + shape** drives the three shipped commands
-/// (`calibration.tooltip.hover_capture` → `.save` → `.test`). The operator enters the hover point,
-/// captures the live panel (shell hidden), reads the box from the picture, enters offset/size and
-/// saves; Test read hovers again and shows the OCR lines.
+/// Two sessions remain, each owned by the tool that consumes it, and each draws the CAPTURED FRAME
+/// with the shared gesture overlay ([CalibrationFramePicture]):
 ///
-/// The tuner three-box and pet-crop sessions are still listed with a disabled action and the reason:
-/// their canvas increments are later frontend work, not a protocol gap.
+/// - **G01 Tooltip offset + shape** — `calibration.tooltip.hover_capture` → drag a box around the
+///   panel on the captured picture → `.save` → `.test`. The offset is the box minus the point the
+///   TOOL placed the cursor on (the shell does not read it back), and v2's 20×20 px minimum is the
+///   core's own save rule.
+/// - **G02 Tuner three-box** — capture the screen, then drag the grade / attribute / remaining boxes
+///   IN ORDER on the picture (the target chips pick one explicitly too; a drag under 4 px is a click,
+///   not a box). `Check boxes` measures the row pitch, `Save tuner` writes `tuner.ocr`.
+///
+/// The typed x/y/w/h (and point) fields stay AUTHORITATIVE: a gesture writes them, Save reads them, so
+/// nothing lives only in picture state.
 library;
-
-import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../../../app/calibration_result.dart';
+import '../../../app/config_json.dart';
 import '../../../app/core_actions.dart';
 import '../../../app/host_actions.dart';
 import '../../../app/shell_model.dart';
@@ -22,16 +27,42 @@ import '../../../protocol/types.dart';
 import '../../components/status_chip.dart';
 import '../../components/surface_panel.dart';
 import '../../theme.dart';
+import '../calibration_widgets.dart';
+import 'capture_shelf.dart';
 
 class SessionCalibrationsPanel extends StatefulWidget {
   const SessionCalibrationsPanel({
     super.key,
     required this.model,
     required this.host,
+    this.only,
+    this.tooltipKey,
+    this.tunerKey,
+    this.useSharedCapture = false,
+    this.sharedCapture,
+    this.onCapture,
   });
 
   final ShellModel model;
   final HostActions host;
+
+  /// Render one tool's session as the whole workspace (`tuner` or `tooltip`). The default null keeps
+  /// the combined panel for the all-sessions tests; Calibrate passes the active tab id, so a Tuner or
+  /// Tooltip tab is one capture-owned workspace instead of a section below the mark table.
+  final String? only;
+
+  /// Section anchors for the combined panel.
+  final Key? tooltipKey;
+  final Key? tunerKey;
+
+  /// When true the session reuses the Calibrate screen selected in the shared Screens strip instead
+  /// of owning a private capture. The right-side editor layout is unchanged.
+  final bool useSharedCapture;
+  final CalibrationCapture? sharedCapture;
+
+  /// The parent's shared capture action; the session's existing Capture screen button delegates to
+  /// it in shared mode so the right side keeps its current controls.
+  final Future<void> Function()? onCapture;
 
   @override
   State<SessionCalibrationsPanel> createState() =>
@@ -50,8 +81,13 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
   bool _busy = false;
   String? _status;
   bool _failed = false;
-  Uint8List? _preview;
   List<String> _lines = const [];
+
+  // G01 tooltip session: the hovered frame and the point the CORE placed the cursor on; the drag is
+  // measured from that point (CALIBRATION §1/PLAN §3.5).
+  Frame? _tooltipFrame;
+  DisplayInfo? _tooltipDisplay;
+  Offset? _tooltipPlaced;
 
   // G02 tuner session: three boxes on a captured frame.
   final Map<String, TextEditingController> _boxFields = {
@@ -79,46 +115,167 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
   CaptureResult? _tunerCapture;
   JsonMap? _tunerCheck;
 
-  // G03 pet session: one row + the shared points, enough to drive preview/save/test_read.
-  final Map<String, TextEditingController> _petFields = {
-    for (final key in [
-      'toggle.x',
-      'toggle.y',
-      'toggle.w',
-      'toggle.h',
-      'boarding.x',
-      'boarding.y',
-      'boarding.w',
-      'boarding.h',
-      'strip.x',
-      'strip.y',
-      'strip.w',
-      'strip.h',
-      'grid.x',
-      'grid.y',
-      'grid.w',
-      'grid.h',
-      'slot.x',
-      'slot.y',
-      'slot.w',
-      'slot.h',
-      'menu.x',
-      'menu.y',
-      'feed.x',
-      'feed.y',
-      'close.x',
-      'close.y',
-      'tab.x',
-      'tab.y',
-    ])
-      key: TextEditingController(text: '0'),
-  };
-  final _petStacks = TextEditingController(text: '2');
-  CaptureResult? _petCapture;
-  JsonMap? _petPreview;
+  /// The last shared frame the tuner saw. A change invalidates the Check and the old picture.
+  String? _sharedTunerFrameId;
+
+  /// The last shared frame the tooltip drew as its reuse background.
+  String? _sharedTooltipFrameId;
+
+  /// The session's effective tuner capture: the shared Calibrate screen when shared mode is on,
+  /// otherwise the private session capture used by the direct-panel tests.
+  CaptureResult? get _effectiveTunerCapture {
+    if (!widget.useSharedCapture) {
+      return _tunerCapture;
+    }
+    final shared = widget.sharedCapture;
+    if (shared == null) {
+      return null;
+    }
+    return CaptureResult(frame: shared.frame, display: shared.display);
+  }
+
+  @override
+  void didUpdateWidget(SessionCalibrationsPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.useSharedCapture) {
+      return;
+    }
+    final shared = widget.sharedCapture;
+    final id = shared?.frameId;
+    if (id != _sharedTunerFrameId) {
+      _sharedTunerFrameId = id;
+      _tunerCheck = null;
+      if (id != null) {
+        _status = 'Using ${shared!.title} — Check boxes again before Save.';
+      }
+    }
+    if (widget.only != 'tuner' && id != _sharedTooltipFrameId) {
+      _sharedTooltipFrameId = id;
+      if (shared != null) {
+        _tooltipFrame = shared.frame;
+        _tooltipDisplay = shared.display;
+        _tooltipPlaced = null;
+        _status =
+            'Reused ${shared.title} — visual offset only; Capture hover for the live anchor.';
+      } else {
+        _tooltipFrame = null;
+        _tooltipDisplay = null;
+        _tooltipPlaced = null;
+        _status = 'Screen removed — Capture hover to measure again.';
+      }
+    }
+  }
+
+  /// The tuner surface the next gesture writes: grade → attr → remaining (v2's order), plus the
+  /// optional spring POINT.
+  String _tunerTarget = 'grade';
+
+  /// The saved tuner geometry is loaded into the fields once, so a migrated/kept calibration is
+  /// visible without re-dragging it. The capture is still required to save (`_saveTuner` needs a
+  /// frame); this only restores the derived boxes v2 left behind.
+  bool _tunerPrefilled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.model.config.addListener(_onConfigForTunerPrefill);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _prefillTunerFromConfig();
+    });
+  }
+
+  void _onConfigForTunerPrefill() {
+    if (mounted) _prefillTunerFromConfig();
+  }
+
+  /// v2 stored the DERIVED geometry (region + relative bands), not the three dragged rectangles.
+  /// Invert that derivation so the new session shows the calibration the core is already using.
+  void _prefillTunerFromConfig() {
+    if (_tunerPrefilled) return;
+    final tuner = asJsonMap(widget.model.config.config['tuner']);
+    final ocr = asJsonMap(tuner['ocr']);
+    final region = asJsonMap(ocr['region']);
+    final grade = asJsonMap(ocr['grade_area']);
+    final left = asNumber(region['left'])?.toInt();
+    final top = asNumber(region['top'])?.toInt();
+    final attrX = _band(ocr['attr_x']);
+    final attrY = _band(ocr['attr_y']);
+    final remainingX = _band(ocr['remaining_x']);
+    final remainingY = _band(ocr['remaining_y']);
+    final gradeX1 = asNumber(grade['x1'])?.toInt();
+    final gradeY1 = asNumber(grade['y1'])?.toInt();
+    final gradeX2 = asNumber(grade['x2'])?.toInt();
+    final gradeY2 = asNumber(grade['y2'])?.toInt();
+    if (left == null ||
+        top == null ||
+        attrX == null ||
+        attrY == null ||
+        remainingX == null ||
+        remainingY == null ||
+        gradeX1 == null ||
+        gradeY1 == null ||
+        gradeX2 == null ||
+        gradeY2 == null) {
+      return;
+    }
+    final boxes = <String, (int, int, int, int)>{
+      'grade': (
+        left + gradeX1,
+        top + gradeY1,
+        gradeX2 - gradeX1,
+        gradeY2 - gradeY1,
+      ),
+      'attr': (
+        left + attrX.$1,
+        top + attrY.$1,
+        attrX.$2 - attrX.$1,
+        attrY.$2 - attrY.$1,
+      ),
+      'remaining': (
+        left + remainingX.$1,
+        top + remainingY.$1,
+        remainingX.$2 - remainingX.$1,
+        remainingY.$2 - remainingY.$1,
+      ),
+    };
+    if (boxes.values.any((box) => box.$3 <= 0 || box.$4 <= 0)) return;
+    for (final entry in boxes.entries) {
+      _boxFields['${entry.key}.x']!.text = '${entry.value.$1}';
+      _boxFields['${entry.key}.y']!.text = '${entry.value.$2}';
+      _boxFields['${entry.key}.w']!.text = '${entry.value.$3}';
+      _boxFields['${entry.key}.h']!.text = '${entry.value.$4}';
+    }
+    final rowHeight = asNumber(ocr['row_height'])?.toInt();
+    if (rowHeight != null && rowHeight > 0) {
+      _rowHeight.text = '$rowHeight';
+    }
+    final spring = asJsonList(tuner['spring_point']);
+    if (spring.length >= 2) {
+      final springX = asNumber(spring[0])?.toInt();
+      final springY = asNumber(spring[1])?.toInt();
+      if (springX != null && springY != null) {
+        _springX.text = '$springX';
+        _springY.text = '$springY';
+      }
+    }
+    _tunerPrefilled = true;
+    setState(() {
+      _status = 'Loaded your saved tuner calibration — Capture screen to re-check or save it.';
+    });
+  }
+
+  (int, int)? _band(Object? value) {
+    final list = asJsonList(value);
+    if (list.length < 2) return null;
+    final first = asNumber(list[0])?.toInt();
+    final second = asNumber(list[1])?.toInt();
+    if (first == null || second == null) return null;
+    return (first, second);
+  }
 
   @override
   void dispose() {
+    widget.model.config.removeListener(_onConfigForTunerPrefill);
     for (final controller in [
       _x,
       _y,
@@ -133,10 +290,6 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
     for (final controller in _boxFields.values) {
       controller.dispose();
     }
-    for (final controller in _petFields.values) {
-      controller.dispose();
-    }
-    _petStacks.dispose();
     _rowHeight.dispose();
     _springX.dispose();
     _springY.dispose();
@@ -152,13 +305,7 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       _status = null;
       _failed = false;
     });
-    try {
-      await widget.host.hideWindow();
-    } catch (_) {}
-    final result = await action();
-    try {
-      await widget.host.showWindow();
-    } catch (_) {}
+    final result = await withHiddenWindow(widget.host, action);
     if (!mounted) return;
     setState(() {
       _busy = false;
@@ -170,16 +317,33 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       final answer = result.value!;
       final frame = answer['frame'];
       if (frame is Map && frame['data'] is String) {
+        Frame? decoded;
+        DisplayInfo? display;
         try {
-          _preview = base64Decode(frame['data'] as String);
+          decoded = Frame.fromJson(frame, 'frame');
+          display = answer['display'] is Map
+              ? DisplayInfo.fromJson(answer['display'], 'display')
+              : null;
         } catch (_) {
-          _preview = null;
+          decoded = null;
         }
-        final placed = answer['placed'];
-        _status =
-            'hover captured at '
-            '${placed is Map ? '${placed['x']}, ${placed['y']}' : 'the point'}'
-            ' — enter the box offset/size from the picture';
+        if (decoded != null) {
+          _tooltipFrame = decoded;
+          _tooltipDisplay = display;
+          final placed = answer['placed'];
+          _tooltipPlaced = placed is Map
+              ? Offset(
+                  (placed['x'] as num).toDouble(),
+                  (placed['y'] as num).toDouble(),
+                )
+              : null;
+          final line = answer['line'];
+          _status = line is String && line.isNotEmpty
+              ? line
+              : 'hover captured — drag a box around the panel on the picture';
+          return;
+        }
+        _status = 'The captured picture could not be decoded.';
         return;
       }
       final rawLines = answer['lines'];
@@ -202,6 +366,7 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       x: _number(_x) ?? 0,
       y: _number(_y) ?? 0,
       hoverDelayMs: _number(_delay),
+      allowCovered: true,
     ),
   );
 
@@ -220,6 +385,7 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       x: _number(_x) ?? 0,
       y: _number(_y) ?? 0,
       hoverDelayMs: _number(_delay),
+      allowCovered: true,
     ),
   );
 
@@ -236,19 +402,228 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
     return boxes;
   }
 
+  // ── session canvas: frames + the gesture→field wiring ──────────────────────────────────────
+
+  /// The client origin of a capture: every mark is CLIENT-RELATIVE physical px, so the picture's
+  /// mapping subtracts the client's screen origin (CALIBRATION §4).
+  Offset _clientOrigin(DisplayInfo? display) => display == null
+      ? Offset.zero
+      : Offset(
+          display.physicalClient.x.toDouble(),
+          display.physicalClient.y.toDouble(),
+        );
+
+  /// One session frame with the shared overlay. The callbacks are the only gesture surface this
+  /// panel needs: a click writes a point, a drag writes a rect (the 4 px minimum and the letterbox
+  /// rejection live in the shared widget, not here).
+  Widget _sessionFrame({
+    required Key key,
+    required Frame frame,
+    required DisplayInfo? display,
+    required CalibrationMark? mark,
+    String? markLabel,
+    List<CalibrationOverlayMark> overlayMarks = const [],
+    double maxHeight = 260,
+    ValueChanged<CalibrationMark>? onPointMark,
+    ValueChanged<CalibrationMark>? onRectMark,
+  }) => CalibrationFramePicture(
+    key: key,
+    frame: frame,
+    maxHeight: maxHeight,
+    clientOrigin: _clientOrigin(display),
+    mark: mark,
+    markLabel: markLabel,
+    overlayMarks: overlayMarks,
+    onPointMark: onPointMark,
+    onRectMark: onRectMark,
+  );
+
+  static const _tunerTargetNames = {
+    'grade': 'Grade letter',
+    'attr': 'Attribute rows',
+    'remaining': 'Remaining count',
+    'spring': 'Spring point',
+  };
+
+  /// The three boxes keep one colour across the picture, the card and the summary. These are
+  /// semantic calibration colours, not page chrome, so they are fixed (and high-contrast on the
+  /// captured game frame in both light and dark shells).
+  static const Map<String, Color> _tunerBoxColors = {
+    'grade': Color(0xFF34D399),
+    'attr': Color(0xFF60A5FA),
+    'remaining': Color(0xFFF59E0B),
+  };
+  static const Map<String, String> _tunerBoxHints = {
+    'grade': 'one grade letter',
+    'attr': 'three attribute rows',
+    'remaining': 'the remaining count',
+  };
+  static const Color _cursorColor = Color(0xFFF472B6);
+
+  /// One of the tuner's three boxes, from its typed (or dragged) fields.
+  CalibrationMark? _tunerBoxMark(String name) {
+    final x = _number(_boxFields['$name.x']!);
+    final y = _number(_boxFields['$name.y']!);
+    final w = _number(_boxFields['$name.w']!);
+    final h = _number(_boxFields['$name.h']!);
+    if (x == null || y == null || w == null || h == null || w < 1 || h < 1) {
+      return null;
+    }
+    return CalibrationMark.rect(x, y, w, h);
+  }
+
+  CalibrationMark? _tunerMark() {
+    if (_tunerTarget == 'spring') {
+      final x = _number(_springX);
+      final y = _number(_springY);
+      return x == null || y == null ? null : CalibrationMark.point(x, y);
+    }
+    return _tunerBoxMark(_tunerTarget);
+  }
+
+  /// All drawn tuner boxes, including the selected one, so a drag's result stays visible on the
+  /// picture even though the selected target is also the editable mark. The selected target is called
+  /// out by its highlighted card/chip below the canvas.
+  List<CalibrationOverlayMark> _tunerBoxOverlays() {
+    final overlays = <CalibrationOverlayMark>[];
+    for (final name in ['grade', 'attr', 'remaining']) {
+      final mark = _tunerBoxMark(name);
+      if (mark == null) {
+        continue;
+      }
+      overlays.add(
+        CalibrationOverlayMark(
+          id: 'tuner-$name',
+          mark: mark,
+          label: _tunerTargetNames[name]!,
+          color: _tunerBoxColors[name]!,
+        ),
+      );
+    }
+    return overlays;
+  }
+
+  List<CalibrationOverlayMark> _tooltipOverlays() {
+    final placed = _tooltipPlaced;
+    if (placed == null) {
+      return const [];
+    }
+    return [
+      CalibrationOverlayMark(
+        id: 'tooltip-cursor',
+        mark: CalibrationMark.point(placed.dx.round(), placed.dy.round()),
+        label: 'cursor placed by the tool',
+        color: _cursorColor,
+      ),
+    ];
+  }
+
+  String _tunerLabel() {
+    final name = _tunerTargetNames[_tunerTarget] ?? _tunerTarget;
+    final mark = _tunerMark();
+    if (mark == null) {
+      return '$name — drag it on the picture';
+    }
+    return mark.isRect
+        ? '$name · x ${mark.x} · y ${mark.y} · ${mark.w}×${mark.h}'
+        : '$name · x ${mark.x} · y ${mark.y}';
+  }
+
+  /// A drag on the tuner frame writes the selected box, then advances grade → attr → remaining so the
+  /// three boxes can be drawn IN ORDER, exactly like v2.
+  void _applyTunerRect(CalibrationMark mark) {
+    setState(() {
+      final target = _tunerTarget;
+      if (target == 'spring') {
+        return;
+      }
+      _boxFields['$target.x']!.text = '${mark.x}';
+      _boxFields['$target.y']!.text = '${mark.y}';
+      _boxFields['$target.w']!.text = '${mark.w}';
+      _boxFields['$target.h']!.text = '${mark.h}';
+      _tunerTarget = switch (target) {
+        'grade' => 'attr',
+        'attr' => 'remaining',
+        _ => 'remaining',
+      };
+      _status =
+          '${_tunerTargetNames[target]} dragged — '
+          '${_tunerTargetNames[_tunerTarget]} is next';
+      _failed = false;
+    });
+  }
+
+  void _applyTunerPoint(CalibrationMark mark) {
+    setState(() {
+      _springX.text = '${mark.x}';
+      _springY.text = '${mark.y}';
+      _status = 'spring point ${mark.x}, ${mark.y}';
+      _failed = false;
+    });
+  }
+
+  /// The tooltip box currently in the fields: the placed hover point + the offset/size (CALIBRATION
+  /// §1: the panel is anchored to the pointer, so the offset is box minus point).
+  CalibrationMark? _tooltipMark() {
+    final placed = _tooltipPlaced;
+    final offsetX = _number(_offsetX);
+    final offsetY = _number(_offsetY);
+    final width = _number(_width);
+    final height = _number(_height);
+    if (placed == null ||
+        offsetX == null ||
+        offsetY == null ||
+        width == null ||
+        height == null ||
+        width < 1 ||
+        height < 1) {
+      return null;
+    }
+    return CalibrationMark.rect(
+      placed.dx.round() + offsetX,
+      placed.dy.round() + offsetY,
+      width,
+      height,
+    );
+  }
+
+  /// v2's tooltip rule: offset = box top-left − the point the TOOL placed the cursor on; size = the
+  /// box. The minimum panel size is the core's save rule, not duplicated here.
+  void _applyTooltipRect(CalibrationMark mark) {
+    final placed = _tooltipPlaced;
+    if (placed == null) {
+      return;
+    }
+    setState(() {
+      _offsetX.text = '${mark.x - placed.dx.round()}';
+      _offsetY.text = '${mark.y - placed.dy.round()}';
+      _width.text = '${mark.w}';
+      _height.text = '${mark.h}';
+      _status =
+          'panel box ${mark.w}×${mark.h} — offset '
+          '${mark.x - placed.dx.round()}, ${mark.y - placed.dy.round()}';
+      _failed = false;
+    });
+  }
+
   Future<void> _captureTuner() async {
     setState(() {
       _busy = true;
       _status = null;
       _failed = false;
     });
-    try {
-      await widget.host.hideWindow();
-    } catch (_) {}
-    final result = await widget.model.captureFrame();
-    try {
-      await widget.host.showWindow();
-    } catch (_) {}
+    if (widget.useSharedCapture) {
+      try {
+        await widget.onCapture?.call();
+      } finally {
+        if (mounted) setState(() => _busy = false);
+      }
+      return;
+    }
+    final result = await withHiddenWindow(
+      widget.host,
+      () => widget.model.captureFrame(allowCovered: true),
+    );
     if (!mounted) return;
     setState(() {
       _busy = false;
@@ -259,12 +634,13 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       }
       _tunerCapture = result.value!;
       _status =
-          'captured ${result.value!.frame.frameId} — drag the three boxes';
+          'captured ${result.value!.frame.frameId} — drag the three boxes on the picture '
+          '(${_tunerTargetNames[_tunerTarget]} first)';
     });
   }
 
   Future<void> _checkTuner() async {
-    final capture = _tunerCapture;
+    final capture = _effectiveTunerCapture;
     if (capture == null) {
       setState(() {
         _failed = true;
@@ -295,7 +671,7 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
   }
 
   Future<void> _saveTuner() async {
-    final capture = _tunerCapture;
+    final capture = _effectiveTunerCapture;
     if (capture == null) {
       setState(() {
         _failed = true;
@@ -320,7 +696,270 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
     });
   }
 
-  Widget _tunerSection(ThemeData theme, ColorScheme colors) {
+  /// Two-column session workspace: the captured picture stays put on the left while the controls
+  /// scroll on the right, so a drag and its target fields are visible together. Narrow layouts keep
+  /// the old vertical order because there is no honest way to show both at that width.
+  Widget _sessionSplit({
+    required Key key,
+    required Widget picture,
+    required Widget controls,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 860) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              picture,
+              const SizedBox(height: ShellSpace.sm),
+              controls,
+            ],
+          );
+        }
+        return SizedBox(
+          key: key,
+          height: 470,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 3, child: picture),
+              const SizedBox(width: ShellSpace.md),
+              Expanded(
+                flex: 2,
+                child: SingleChildScrollView(primary: false, child: controls),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _sessionPicturePlaceholder(
+    ThemeData theme,
+    String message, {
+    required Key key,
+    double height = 380,
+  }) {
+    final colors = theme.colorScheme;
+    return Container(
+      key: key,
+      height: height,
+      padding: const EdgeInsets.all(ShellSpace.md),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(ShellRadius.m),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.photo_camera_outlined,
+              size: 28,
+              color: colors.onSurfaceVariant,
+            ),
+            const SizedBox(height: ShellSpace.xs),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tooltipSection(ThemeData theme, ColorScheme colors) {
+    final captured = _tooltipFrame != null;
+    final panel = _tooltipMark();
+    final controls = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sessionCard(
+          theme,
+          key: const ValueKey('session-tooltip-step-hover'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.mouse_outlined, size: 16),
+                  const SizedBox(width: ShellSpace.xs),
+                  Text('1 · Hover point', style: theme.textTheme.labelLarge),
+                ],
+              ),
+              const SizedBox(height: ShellSpace.xxs),
+              Text(
+                'The point the core places and clicks; the tooltip is anchored to it.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              Wrap(
+                spacing: ShellSpace.sm,
+                runSpacing: ShellSpace.sm,
+                children: [
+                  _fieldBox('hover x', _x, 'session-tooltip-x'),
+                  _fieldBox('hover y', _y, 'session-tooltip-y'),
+                  _fieldBox('delay ms', _delay, 'session-tooltip-delay'),
+                ],
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  key: const ValueKey('session-tooltip-hover'),
+                  onPressed: _busy ? null : _hover,
+                  icon: const Icon(Icons.center_focus_strong, size: 16),
+                  label: const Text('Capture hover'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        _sessionCard(
+          theme,
+          key: const ValueKey('session-tooltip-step-box'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.crop_free, size: 16),
+                  const SizedBox(width: ShellSpace.xs),
+                  Text(
+                    '2 · Panel box & offset',
+                    style: theme.textTheme.labelLarge,
+                  ),
+                ],
+              ),
+              const SizedBox(height: ShellSpace.xxs),
+              Text(
+                'Drag on the picture (at least 20×20 px), or type the offset and panel size. '
+                'Panel top-left = placed cursor + offset.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              Wrap(
+                spacing: ShellSpace.sm,
+                runSpacing: ShellSpace.sm,
+                children: [
+                  _fieldBox('offset x', _offsetX, 'session-tooltip-offset-x'),
+                  _fieldBox('offset y', _offsetY, 'session-tooltip-offset-y'),
+                  _fieldBox('width', _width, 'session-tooltip-width'),
+                  _fieldBox('height', _height, 'session-tooltip-height'),
+                ],
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: ShellSpace.sm,
+                  vertical: ShellSpace.xxs,
+                ),
+                decoration: BoxDecoration(
+                  color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(ShellRadius.s),
+                ),
+                child: Text(
+                  _tooltipFormula(),
+                  key: const ValueKey('session-tooltip-offset-summary'),
+                  style: ShellText.mono.copyWith(
+                    fontSize: 11,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Wrap(
+          spacing: ShellSpace.sm,
+          runSpacing: ShellSpace.xs,
+          children: [
+            OutlinedButton.icon(
+              key: const ValueKey('session-tooltip-save'),
+              onPressed: _busy ? null : _save,
+              icon: const Icon(Icons.save_outlined, size: 16),
+              label: const Text('Save tooltip'),
+            ),
+            OutlinedButton.icon(
+              key: const ValueKey('session-tooltip-test'),
+              onPressed: _busy ? null : _test,
+              icon: const Icon(Icons.text_fields, size: 16),
+              label: const Text('Test read'),
+            ),
+          ],
+        ),
+        if (_status != null) ...[
+          const SizedBox(height: ShellSpace.sm),
+          Text(
+            _status!,
+            key: const ValueKey('session-tooltip-status'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: _failed ? colors.error : colors.onSurface,
+            ),
+          ),
+        ],
+        if (_lines.isNotEmpty) ...[
+          const SizedBox(height: ShellSpace.sm),
+          _sessionCard(
+            theme,
+            key: const ValueKey('session-tooltip-read'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.subject, size: 16),
+                    const SizedBox(width: ShellSpace.xs),
+                    Text('Read result', style: theme.textTheme.labelLarge),
+                  ],
+                ),
+                const SizedBox(height: ShellSpace.xxs),
+                for (final line in _lines)
+                  Padding(
+                    padding: const EdgeInsets.only(top: ShellSpace.xxs),
+                    child: Text(
+                      line,
+                      key: const ValueKey('session-tooltip-line'),
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+    final picture = captured
+        ? _sessionFrame(
+            key: const ValueKey('session-tooltip-preview'),
+            frame: _tooltipFrame!,
+            display: _tooltipDisplay,
+            mark: panel,
+            markLabel: panel == null
+                ? 'Draw the panel around the cursor point'
+                : 'Panel · offset from the placed cursor',
+            overlayMarks: _tooltipOverlays(),
+            maxHeight: 380,
+            onRectMark: _applyTooltipRect,
+          )
+        : _sessionPicturePlaceholder(
+            theme,
+            'Capture a hover point to put the game screen here. The panel box is drawn next to '
+            'these controls, so you can drag without scrolling away from them.',
+            key: const ValueKey('session-tooltip-picture-empty'),
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -329,439 +968,662 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
           runSpacing: ShellSpace.xs,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Text('Tuner OCR 3-box', style: theme.textTheme.labelLarge),
+            Text('Tooltip offset + shape', style: theme.textTheme.labelLarge),
             StatusChip(
-              kind: _tunerCapture == null
-                  ? StatusKind.muted
-                  : StatusKind.success,
-              label: _tunerCapture == null ? 'needs capture' : 'captured',
+              kind: _failed
+                  ? StatusKind.warning
+                  : captured
+                  ? StatusKind.success
+                  : StatusKind.muted,
+              label: _busy
+                  ? 'working'
+                  : captured
+                  ? 'hover captured'
+                  : 'needs hover',
+            ),
+          ],
+        ),
+        const SizedBox(height: ShellSpace.xs),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: ShellWidth.prose),
+          child: Text(
+            'Two captures, no eyeballed numbers: the core places the cursor on your hover point '
+            'and the panel is captured around it. The box you draw is the panel shape; the offset '
+            'is box top-left minus the cursor point (v2 rule). Save, then Test read.',
+            key: const ValueKey('calibrate-tooltip-note'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ),
+        const SizedBox(height: ShellSpace.sm),
+        _sessionSteps(
+          theme,
+          colors,
+          const ['Hover capture', 'Box the panel', 'Save + test read'],
+          keyPrefix: 'session-tooltip',
+          done: [captured, panel != null, _lines.isNotEmpty],
+        ),
+        const SizedBox(height: ShellSpace.sm),
+        _sessionSplit(
+          key: const ValueKey('session-tooltip-split'),
+          picture: picture,
+          controls: controls,
+        ),
+      ],
+    );
+  }
+
+  String _tooltipFormula() {
+    final placed = _tooltipPlaced;
+    if (placed == null) {
+      return 'Capture hover first — the cursor point anchors the offset.';
+    }
+    final offsetX = _number(_offsetX) ?? 0;
+    final offsetY = _number(_offsetY) ?? 0;
+    final width = _number(_width) ?? 0;
+    final height = _number(_height) ?? 0;
+    final left = placed.dx.round() + offsetX;
+    final top = placed.dy.round() + offsetY;
+    return 'cursor (${placed.dx.round()}, ${placed.dy.round()}) '
+        '+ offset ($offsetX, $offsetY) → panel ($left, $top) $width×$height';
+  }
+
+  Widget _tunerSection(ThemeData theme, ColorScheme colors) {
+    final drawn = [
+      for (final name in ['grade', 'attr', 'remaining'])
+        if (_tunerBoxMark(name) != null) name,
+    ];
+    final allDrawn = drawn.length == 3;
+    final tunerCapture = _effectiveTunerCapture;
+    final captured = tunerCapture != null;
+    final controls = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final name in ['grade', 'attr', 'remaining'])
+          _tunerBoxCard(theme, colors, name),
+        const SizedBox(height: ShellSpace.xs),
+        _sessionCard(
+          theme,
+          key: const ValueKey('session-tuner-metrics'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Measured pitch / optional spring point',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  letterSpacing: 0.05,
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              Wrap(
+                spacing: ShellSpace.sm,
+                runSpacing: ShellSpace.xs,
+                children: [
+                  _fieldBox(
+                    'row height',
+                    _rowHeight,
+                    'session-tuner-row-height',
+                  ),
+                  _fieldBox('spring x', _springX, 'session-tuner-spring-x'),
+                  _fieldBox('spring y', _springY, 'session-tuner-spring-y'),
+                ],
+              ),
+              const SizedBox(height: ShellSpace.xxs),
+              Text(
+                'Leave row height 0 to let Check measure it. The spring point is optional and '
+                'belongs to tuning runs, not to OCR.',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontSize: 9.5,
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: ShellSpace.sm),
+        Wrap(
+          spacing: ShellSpace.sm,
+          runSpacing: ShellSpace.xs,
+          children: [
+            OutlinedButton.icon(
+              key: const ValueKey('session-tuner-check'),
+              onPressed: _busy ? null : _checkTuner,
+              icon: const Icon(Icons.fact_check_outlined, size: 16),
+              label: const Text('Check boxes'),
+            ),
+            OutlinedButton.icon(
+              key: const ValueKey('session-tuner-save'),
+              onPressed:
+                  _busy ||
+                      !captured ||
+                      (widget.useSharedCapture && _tunerCheck == null)
+                  ? null
+                  : _saveTuner,
+              icon: const Icon(Icons.save_outlined, size: 16),
+              label: const Text('Save tuner'),
+            ),
+          ],
+        ),
+        if (_tunerCheck != null) ...[
+          const SizedBox(height: ShellSpace.sm),
+          _tunerCheckSummary(theme, colors),
+        ],
+        if (_status != null) ...[
+          const SizedBox(height: ShellSpace.sm),
+          Text(
+            _status!,
+            key: const ValueKey('session-tuner-status'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: _failed ? colors.error : colors.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ],
+    );
+    final picture = captured
+        ? _sessionFrame(
+            key: const ValueKey('session-tuner-frame'),
+            frame: tunerCapture.frame,
+            display: tunerCapture.display,
+            mark: _tunerTarget == 'spring' ? _tunerMark() : null,
+            markLabel: _tunerTarget == 'spring'
+                ? _tunerLabel()
+                : 'Drag the selected box on the picture',
+            overlayMarks: _tunerBoxOverlays(),
+            maxHeight: 380,
+            onPointMark: _tunerTarget == 'spring' ? _applyTunerPoint : null,
+            onRectMark: _tunerTarget == 'spring' ? null : _applyTunerRect,
+          )
+        : _sessionPicturePlaceholder(
+            theme,
+            'Capture the game screen to put it here. The boxes and their fields stay on the '
+            'right, so drag the picture and edit the selected box without scrolling away.',
+            key: const ValueKey('session-tuner-picture-empty'),
+          );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: ShellSpace.sm,
+          runSpacing: ShellSpace.xs,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              'Tuner OCR 3-box + Spring point',
+              style: theme.textTheme.labelLarge,
+            ),
+            StatusChip(
+              kind: captured ? StatusKind.success : StatusKind.muted,
+              label: captured ? 'captured' : 'needs capture',
+            ),
+            StatusChip(
+              kind: allDrawn ? StatusKind.success : StatusKind.muted,
+              label: '${drawn.length} / 3 boxes',
             ),
           ],
         ),
         const SizedBox(height: ShellSpace.xs),
         Text(
-          'The tuner three-box session: capture the screen, enter grade/attribute/remaining boxes '
-          'and Check before Save. The region, bands and row pitch are derived by the core.',
+          'The one tuner capture: the three-box session reads the grade letter, the three '
+          'attribute rows and the remaining count, and the optional Spring point saves in the '
+          'same pass. Capture the game, drag the three boxes in that order (a drag under 4 px is '
+          'ignored), then click Spring point if you use it. Check derives the region, bands and '
+          'row pitch; Save writes tuner.ocr and tuner.spring_point.',
           key: const ValueKey('calibrate-tuner-note'),
           style: theme.textTheme.bodySmall?.copyWith(
             color: colors.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: ShellSpace.sm),
-        for (final name in ['grade', 'attr', 'remaining'])
-          Padding(
-            padding: const EdgeInsets.only(bottom: ShellSpace.xs),
-            child: Wrap(
-              spacing: ShellSpace.sm,
-              runSpacing: ShellSpace.xs,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: 70,
-                  child: Text(name, style: theme.textTheme.bodySmall),
-                ),
-                for (final axis in ['x', 'y', 'w', 'h'])
-                  _boxField('$name.$axis', _boxFields['$name.$axis']!),
-              ],
-            ),
-          ),
-        Wrap(
-          spacing: ShellSpace.sm,
-          runSpacing: ShellSpace.xs,
-          children: [
-            _fieldBox('row h', _rowHeight, 'session-tuner-row-height'),
-            _fieldBox('spring x', _springX, 'session-tuner-spring-x'),
-            _fieldBox('spring y', _springY, 'session-tuner-spring-y'),
-          ],
+        _sessionSteps(
+          theme,
+          colors,
+          const ['Capture the game', 'Draw boxes + spring', 'Check, then save'],
+          keyPrefix: 'session-tuner',
+          done: [captured, allDrawn, _tunerCheck != null],
         ),
         const SizedBox(height: ShellSpace.sm),
-        Wrap(
-          spacing: ShellSpace.sm,
-          runSpacing: ShellSpace.xs,
-          children: [
-            OutlinedButton(
-              key: const ValueKey('session-tuner-capture'),
-              onPressed: _busy ? null : _captureTuner,
-              child: const Text('Capture screen'),
-            ),
-            OutlinedButton(
-              key: const ValueKey('session-tuner-check'),
-              onPressed: _busy ? null : _checkTuner,
-              child: const Text('Check boxes'),
-            ),
-            OutlinedButton(
-              key: const ValueKey('session-tuner-save'),
-              onPressed: _busy ? null : _saveTuner,
-              child: const Text('Save tuner'),
-            ),
-          ],
-        ),
-        if (_tunerCheck != null && _tunerCheck!['matched'] is List) ...[
-          const SizedBox(height: ShellSpace.sm),
-          Text(
-            'matched ${(_tunerCheck!['matched'] as List).length} attribute row(s)',
-            key: const ValueKey('session-tuner-matched'),
-            style: theme.textTheme.bodySmall,
+        _sessionCard(
+          theme,
+          key: const ValueKey('session-tuner-capture-bar'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: ShellSpace.sm,
+                runSpacing: ShellSpace.xs,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (!widget.useSharedCapture)
+                    OutlinedButton.icon(
+                      key: const ValueKey('session-tuner-capture'),
+                      onPressed: _busy ? null : _captureTuner,
+                      icon: const Icon(Icons.photo_camera_outlined, size: 16),
+                      label: Text(
+                        captured ? 'Recapture screen' : 'Capture screen',
+                      ),
+                    ),
+                  Text(
+                    widget.useSharedCapture
+                        ? 'Use the shared Capture screen button above.'
+                        : 'Game foreground · full client · tuner status window visible',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontSize: 9.5,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              Text(
+                'Target to drag',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  letterSpacing: 0.05,
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: ShellSpace.xxs),
+              Wrap(
+                spacing: ShellSpace.xs,
+                runSpacing: ShellSpace.xs,
+                children: [
+                  for (final name in _tunerTargetNames.keys)
+                    ChoiceChip(
+                      key: ValueKey('session-tuner-target-$name'),
+                      label: Text(_tunerTargetNames[name]!),
+                      selected: _tunerTarget == name,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (_) => setState(() => _tunerTarget = name),
+                    ),
+                ],
+              ),
+            ],
           ),
-        ],
-      ],
-    );
-  }
-
-  Widget _boxField(String key, TextEditingController controller) => SizedBox(
-    width: 74,
-    child: TextField(
-      key: ValueKey('session-tuner-$key'),
-      controller: controller,
-      decoration: InputDecoration(labelText: key, isDense: true),
-      keyboardType: TextInputType.number,
-    ),
-  );
-
-  int? _petNumber(String key) => _number(_petFields[key]!);
-
-  Map<String, num> _rect(String prefix) => {
-    'x': _petNumber('$prefix.x') ?? 0,
-    'y': _petNumber('$prefix.y') ?? 0,
-    'w': _petNumber('$prefix.w') ?? 0,
-    'h': _petNumber('$prefix.h') ?? 0,
-  };
-
-  List<JsonMap> _petRows() => [
-    {
-      'toggle_label': _rect('toggle'),
-      'boarding_pet_slot': _rect('boarding'),
-      'feeder_strip': _rect('strip'),
-      'stacks': _number(_petStacks) ?? 2,
-    },
-  ];
-
-  JsonMap _petPoints() => {
-    'menu': _petPoint('menu'),
-    'feed': _petPoint('feed'),
-    'close': _petPoint('close'),
-    'page_tabs': [
-      [_petNumber('tab.x') ?? 0, _petNumber('tab.y') ?? 0],
-    ],
-  };
-
-  /// The save's `points.menu/feed/close` are rects (v2 boxes them with a 10 px box around the
-  /// marked point); the panel offers only the point.
-  JsonMap _petPoint(String prefix) => {
-    'x': _petNumber('$prefix.x') ?? 0,
-    'y': _petNumber('$prefix.y') ?? 0,
-    'w': 10,
-    'h': 10,
-  };
-
-  JsonMap _petBag() => {
-    'grid': [
-      _petNumber('grid.x') ?? 0,
-      _petNumber('grid.y') ?? 0,
-      _petNumber('grid.w') ?? 0,
-      _petNumber('grid.h') ?? 0,
-    ],
-    'slot': [
-      _petNumber('slot.x') ?? 0,
-      _petNumber('slot.y') ?? 0,
-      _petNumber('slot.w') ?? 0,
-      _petNumber('slot.h') ?? 0,
-    ],
-  };
-
-  Future<void> _capturePet() async {
-    setState(() {
-      _busy = true;
-      _failed = false;
-      _status = null;
-    });
-    try {
-      await widget.host.hideWindow();
-    } catch (_) {}
-    final result = await widget.model.captureFrame();
-    try {
-      await widget.host.showWindow();
-    } catch (_) {}
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _failed = !result.ok;
-      if (!result.ok) {
-        _status = result.errorLine;
-        return;
-      }
-      _petCapture = result.value!;
-      _status = 'captured ${result.value!.frame.frameId} — fill the row marks';
-    });
-  }
-
-  Future<void> _previewPet() async {
-    final result = await widget.model.petPreview(
-      draft: {
-        'rows': _petRows(),
-        'bag_grid': _petBag()['grid'],
-        'feeder_count_left_fraction': 0.4,
-        'feeder_count_min_score': 0.75,
-      },
-    );
-    if (!mounted) return;
-    setState(() {
-      _failed = !result.ok;
-      if (!result.ok) {
-        _status = result.errorLine;
-        return;
-      }
-      _petPreview = result.value;
-      final rows = result.value!['rows'];
-      final problem = result.value!['problem'];
-      _status =
-          'preview: ${rows is List ? rows.length : 0} row(s)'
-          '${problem is String ? ' — $problem' : ''}';
-    });
-  }
-
-  Future<void> _savePet() async {
-    final capture = _petCapture;
-    if (capture == null) {
-      setState(() {
-        _failed = true;
-        _status = 'Capture the screen first.';
-      });
-      return;
-    }
-    final result = await widget.model.petSave(
-      frameId: capture.frame.frameId,
-      rows: _petRows(),
-      points: _petPoints(),
-      bag: _petBag(),
-      display: capture.display,
-    );
-    if (!mounted) return;
-    setState(() {
-      _failed = !result.ok;
-      _status = result.ok
-          ? 'pet saved (rev ${result.value!['rev'] ?? '?'})'
-          : result.errorLine;
-    });
-  }
-
-  Future<void> _testPet() async {
-    final result = await widget.model.petTestRead(rows: _petRows());
-    if (!mounted) return;
-    setState(() {
-      _failed = !result.ok;
-      if (!result.ok) {
-        _status = result.errorLine;
-        return;
-      }
-      final rows = result.value!['rows'];
-      final firstSlot = rows is List && rows.isNotEmpty && rows.first is Map
-          ? (rows.first as Map)['slots']
-          : null;
-      _status =
-          'test read: ${firstSlot is List ? firstSlot.length : 0} slot(s) read';
-    });
-  }
-
-  Widget _petSection(ThemeData theme, ColorScheme colors) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Wrap(
-          spacing: ShellSpace.sm,
-          runSpacing: ShellSpace.xs,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Text('Pet crops / rows', style: theme.textTheme.labelLarge),
-            StatusChip(
-              kind: _petCapture == null ? StatusKind.muted : StatusKind.success,
-              label: _petCapture == null ? 'needs capture' : 'captured',
-            ),
-          ],
         ),
         const SizedBox(height: ShellSpace.xs),
         Text(
-          'One row drives the pet session: row rects, the shared points and the bag. Preview '
-          'derives the count/ETA regions, Save writes the calibration half + crops, Test read '
-          'reports every slot count.',
-          style: theme.textTheme.bodySmall?.copyWith(
+          'Drag directly on the captured picture to draw the selected box — the x/y/w/h fields '
+          'on the right are an alternative, not a replacement. The drag advances to the next box.',
+          key: const ValueKey('session-tuner-drag-hint'),
+          style: theme.textTheme.labelSmall?.copyWith(
+            fontSize: 10,
             color: colors.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: ShellSpace.sm),
-        for (final prefix in ['toggle', 'boarding', 'strip', 'grid', 'slot'])
-          Padding(
-            padding: const EdgeInsets.only(bottom: ShellSpace.xs),
-            child: Wrap(
-              spacing: ShellSpace.xs,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: 70,
-                  child: Text(prefix, style: theme.textTheme.bodySmall),
-                ),
-                for (final axis in ['x', 'y', 'w', 'h'])
-                  _boxField('pet.$prefix.$axis', _petFields['$prefix.$axis']!),
-              ],
-            ),
-          ),
-        Wrap(
-          spacing: ShellSpace.sm,
-          runSpacing: ShellSpace.xs,
-          children: [
-            _fieldBox('stacks', _petStacks, 'session-pet-stacks'),
-            _fieldBox('menu x', _petFields['menu.x']!, 'session-pet-menu-x'),
-            _fieldBox('menu y', _petFields['menu.y']!, 'session-pet-menu-y'),
-            _fieldBox('feed x', _petFields['feed.x']!, 'session-pet-feed-x'),
-            _fieldBox('feed y', _petFields['feed.y']!, 'session-pet-feed-y'),
-            _fieldBox('close x', _petFields['close.x']!, 'session-pet-close-x'),
-            _fieldBox('close y', _petFields['close.y']!, 'session-pet-close-y'),
-            _fieldBox('tab x', _petFields['tab.x']!, 'session-pet-tab-x'),
-            _fieldBox('tab y', _petFields['tab.y']!, 'session-pet-tab-y'),
-          ],
+        const SizedBox(height: ShellSpace.xs),
+        _sessionSplit(
+          key: const ValueKey('session-tuner-split'),
+          picture: picture,
+          controls: controls,
         ),
-        const SizedBox(height: ShellSpace.sm),
-        Wrap(
-          spacing: ShellSpace.sm,
-          runSpacing: ShellSpace.xs,
-          children: [
-            OutlinedButton(
-              key: const ValueKey('session-pet-capture'),
-              onPressed: _busy ? null : _capturePet,
-              child: const Text('Capture screen'),
-            ),
-            OutlinedButton(
-              key: const ValueKey('session-pet-preview'),
-              onPressed: _busy ? null : _previewPet,
-              child: const Text('Preview'),
-            ),
-            OutlinedButton(
-              key: const ValueKey('session-pet-save'),
-              onPressed: _busy ? null : _savePet,
-              child: const Text('Save pet'),
-            ),
-            OutlinedButton(
-              key: const ValueKey('session-pet-test'),
-              onPressed: _busy ? null : _testPet,
-              child: const Text('Test read'),
-            ),
-          ],
-        ),
-        if (_petPreview != null) ...[
-          const SizedBox(height: ShellSpace.sm),
-          Text(
-            'preview rows: ${(_petPreview!['rows'] as List?)?.length ?? 0}',
-            key: const ValueKey('session-pet-preview-rows'),
-            style: theme.textTheme.bodySmall,
-          ),
-        ],
       ],
     );
   }
+
+  Widget _tunerBoxCard(ThemeData theme, ColorScheme colors, String name) {
+    final mark = _tunerBoxMark(name);
+    final selected = _tunerTarget == name;
+    final color = _tunerBoxColors[name]!;
+    return Container(
+      key: ValueKey('session-tuner-box-$name'),
+      margin: const EdgeInsets.only(bottom: ShellSpace.xs),
+      padding: const EdgeInsets.all(ShellSpace.sm),
+      decoration: BoxDecoration(
+        color: selected
+            ? color.withValues(alpha: 0.10)
+            : colors.surfaceContainerLow,
+        border: Border.all(
+          color: selected
+              ? color.withValues(alpha: 0.8)
+              : colors.outlineVariant.withValues(alpha: 0.5),
+        ),
+        borderRadius: BorderRadius.circular(ShellRadius.m),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: ShellSpace.xs),
+              InkWell(
+                onTap: () => setState(() => _tunerTarget = name),
+                borderRadius: BorderRadius.circular(ShellRadius.s),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: ShellSpace.xxs,
+                    vertical: ShellSpace.xxs,
+                  ),
+                  child: Text(
+                    _tunerTargetNames[name]!,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: selected ? color : null,
+                    ),
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                mark == null ? 'not drawn' : '${mark.w}×${mark.h}',
+                key: ValueKey('session-tuner-$name-status'),
+                style: ShellText.mono.copyWith(
+                  fontSize: 10.5,
+                  color: selected ? color : colors.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: ShellSpace.xxs),
+          Text(
+            _tunerBoxHints[name]!,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontSize: 9.5,
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: ShellSpace.xs),
+          Wrap(
+            spacing: ShellSpace.xs,
+            runSpacing: ShellSpace.xs,
+            children: [
+              for (final axis in ['x', 'y', 'w', 'h'])
+                _boxField(
+                  '$name.$axis',
+                  _boxFields['$name.$axis']!,
+                  label: axis,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tunerCheckSummary(ThemeData theme, ColorScheme colors) {
+    final check = _tunerCheck!;
+    final geometry = asJsonMap(check['geometry']);
+    final region = asJsonMap(geometry['region']);
+    final matched = check['matched'] is List
+        ? (check['matched'] as List).length
+        : 0;
+    final pitch = check['measured_row_height'] ?? geometry['row_height'] ?? '—';
+    final filter = asJsonMap(check['filter']);
+    final filterOn = filter['enabled'] == true;
+    final filterPassed = filter['passed'] == true;
+    final warnings = check['warnings'] is List
+        ? (check['warnings'] as List<Object?>)
+        : const <Object?>[];
+    final reason = filter['reason'];
+    return Container(
+      key: const ValueKey('session-tuner-summary'),
+      padding: const EdgeInsets.all(ShellSpace.sm),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(ShellRadius.m),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text('Check result', style: theme.textTheme.labelLarge),
+              ),
+              StatusChip(
+                kind: warnings.isNotEmpty || (filterOn && !filterPassed)
+                    ? StatusKind.warning
+                    : StatusKind.success,
+                label: warnings.isNotEmpty ? 'check with warnings' : 'derived',
+              ),
+            ],
+          ),
+          const SizedBox(height: ShellSpace.xs),
+          Wrap(
+            spacing: ShellSpace.xs,
+            runSpacing: ShellSpace.xs,
+            children: [
+              _summaryMetric(
+                theme,
+                'region',
+                _regionText(region),
+                key: const ValueKey('session-tuner-summary-region'),
+              ),
+              _summaryMetric(
+                theme,
+                'row pitch',
+                '$pitch px',
+                key: const ValueKey('session-tuner-summary-pitch'),
+              ),
+              _summaryMetric(
+                theme,
+                'grade',
+                '${check['grade'] ?? '—'}',
+                key: const ValueKey('session-tuner-summary-grade'),
+              ),
+              _summaryMetric(
+                theme,
+                'remaining',
+                '${check['remaining'] ?? '—'}',
+                key: const ValueKey('session-tuner-summary-remaining'),
+              ),
+              _summaryMetric(
+                theme,
+                'filter',
+                filterOn ? (filterPassed ? 'passed' : 'failed') : 'off',
+                key: const ValueKey('session-tuner-summary-filter'),
+              ),
+            ],
+          ),
+          const SizedBox(height: ShellSpace.xs),
+          Text(
+            'matched $matched attribute row(s)'
+            '${reason is String && reason.isNotEmpty ? ' · $reason' : ''}',
+            key: const ValueKey('session-tuner-matched'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryMetric(
+    ThemeData theme,
+    String label,
+    String value, {
+    Key? key,
+  }) {
+    return Container(
+      key: key,
+      padding: const EdgeInsets.symmetric(
+        horizontal: ShellSpace.sm,
+        vertical: ShellSpace.xxs,
+      ),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(ShellRadius.s),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontSize: 9,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          Text(value, style: ShellText.mono.copyWith(fontSize: 11.5)),
+        ],
+      ),
+    );
+  }
+
+  String _regionText(Map<String, dynamic> region) {
+    if (region.isEmpty) {
+      return '—';
+    }
+    final left = region['left'] ?? region['x'] ?? '?';
+    final top = region['top'] ?? region['y'] ?? '?';
+    final width = region['width'] ?? region['w'] ?? '?';
+    final height = region['height'] ?? region['h'] ?? '?';
+    return '($left, $top) · $width×$height';
+  }
+
+  Widget _sessionSteps(
+    ThemeData theme,
+    ColorScheme colors,
+    List<String> steps, {
+    required String keyPrefix,
+    required List<bool> done,
+  }) {
+    return Wrap(
+      spacing: ShellSpace.sm,
+      runSpacing: ShellSpace.xs,
+      children: [
+        for (var index = 0; index < steps.length; index++)
+          Container(
+            key: ValueKey('$keyPrefix-step-${index + 1}'),
+            padding: const EdgeInsets.symmetric(
+              horizontal: ShellSpace.sm,
+              vertical: ShellSpace.xxs,
+            ),
+            decoration: BoxDecoration(
+              color: done[index]
+                  ? colors.primaryContainer.withValues(alpha: 0.55)
+                  : colors.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(ShellRadius.chip),
+              border: Border.all(
+                color: done[index]
+                    ? colors.primary.withValues(alpha: 0.4)
+                    : colors.outlineVariant.withValues(alpha: 0.5),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 16,
+                  height: 16,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: done[index] ? colors.primary : colors.outline,
+                    shape: BoxShape.circle,
+                  ),
+                  child: done[index]
+                      ? Icon(Icons.check, size: 11, color: colors.onPrimary)
+                      : Text(
+                          '${index + 1}',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontSize: 9,
+                            color: colors.surface,
+                          ),
+                        ),
+                ),
+                const SizedBox(width: ShellSpace.xs),
+                Text(
+                  steps[index],
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: done[index]
+                        ? colors.primary
+                        : colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _sessionCard(
+    ThemeData theme, {
+    required Key key,
+    required Widget child,
+    EdgeInsets padding = const EdgeInsets.all(ShellSpace.sm),
+  }) => Container(
+    key: key,
+    margin: const EdgeInsets.only(bottom: ShellSpace.sm),
+    padding: padding,
+    decoration: BoxDecoration(
+      color: theme.colorScheme.surfaceContainerLow,
+      border: Border.all(color: theme.colorScheme.outlineVariant),
+      borderRadius: BorderRadius.circular(ShellRadius.m),
+    ),
+    child: child,
+  );
+
+  Widget _boxField(
+    String key,
+    TextEditingController controller, {
+    String? label,
+  }) => SizedBox(
+    width: 68,
+    child: TextField(
+      key: ValueKey('session-tuner-$key'),
+      controller: controller,
+      decoration: InputDecoration(labelText: label ?? key, isDense: true),
+      keyboardType: TextInputType.number,
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    if (widget.only == 'tuner') {
+      return SurfacePanel(
+        title: 'Magic Tuner',
+        description:
+            'One tuner capture covers the three OCR boxes and the spring point; Check measures '
+            'the frame, then Save writes them together.',
+        padding: const EdgeInsets.all(ShellSpace.md),
+        child: KeyedSubtree(
+          key: widget.tunerKey,
+          child: _tunerSection(theme, colors),
+        ),
+      );
+    }
+    if (widget.only == 'tooltip') {
+      return SurfacePanel(
+        title: 'Tooltip offset + shape',
+        description:
+            'One hover capture: the core places the cursor, captures the panel, and this panel '
+            'measures the offset and shape used by the Pet Feeder.',
+        padding: const EdgeInsets.all(ShellSpace.md),
+        child: KeyedSubtree(
+          key: widget.tooltipKey,
+          child: _tooltipSection(theme, colors),
+        ),
+      );
+    }
     return SurfacePanel(
-      title: 'Session-shaped calibrations',
+      title: 'Sessions',
       description:
-          'The tooltip session is wired to the core (§12.9). The tuner three-box and pet-crop '
-          'sessions remain later frontend increments.',
+          'Only calibrations that need more than one mark: Tuner OCR + Spring point (one capture) '
+          'and the Pet tooltip panel. The nine Pet marks are in the mark editor above.',
       padding: const EdgeInsets.all(ShellSpace.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: ShellSpace.sm,
-            runSpacing: ShellSpace.xs,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text('Tooltip offset + shape', style: theme.textTheme.labelLarge),
-              StatusChip(
-                kind: _failed ? StatusKind.warning : StatusKind.success,
-                label: _busy ? 'working' : 'wired',
-              ),
-            ],
+          KeyedSubtree(
+            key: widget.tooltipKey,
+            child: _tooltipSection(theme, colors),
           ),
-          const SizedBox(height: ShellSpace.xs),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: ShellWidth.prose),
-            child: Text(
-              'Capture hover (shell hides), read the panel box from the picture, enter '
-              'offset/size, Save, then Test read.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colors.onSurfaceVariant,
-              ),
-            ),
-          ),
-          const SizedBox(height: ShellSpace.sm),
-          Wrap(
-            spacing: ShellSpace.sm,
-            runSpacing: ShellSpace.sm,
-            children: [
-              _fieldBox('hover x', _x, 'session-tooltip-x'),
-              _fieldBox('hover y', _y, 'session-tooltip-y'),
-              _fieldBox('delay', _delay, 'session-tooltip-delay'),
-              _fieldBox('offset x', _offsetX, 'session-tooltip-offset-x'),
-              _fieldBox('offset y', _offsetY, 'session-tooltip-offset-y'),
-              _fieldBox('width', _width, 'session-tooltip-width'),
-              _fieldBox('height', _height, 'session-tooltip-height'),
-            ],
-          ),
-          const SizedBox(height: ShellSpace.sm),
-          Wrap(
-            spacing: ShellSpace.sm,
-            runSpacing: ShellSpace.xs,
-            children: [
-              OutlinedButton(
-                key: const ValueKey('session-tooltip-hover'),
-                onPressed: _busy ? null : _hover,
-                child: const Text('Capture hover'),
-              ),
-              OutlinedButton(
-                key: const ValueKey('session-tooltip-save'),
-                onPressed: _busy ? null : _save,
-                child: const Text('Save tooltip'),
-              ),
-              OutlinedButton(
-                key: const ValueKey('session-tooltip-test'),
-                onPressed: _busy ? null : _test,
-                child: const Text('Test read'),
-              ),
-            ],
-          ),
-          if (_status != null) ...[
-            const SizedBox(height: ShellSpace.sm),
-            Text(
-              _status!,
-              key: const ValueKey('session-tooltip-status'),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: _failed ? colors.error : colors.onSurface,
-              ),
-            ),
-          ],
-          if (_preview != null) ...[
-            const SizedBox(height: ShellSpace.sm),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 160),
-              child: Image.memory(
-                _preview!,
-                key: const ValueKey('session-tooltip-preview'),
-                fit: BoxFit.contain,
-              ),
-            ),
-          ],
-          for (final line in _lines)
-            Text(
-              line,
-              key: const ValueKey('session-tooltip-line'),
-              style: theme.textTheme.bodySmall,
-            ),
           const SizedBox(height: ShellSpace.md),
-          _tunerSection(theme, colors),
-          const SizedBox(height: ShellSpace.md),
-          _petSection(theme, colors),
+          KeyedSubtree(
+            key: widget.tunerKey,
+            child: _tunerSection(theme, colors),
+          ),
         ],
       ),
     );

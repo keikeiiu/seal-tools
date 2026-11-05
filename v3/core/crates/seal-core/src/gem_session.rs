@@ -210,7 +210,7 @@ fn dominant(c: &ColorComposition) -> &'static str {
 
 fn frame_for(state: &CoreState, request: &Request) -> Result<Value, Box<Response>> {
     if let Some(frame_id) = request.args.get("frame_id").and_then(Value::as_str) {
-        return state.frames.get(frame_id).cloned().ok_or_else(|| {
+        return state.frames.get_value(frame_id).ok_or_else(|| {
             Box::new(fail(
                 &request.id,
                 format!("unknown frame_id {frame_id:?} — capture the window again"),
@@ -300,18 +300,23 @@ pub fn check_result(state: &CoreState, request: &Request) -> Response {
         .config
         .pointer("/gem/empty_signature")
         .and_then(|value| serde_json::from_value::<ColorComposition>(value.clone()).ok());
-    let empty_distance = state
+    // TOOL-F15: this path is the COLOUR-SIGNATURE one, so it uses the signature distance — the old
+    // single `empty_distance` key seeded it (0.18). The pixel-diff threshold (`empty_diff_max`, 0.01)
+    // never applies here: the two metrics are on different scales.
+    let empty_signature_distance = state
         .config
-        .pointer("/gem/empty_distance")
+        .pointer("/gem/empty_signature_distance")
+        .or_else(|| state.config.pointer("/gem/empty_distance"))
         .and_then(Value::as_f64)
-        .unwrap_or(0.18);
+        .unwrap_or(seal_domain::tools::gem::DEFAULT_EMPTY_SIGNATURE_DISTANCE);
     let (distance, verdict) = match &signature {
         Some(signature) => {
             let distance = seal_domain::tools::gem::composition_distance(&composition, signature);
             let empty = seal_domain::tools::gem::result_box_is_empty(
                 &seal_domain::tools::gem::EmptyRead::Composition(composition),
                 Some(signature),
-                empty_distance,
+                seal_domain::tools::gem::DEFAULT_EMPTY_DIFF_MAX,
+                empty_signature_distance,
             );
             (json!(distance), if empty { "empty" } else { "has_gem" })
         }

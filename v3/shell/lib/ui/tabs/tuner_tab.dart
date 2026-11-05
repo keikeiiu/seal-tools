@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import '../../app/app.dart';
 import '../../protocol/protocol.dart';
 import '../components/foldable_section.dart';
+import '../components/grade_ladder.dart';
 import '../components/info_row.dart';
 import '../components/read_only_panel.dart';
 import '../components/surface_panel.dart';
@@ -425,50 +426,48 @@ class _TunerTabState extends State<TunerTab>
           EditorSection(
             title: 'Grades',
             children: [
-              Text(
-                'Fixed grade order (read-only):',
-                key: const ValueKey('grade-order-caption'),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: ShellSpace.xs),
-              Wrap(
-                spacing: ShellSpace.xs,
-                runSpacing: ShellSpace.xs,
-                children: [
-                  for (var index = 0; index < order.length; index++) ...[
-                    if (index > 0)
-                      Text(
-                        '·',
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    Text(
-                      order[index],
-                      key: ValueKey('grade-order-${order[index]}'),
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                  ],
-                ],
+              GradeLadder(
+                grades: order,
+                keyPrefix: 'grade-order',
+                caption: 'Fixed grade order',
+                captionKey: const ValueKey('grade-order-caption'),
+                target: _targetGrade(),
+                minimum: _requireGrade(),
               ),
               const SizedBox(height: ShellSpace.md),
-              DraftDropdownField(
-                key: const ValueKey('target-grade'),
-                label: 'Target grade',
-                value: _targetGrade() ?? _noTargetGrade,
-                options: [_noTargetGrade, ...order],
-                width: ShellWidth.fieldLg,
-                onChanged: (value) {
-                  if (value == null || value == _noTargetGrade) {
-                    _setTargetGrade(null);
-                  } else {
-                    _setTargetGrade(value);
-                  }
-                },
+              Wrap(
+                spacing: ShellSpace.md,
+                runSpacing: ShellSpace.sm,
+                children: [
+                  DraftDropdownField(
+                    key: const ValueKey('target-grade'),
+                    label: 'Target grade',
+                    value: _targetGrade() ?? _noTargetGrade,
+                    options: [_noTargetGrade, ...order],
+                    width: ShellWidth.fieldLg,
+                    onChanged: (value) {
+                      if (value == null || value == _noTargetGrade) {
+                        _setTargetGrade(null);
+                      } else {
+                        _setTargetGrade(value);
+                      }
+                    },
+                  ),
+                  DraftDropdownField(
+                    key: const ValueKey('require-grade'),
+                    label: 'Minimum grade (filter)',
+                    value: _requireGrade(),
+                    options: order,
+                    width: ShellWidth.fieldLg,
+                    onChanged: (value) => _setFilter((filter) {
+                      if (value == null) {
+                        filter.remove('require_grade');
+                      } else {
+                        filter['require_grade'] = value;
+                      }
+                    }),
+                  ),
+                ],
               ),
             ],
           ),
@@ -586,20 +585,6 @@ class _TunerTabState extends State<TunerTab>
                     width: ShellWidth.fieldMd,
                     onChanged: (value) =>
                         _setFilter((filter) => filter['match_mode'] = value),
-                  ),
-                  DraftDropdownField(
-                    key: const ValueKey('require-grade'),
-                    label: 'Require grade',
-                    value: _requireGrade(),
-                    options: order,
-                    width: ShellWidth.fieldMd,
-                    onChanged: (value) => _setFilter((filter) {
-                      if (value == null) {
-                        filter.remove('require_grade');
-                      } else {
-                        filter['require_grade'] = value;
-                      }
-                    }),
                   ),
                 ],
               ),

@@ -333,13 +333,31 @@ pub enum ShopStep {
     Wait(f64),
 }
 
+/// The most transactions one BUY run may ask for (TOOL-F11). There is no `buy_cap` field in the
+/// merged config yet (the schema is the config crate's), so the spend guard is a fixed ceiling: a
+/// count past it is a typo or a stuck key, and a wrong purchase is the one thing here that cannot be
+/// undone. A run that needs more is started again.
+pub const MAX_BUY_TRANSACTIONS: i32 = 100;
+
 /// One pass, ready to execute: the ordered steps and the line the player sees when it finishes.
 ///
 /// Buy and Sell are counted jobs, not loops — running them forever would be a way to spend a fortune
 /// or empty a bag by leaving the room.
+///
+/// A BUY carries its repeated transactions as `repeat` + `remaining` rather than `12 · count` steps
+/// (TOOL-F11): the plan used to be built up front, so a large count allocated the whole run before the
+/// first click and `i32::MAX` aborted the process. The core tool walks `repeat` `remaining` times.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShopPlan {
+    /// Steps performed once: the focus click, then the preset's scroll.
     pub steps: Vec<ShopStep>,
+    /// The transaction block a BUY repeats; empty for a SELL, whose transactions are already in
+    /// `steps`.
+    pub repeat: Vec<ShopStep>,
+    /// How many times `repeat` runs after `steps`.
+    pub remaining: i32,
+    /// Transactions this pass will perform, for the card's `Cycle`/`Current`.
+    pub transactions: i32,
     pub done_message: String,
 }
 
@@ -348,11 +366,13 @@ impl ShopPlan {
     /// the MAX/Enter/Enter transaction `count` times.
     ///
     /// `count` comes from the RUN, not the preset: a preset's own count is its usual amount, and
-    /// asking for a different number should not mean editing it. It is clamped to at least one.
+    /// asking for a different number should not mean editing it. It is clamped to at least one and
+    /// refused above [`MAX_BUY_TRANSACTIONS`].
     ///
     /// # Errors
     ///
-    /// Returns [`StopReason::error`] when the buy preset is missing or unknown, when the shop row
+    /// Returns [`StopReason::error`] when the buy preset is missing or unknown, names a row outside
+    /// the calibrated list, asks for more transactions than the cap, when the shop row
     /// geometry/region is uncalibrated, or when the focus point or MAX button is unmarked — every
     /// refusal names the mark to save.
     pub fn buy(
@@ -362,6 +382,12 @@ impl ShopPlan {
     ) -> Result<Self, StopReason> {
         let preset = ready_buy(settings, preset_name)?;
         let count = count.max(1);
+        if count > MAX_BUY_TRANSACTIONS {
+            return Err(StopReason::error(format!(
+                "A buy run is capped at {MAX_BUY_TRANSACTIONS} transactions, and this one asked for \
+                 {count}. Nothing was bought — start it again for the rest."
+            )));
+        }
 
         let mut steps = focus_steps(settings)?;
         if preset.scroll > 0 {
@@ -382,12 +408,11 @@ impl ShopPlan {
             return Err(max_button_missing());
         };
 
-        for _ in 0..count {
-            steps.extend(transaction(row, max));
-        }
-
         Ok(Self {
             steps,
+            repeat: transaction(row, max),
+            remaining: count,
+            transactions: count,
             done_message: format!("Bought {count}x '{}'.", preset_name.unwrap_or_default()),
         })
     }
@@ -419,6 +444,9 @@ impl ShopPlan {
 
         Ok(Self {
             steps,
+            repeat: Vec::new(),
+            remaining: 0,
+            transactions: i32::try_from(slots.len()).unwrap_or(i32::MAX),
             done_message: format!("Sold {} slot(s).", slots.len()),
         })
     }
@@ -510,6 +538,20 @@ fn ready_buy<'a>(
     {
         return Err(StopReason::error(format!(
             "Shop rows aren't calibrated — {problem}."
+        )));
+    }
+    // TOOL-F11: the preset's row must be one the calibrated list actually shows. `row_centre` used to
+    // accept any non-negative index with the note "that is the caller's to report", and nothing
+    // reported it — a preset on row 10 of a 10-row list (0-based: one past the bottom) right-clicks
+    // half a pitch BELOW the list, which is a wrong purchase. The row is named 1-based, as the player
+    // sees it (`ShopGeometry::row_centre` is 0-based).
+    if preset.row < 0 || preset.row >= settings.shop_rows {
+        return Err(StopReason::error(format!(
+            "Buy preset '{name}' points at row {} of a {}-row shop list — nothing was bought. Pick a row \
+             between 1 and {} on the Buy/Sell tab.",
+            preset.row + 1,
+            settings.shop_rows,
+            settings.shop_rows
         )));
     }
     if !is_point(settings.scroll_point.as_deref()) {

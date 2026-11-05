@@ -10,6 +10,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app/app.dart';
 import 'components/info_row.dart';
@@ -71,6 +72,20 @@ class CrashView extends StatelessWidget {
                 const SizedBox(height: ShellSpace.sm),
                 InfoRow(label: 'root', value: root, mono: true),
               ],
+              const SizedBox(height: ShellSpace.sm),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const ValueKey('crash-copy-diagnostics'),
+                  onPressed: () => Clipboard.setData(
+                    ClipboardData(
+                      text: _diagnostics(connection: connection, tail: tail),
+                    ),
+                  ),
+                  icon: const Icon(Icons.copy, size: 16),
+                  label: const Text('Copy diagnostics'),
+                ),
+              ),
               if (tail.isNotEmpty) ...[
                 const SizedBox(height: ShellSpace.lg),
                 SurfacePanel(
@@ -119,4 +134,25 @@ class CrashView extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The crash view's copy payload: what a player can paste into a bug report without fishing through
+/// the UI (SHELL-F7).
+String _diagnostics({
+  required ConnectionModel connection,
+  required List<String> tail,
+}) {
+  final buffer = StringBuffer()
+    ..writeln('Seal Tools diagnostics')
+    ..writeln('shell: $productVersion')
+    ..writeln('core: ${connection.coreVersion ?? 'unknown'}')
+    ..writeln('root: ${connection.root ?? 'unknown'}')
+    ..writeln('failure: ${connection.failure?.name ?? 'none'}')
+    ..writeln('exit: ${connection.exitCode ?? 'unknown'}')
+    ..writeln('message: ${connection.failureMessage ?? ''}')
+    ..writeln('stderr:');
+  for (final line in tail) {
+    buffer.writeln('  $line');
+  }
+  return buffer.toString();
 }

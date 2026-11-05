@@ -44,14 +44,21 @@ mixin ConfigTabState<T extends StatefulWidget> on State<T> {
     draftGroup.seedFromMirror(model.config.config);
     _seenConfigRev = model.config.rev;
     model.config.addListener(_onConfigChanged);
+    draftGroup.addListener(_onDraftDirty);
+    model.setDraftDirty(draftGroup, draftGroup.isDirty);
   }
 
   @override
   void dispose() {
     model.config.removeListener(_onConfigChanged);
+    draftGroup.removeListener(_onDraftDirty);
+    model.setDraftDirty(draftGroup, false);
     _defaultDraftGroup?.dispose();
     super.dispose();
   }
+
+  /// ShellModel's exit guard needs one aggregate dirty flag across every kept-alive tab (SHELL-F6).
+  void _onDraftDirty() => model.setDraftDirty(draftGroup, draftGroup.isDirty);
 
   void _onConfigChanged() {
     final rev = model.config.rev;

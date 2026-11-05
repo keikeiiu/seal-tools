@@ -53,11 +53,24 @@ fn resolve_at(config: &mut Value, pointer: &str, root: &Path) {
     }
 }
 
+/// True when a reference's remainder is a relative path inside `artifacts/`. Absolute paths, drive
+/// letters and UNC prefixes are rejected before any `Path::join`, or Windows can resolve the value
+/// outside the config root (CORE-F15).
+fn safe_relative(name: &str) -> bool {
+    !name.is_empty()
+        && !name.contains('\\')
+        && !name.contains(':')
+        && !name.starts_with('/')
+        && !name
+            .split('/')
+            .any(|component| component.is_empty() || component == "." || component == "..")
+}
+
 /// The inline base64 for an `artifacts/...` reference, or `None` when `value` is not a reference (or
 /// its file is missing, in which case the caller keeps the reference).
 pub(crate) fn load_reference(root: &Path, value: &str) -> Option<String> {
     let name = value.strip_prefix(REFERENCE_PREFIX)?;
-    if name.is_empty() || name.contains("..") || name.contains('\\') {
+    if !safe_relative(name) {
         return None;
     }
     let direct = root.join(REFERENCE_PREFIX).join(name);
@@ -74,7 +87,7 @@ pub(crate) fn write_reference(
     name: &str,
     bytes: &[u8],
 ) -> Result<String, std::io::Error> {
-    if name.is_empty() || name.contains("..") || name.contains('/') || name.contains('\\') {
+    if !safe_relative(name) || name.contains('/') {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "an artifact name is a bare file name",
@@ -135,6 +148,26 @@ mod tests {
         let mut config = json!({"pet": {"queue": [{"png": "artifacts/missing.png"}]}});
         resolve_config(&mut config, &root);
         assert_eq!(config["pet"]["queue"][0]["png"], "artifacts/missing.png");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn absolute_drive_and_unc_references_are_refused() {
+        let root = scratch();
+        for value in [
+            "artifacts/C:/Windows/System32/x.png",
+            "artifacts//server/share/x.png",
+            "artifacts/c:relative.png",
+            "artifacts/../../escape.png",
+            "artifacts/a//b.png",
+        ] {
+            let mut config = json!({"pet": {"food_icon_png": value}});
+            resolve_config(&mut config, &root);
+            assert_eq!(
+                config["pet"]["food_icon_png"], value,
+                "{value} must be left as the refusal reference"
+            );
+        }
         let _ = fs::remove_dir_all(root);
     }
 

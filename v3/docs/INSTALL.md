@@ -193,7 +193,7 @@ Which marks to draw depends on the tools you will use — the picker groups them
   Combine), Resource slot point (targets "1".."3").
 - **Pet** (feeder): the menu/feed/close points, Bag page tab (ITEM1..3), Boarding bag grid/slot, and the
   per-row marks Row start/end button, Row boarding pet slot and Row food strip (targets "1".."4").
-- **Tuner**: Spring point only.
+- **Tuner**: the **Tuner OCR 3-box + Spring point** session — one capture for all four tuner targets.
 
 **Calibration prerequisites**
 

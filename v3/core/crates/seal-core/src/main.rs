@@ -16,22 +16,42 @@
 //! root discovery/config load below, so no machine-touching startup is reachable in that mode.
 //!
 //! Shutdown order is load-bearing (OPEN.md §1): the final response is queued FIRST, then the
-//! supervisor is shut down (it cancels runs, waits for the workers and emits `core.stopping`), and
-//! only then is the writer finished — the supervisor thread is the other `EventBus` holder, and the
-//! writer only stops when the last sender is gone.
+//! supervisor is shut down (it cancels runs, waits for the workers up to its deadline and emits
+//! `core.stopping`), and only then is the writer finished — the supervisor thread is the other
+//! `EventBus` holder, and the writer only stops when the last sender is gone. `CORE-F8`: a worker
+//! that outlives the supervisor's shutdown budget is logged to `error.log`, the writer is given a
+//! short bounded settle, and the process exits non-zero so a wedged run is reported instead of
+//! hanging onto the COM port.
 
+use std::backtrace::Backtrace;
+use std::panic;
 use std::sync::Arc;
+use std::time::Duration;
 
 use seal_core::dispatch::{CoreState, handle};
 use seal_core::events::EventWriter;
 use seal_core::registry::{ProductionRegistry, ToolRegistry};
 use seal_core::root::find_root;
-use seal_core::supervisor::Supervisor;
+use seal_core::supervisor::{ShutdownOutcome, Supervisor};
 use seal_proto::framing::decode_line;
 use seal_proto::{Error, Request, Response};
-use std::io::BufRead;
+use std::io::{BufRead, Read};
 use std::path::PathBuf;
 
+/// One NDJSON line may be large because calibration frames are inline base64, but it must not be
+/// unbounded: a client bug must not grow the core's buffer without limit (CORE-F9).
+const MAX_LINE_BYTES: usize = 64 * 1024 * 1024;
+
+/// How long the writer gets to drain after the supervisor is gone (CORE-F8). A clean shutdown has no
+/// senders left and finishes in milliseconds; the budget only bounds the wedged case, where the
+/// writer is still waiting for an `EventBus` clone held by a stuck worker and the process must leave
+/// anyway.
+const WRITER_DRAIN_BUDGET: Duration = Duration::from_secs(2);
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "main keeps the ordered load → serve → shutdown lifecycle in one place; that order is the contract"
+)]
 fn main() {
     // Replay wins over `--root` (§13). This branch is deliberately before root discovery and before
     // `CoreState::load`, so replay cannot construct the config store, open the board, measure/capture
@@ -75,6 +95,15 @@ fn main() {
     // The dispatcher queues `config.changed` events and the loop flushes them after each response, so
     // the wire order is answer-then-event and a shell never sees its own write as an external change.
     state.attach_events(bus.clone());
+    // CORE-F3: an unhandled panic must leave a durable reason, not only stderr. Chain to the default
+    // hook so the child stderr the shell captures still gets the panic too.
+    let panic_logs = Arc::clone(&state.logs);
+    let default_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        let backtrace = Backtrace::force_capture();
+        panic_logs.error_line(&format!("panic: {info}\n{backtrace}"));
+        default_hook(info);
+    }));
     // The registry reads the merged config through this cell; publishing before the supervisor
     // starts means the first Start already sees the config `hello` reported.
     state.publish_config();
@@ -101,17 +130,106 @@ fn main() {
 
     let stdin = std::io::stdin();
     let reason = loop {
-        let mut line = String::new();
-        match stdin.lock().read_line(&mut line) {
-            Ok(0) | Err(_) => break "eof",
+        let mut raw = Vec::new();
+        let read = {
+            let input = stdin.lock();
+            input
+                .take((MAX_LINE_BYTES + 1) as u64)
+                .read_until(b'\n', &mut raw)
+        };
+        let overlong = matches!(read, Ok(bytes) if bytes > MAX_LINE_BYTES);
+        match read {
+            Ok(0) => break "eof",
             Ok(_) => {}
+            Err(error) => {
+                // A read failure (not an invalid byte: the bytes are decoded below) is answered and
+                // the loop keeps serving; the next read starts at the next line.
+                writer.response(Response::err(
+                    "",
+                    Error::new(
+                        "bad_request",
+                        &format!("stdin read failed: {error}"),
+                        serde_json::json!({}),
+                    ),
+                ));
+                state.flush_events();
+                continue;
+            }
         }
+        if overlong && !raw.ends_with(b"\n") {
+            // Discard the remainder of the offending line so the next request starts cleanly.
+            let mut rest = Vec::new();
+            loop {
+                rest.clear();
+                match stdin.lock().read_until(b'\n', &mut rest) {
+                    Ok(0) => break,
+                    Ok(_) if rest.ends_with(b"\n") => break,
+                    Ok(_) => {}
+                    Err(error) => {
+                        writer.response(Response::err(
+                            "",
+                            Error::new(
+                                "bad_request",
+                                &format!(
+                                    "stdin failed while discarding an over-long line: {error}"
+                                ),
+                                serde_json::json!({}),
+                            ),
+                        ));
+                        state.flush_events();
+                        break;
+                    }
+                }
+            }
+        }
+        if overlong {
+            writer.response(Response::err(
+                "",
+                Error::new(
+                    "bad_request",
+                    &format!("request line exceeds {MAX_LINE_BYTES} bytes"),
+                    serde_json::json!({}),
+                ),
+            ));
+            state.flush_events();
+            continue;
+        }
+        let Ok(line) = String::from_utf8(raw) else {
+            writer.response(Response::err(
+                "",
+                Error::new(
+                    "bad_request",
+                    "request line is not valid UTF-8",
+                    serde_json::json!({}),
+                ),
+            ));
+            state.flush_events();
+            continue;
+        };
         if line.trim().is_empty() {
             continue;
         }
 
-        let response = match decode_line::<Request>(&line) {
-            Ok(request) => handle(&mut state, request),
+        // CORE-F9: decode the envelope first so a malformed request can still echo its string id
+        // instead of the shell waiting 10 s for a timeout. Missing/numeric ids are also answered.
+        let response = match decode_line::<serde_json::Value>(&line) {
+            Ok(value) => {
+                let id = value
+                    .get("id")
+                    .map(|id| id.as_str().map_or_else(|| id.to_string(), str::to_owned))
+                    .unwrap_or_default();
+                match serde_json::from_value::<Request>(value) {
+                    Ok(request) => handle(&mut state, request),
+                    Err(error) => Response::err(
+                        &id,
+                        Error::new(
+                            "bad_request",
+                            &format!("unparseable request: {error}"),
+                            serde_json::json!({}),
+                        ),
+                    ),
+                }
+            }
             Err(error) => Response::err(
                 "",
                 Error::new(
@@ -130,15 +248,25 @@ fn main() {
         }
     };
 
-    state.shutdown_tools(reason);
-    // `PROTOCOL.md` §1: shutdown flushes the logs. Every line is already durable (the logger opens,
-    // appends and closes per line), so this is the contract hook rather than a data-loss window.
+    let shutdown = state.shutdown_tools(reason);
+    // `PROTOCOL.md` §1: shutdown flushes the logs. Every line is already durable (the logger flushes
+    // each line), so this is the contract hook rather than a data-loss window.
     state.logs.flush();
     // The dispatcher's event sender must be gone before the writer can stop: it is the last sender
     // besides the supervisor, and leaving it attached would hang the process AFTER its final line.
     state.detach_pet_state_sink();
     state.detach_events();
-    writer.finish();
+    let writer_finished = writer.finish_within(WRITER_DRAIN_BUDGET);
+    if writer_finished && shutdown == ShutdownOutcome::Drained {
+        return;
+    }
+    // A worker outlived the shutdown budget (CORE-F8): the supervisor already wrote it to
+    // `error.log`. Exiting non-zero is the only honest signal left — the process must not stay alive
+    // holding the COM port, and the shell reports a non-zero exit as a crash rather than a clean
+    // stop. `process::exit` is deliberate: a stuck worker is still holding threads, and running the
+    // rest of the runtime's teardown would wait on exactly the thread this deadline exists to leave.
+    eprintln!("seal-core: shutdown did not finish cleanly — exiting non-zero");
+    std::process::exit(1);
 }
 
 /// `--replay <script>` (`PROTOCOL.md` §13). `None` means normal mode; `Some(Err(..))` means the flag

@@ -9,6 +9,12 @@ values on the wire is [PROTOCOL.md](PROTOCOL.md) §3; which file they live in is
 [CONFIG.md](CONFIG.md) §1; where a side is not built yet is [OPEN.md](../backlog/OPEN.md). One fact
 lives in one place: this file does not repeat those.
 
+The core's `calibration.save`/`fetch` table still has **18 kinds**; the v3.0.9 **UI presents 17
+marks** and folds `spring_point` into the Tuner OCR session (`calibration.tuner.save`), so one tuner
+capture covers the three OCR boxes and the spring point. The Pet crops/rows session was removed from
+the UI because it duplicated the nine Pet marks; the core commands remain for compatibility. The
+presentation rule lives in [UI.md](UI.md) §Calibrate.
+
 ---
 
 ## 1. One canonical space
@@ -135,12 +141,15 @@ a cursor to a pixel v2 never clicked. Pinned by
 - The blit is 1:1 physical, so the capture must be given **physical** rects and must run on the
   aware thread — the result is the full 2865 × 1789 client, not a crop.
 - **The game must be in front.** `CopyFromScreen` reads what is on screen; a covered game would be
-  photographed over. The core asks `GetForegroundWindow` and refuses with `game_not_foreground`
-  ([PROTOCOL.md](PROTOCOL.md) §4/§6); the UI hides itself, waits a frame, then asks, so the
-  calibrator's capture is the game only.
+  photographed over. The core asks `GetForegroundWindow` and normally refuses with
+  `game_not_foreground` ([PROTOCOL.md](PROTOCOL.md) §4/§6). The calibration screens hide the shell
+  first; because Windows can still report the hidden shell as the foreground window, their
+  `capture`/tooltip commands pass `allow_covered:true` and skip that gate for the one frame. The frame
+  is shown back before anything is saved, so a genuinely covered picture is visible and recoverable;
+  tool reads keep the gate.
 - **Frames carry their origin**: the frame is a rectangle of the physical screen, and
   [`Frame`](PROTOCOL.md#3-types) carries `origin` so the shell never has to guess where it came from.
-  Frames are PNG+base64; the core retains the last four by `frame_id` (a FIFO cache in `dispatch.rs`),
+  Frames are PNG+base64; the core retains the last twelve by `frame_id` (a FIFO cache in `dispatch.rs`),
   so `calibration.save` references the frame the calibrator just took instead of shipping megabytes
   twice.
 

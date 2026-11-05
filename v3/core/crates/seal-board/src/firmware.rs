@@ -30,7 +30,11 @@ pub const QUERY: &str = "V";
 
 /// The protocol level this host knows (`FirmwareVersion.Current`). The sketch's `FW_VERSION` is
 /// pinned equal to it by `tests/sketch.rs`.
-pub const CURRENT_LEVEL: u32 = 2;
+///
+/// Level 3 adds the held-input watchdog for a HUNG host (not just a closed port), the `!` abort
+/// inside a long frame, and the wide/bounded `D` parse (HW-F7/HW-F11). None of it changes what this
+/// host SENDS, so a level-2 board keeps working — it only lacks the newer safety net.
+pub const CURRENT_LEVEL: u32 = 3;
 
 /// The level that added `L`/`l`, i.e. dragging (`FirmwareVersion.DragLevel`).
 pub const DRAG_LEVEL: u32 = 2;
@@ -175,6 +179,11 @@ pub fn summary(level: Option<u32>) -> String {
         None => "Too old to report a version, so it also predates the drag commands — a food drag would silently do nothing. Reflash the board, or set the load mode back to \"right_click\" on the Pet tab."
             .to_owned(),
         Some(level) if level < DRAG_LEVEL => "Older than this launcher's — it cannot drag food, and a drag would silently do nothing. Reflash the board, or set the load mode back to \"right_click\" on the Pet tab."
+            .to_owned(),
+        // Level 2 (or any level between the drag one and current): everything the launcher sends
+        // works, but the hung-host failsafe is missing. A frozen launcher can leave the spacebar or
+        // the left button down until the board is unplugged (HW-F7).
+        Some(level) if level < CURRENT_LEVEL => "Works with everything this launcher sends, but not with its newest failsafe: if the launcher hangs while a key or the left button is held, the board can leave it down. Reflash to the current firmware to get the three-second release."
             .to_owned(),
         Some(level) if level > CURRENT_LEVEL => "Newer than this launcher knows — it should work, but \
                                                  anything added since is not something this launcher \

@@ -636,19 +636,61 @@ fn always_on_top_is_accepted_written_and_preserved() {
 }
 
 #[test]
+fn run_window_preferences_are_accepted_written_and_preserved() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    let hello = session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+    let rev = hello["rev"].as_u64().expect("hello carries the rev");
+
+    let sections = json!({"settings": {"ui": {
+        "collapse_on_run_start": false,
+        "return_after_run": true,
+    }}});
+    let validated = session.result("config.validate", json!({"sections": sections}));
+    assert_eq!(validated["errors"], json!([]));
+    assert_eq!(validated["warnings"], json!([]));
+
+    let applied = session.result("config.apply", json!({"rev": rev, "sections": sections}));
+    assert_eq!(
+        applied["sections"]["settings"]["ui"]["collapse_on_run_start"], false,
+        "apply echoes the portable run-window fields"
+    );
+    assert_eq!(
+        applied["sections"]["settings"]["ui"]["return_after_run"],
+        true
+    );
+    let event = session.event();
+    assert_eq!(event["event"], "config.changed");
+    assert_eq!(event["data"]["block"], "ui");
+    assert_eq!(event["data"]["values"]["collapse_on_run_start"], false);
+    assert_eq!(event["data"]["values"]["return_after_run"], true);
+
+    let local = yaml_file(&root, "config/local.yaml");
+    assert_eq!(local["settings"]["ui"]["collapse_on_run_start"], false);
+    assert_eq!(local["settings"]["ui"]["return_after_run"], true);
+
+    let reloaded = session.result("config.reload", json!({}));
+    assert_eq!(reloaded["config"]["ui"]["collapse_on_run_start"], false);
+    assert_eq!(reloaded["config"]["ui"]["return_after_run"], true);
+}
+
+#[test]
 fn quick_dock_preference_is_accepted_written_and_preserved() {
     let root = config_root();
     let mut session = Session::start(root.path());
     let hello = session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
     let rev = hello["rev"].as_u64().expect("hello carries the rev");
 
-    let sections = json!({"settings": {"ui": {"quick_dock": {
-        "placement": "bottom_right",
-        "collapsed": true,
-        "behavior": "always_open",
-        "tiles": ["spammer", "buy", "pin:Junk row"],
-        "pins": [{"name": "Junk row", "slots": [0, 1, 2, 3]}],
-    }}}});
+    let sections = json!({"settings": {"ui": {
+        "theme": "light",
+        "quick_dock": {
+            "placement": "bottom_right",
+            "collapsed": true,
+            "behavior": "always_open",
+            "tiles": ["spammer", "buy", "pin:Junk row"],
+            "pins": [{"name": "Junk row", "slots": [0, 1, 2, 3]}],
+        },
+    }}});
     let validated = session.result("config.validate", json!({"sections": sections}));
     assert_eq!(validated["errors"], json!([]));
     assert_eq!(validated["warnings"], json!([]));
@@ -665,6 +707,10 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
     assert_eq!(
         applied["sections"]["settings"]["ui"]["quick_dock"]["behavior"],
         "always_open"
+    );
+    assert_eq!(
+        applied["sections"]["settings"]["ui"]["theme"], "light",
+        "apply echoes the effective app theme"
     );
     assert_eq!(
         applied["sections"]["settings"]["ui"]["quick_dock"]["tiles"],
@@ -692,6 +738,7 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
         local["settings"]["ui"]["quick_dock"]["behavior"],
         "always_open"
     );
+    assert_eq!(local["settings"]["ui"]["theme"], "light");
     assert_eq!(
         local["settings"]["ui"]["quick_dock"]["tiles"],
         json!(["spammer", "buy", "pin:Junk row"])
@@ -713,18 +760,59 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
         local_after["settings"]["ui"]["quick_dock"]["pins"][0]["name"],
         "Junk row"
     );
+    assert_eq!(local_after["settings"]["ui"]["theme"], "light");
 
     let reloaded = session.result("config.reload", json!({}));
     assert_eq!(
         reloaded["config"]["ui"]["quick_dock"]["placement"], "bottom_right",
         "the merged config carries the persisted preference"
     );
+    assert_eq!(reloaded["config"]["ui"]["theme"], "light");
+}
 
+#[test]
+fn deleting_a_quest_flow_from_presets_survives_a_reload() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    let hello = session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+    let rev = hello["rev"].as_u64().expect("hello carries the rev");
+
+    let applied = session.result(
+        "config.apply",
+        json!({
+            "rev": rev,
+            "sections": {"quest": {
+                "presets": {"a": {"steps": []}, "b": {"steps": []}},
+                "active": "a",
+            }},
+        }),
+    );
+    let next_rev = applied["rev"].as_u64().expect("apply carries the rev");
+
+    // The tab deletes a flow by OMITTING it; a field-wise merge used to keep `a` on disk.
+    session.result(
+        "config.apply",
+        json!({
+            "rev": next_rev,
+            "sections": {"quest": {"presets": {"b": {"steps": []}}}},
+        }),
+    );
+    let reloaded = session.result("config.reload", json!({}));
+    let presets = &reloaded["config"]["quest"]["presets"];
+    assert!(
+        presets.get("a").is_none(),
+        "the deleted flow must not come back: {presets}"
+    );
+    assert!(presets.get("b").is_some(), "the remaining flow survives");
+}
+
+#[test]
+fn quick_dock_hand_written_preference_loads() {
     // A hand-written preference loads too (this is what a player migrating a setup file sees).
     let hand_written = config_root();
     hand_written.write(
         "config/local.yaml",
-        "settings:\n  ui:\n    quick_dock:\n      placement: top_centre\n      collapsed: true\n      behavior: always_open\n",
+        "settings:\n  ui:\n    theme: system\n    quick_dock:\n      placement: top_centre\n      collapsed: true\n      behavior: always_open\n",
     );
     let mut hand_session = Session::start(hand_written.path());
     let hand_hello = hand_session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
@@ -737,4 +825,5 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
         hand_hello["config"]["ui"]["quick_dock"]["behavior"],
         "always_open"
     );
+    assert_eq!(hand_hello["config"]["ui"]["theme"], "system");
 }

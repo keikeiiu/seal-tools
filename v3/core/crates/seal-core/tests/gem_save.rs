@@ -1,4 +1,4 @@
-//! G04 `calibration.gem.save` + the reference-gallery echo through `calibration.fetch`.
+//! G04 `calibration.gem.save` + the reference-gallery echo through `calibration.fetch_all`.
 
 mod common;
 
@@ -104,13 +104,9 @@ fn a_frame_save_writes_both_natural_size_artifacts_and_a_gallery_entry() {
         );
     }
 
-    // A restart-shaped fetch: the gallery carries both files and their bytes.
-    let fetched = call(
-        &mut state,
-        "3",
-        "calibration.fetch",
-        json!({"kind": "bag_grid"}),
-    );
+    // A restart-shaped open: the gallery rides on `calibration.fetch_all` (CORE-F10) and carries
+    // both files and their bytes.
+    let fetched = call(&mut state, "3", "calibration.fetch_all", json!({}));
     assert!(fetched.ok, "{:?}", fetched.error);
     let gallery = fetched.result.unwrap()["gallery"].clone();
     let names: Vec<&str> = gallery

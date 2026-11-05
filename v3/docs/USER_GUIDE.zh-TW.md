@@ -24,7 +24,7 @@ v3 殼層（shell）每一張卡片、每一個分頁與按鈕的功能，以及
 3. [第一次啟動：先設定，再校正](#3-第一次啟動先設定再校正)
 4. [卡片：七個工具與一次執行的意義](#4-卡片七個工具與一次執行的意義)
 5. [工具分頁](#5-工具分頁)
-6. [校正：18 種標記](#6-校正18-種標記)
+6. [校正：17 種標記](#6-校正17-種標記)
 7. [日誌與檔案](#7-日誌與檔案)
 8. [v3.0 的熱鍵](#8-v30-的熱鍵)
 9. [常見工作流程](#9-常見工作流程)
@@ -167,6 +167,9 @@ Hold Space 現在是自己的一張卡片（以前是頂端列的切換鈕），
 顯示的行是核心的原文。欄位正確後按 **Save**；切換變體會先解析、驗證、載入字典，最後才寫入，所以不會
 切到一半。
 
+Setup 也有一個 **Appearance** 區塊：**Follow system**、**Light**、**Dark**。選擇會立即儲存（整個外殼與
+標題列一起切換），並保存在可攜設定裡。預設是 **Dark**，所以既有安裝會維持目前的外觀，直到你主動更改。
+
 ### 3.2 校正門檻
 
 工具在它需要的標記完成校正前會拒絕啟動。拒絕訊息會指出要儲存的**標記**與唯一的 **Calibrate** 分頁：
@@ -258,8 +261,8 @@ spammer 參數 —— 儲存被拒絕時卡片下方會顯示核心的訊息。�
 改造師的可攜設定；本分頁上的校正幾何區塊在**這階段是唯讀**的（在三個框校正會談完成前由設定檔管理 ——
 第 6.4 節）。
 
-- **Grades** —— **固定等級順序**，唯讀（chip 列）；**Target grade** 與篩選的 **require_grade** 部分都從
-  這裡選。
+- **Grades** —— **固定等級順序**以唯讀路徑 `N → G → DG → XG → SG` 顯示；顏色代表角色（主要色 = target，
+   警告色 = minimum）。**Target grade** 與 **Minimum grade** 選單就放在路徑下方。
 - **Retries and timing** —— **Max retries**、**OCR retries**、**Click/enter delay (s)**、**OCR delay
   (s)**、**Save captures**（會寫入 `logs/captures/` PNG —— 見第 7 節）。**`OCR retries` 只被儲存、目前
   沒有作用：** v3.0 的讀取器只掃描一次；最後一次重試的強制擷取是倉庫待辦清單中的未實作項目。
@@ -279,7 +282,8 @@ image(s) from logs/captures.」；其餘日誌會保留。它只是家務清理�
 寶石合成器的等級與行為；已校正的 **Grade positions**、**Resource slots**、**Result gem area** 在**這階段
 是唯讀**的（在 **Calibrate** 繪製）。
 
-- **Grades** —— **固定的等級順序**，唯讀（chip 列）；**Start grade** 從這裡選。
+- **Grades** —— **固定的等級順序**以唯讀路徑顯示；**Start grade** 以播放角色標記，圖例說明執行從那裡
+   往右推進。
 - **Empty result** —— **Empty mode**（`stop`、`advance_grade`，或 `advance_grade_clear`：先清空資源格
   再推進）、**Empty streak**（連續幾次空結果才動作，以免一次讀錯就推進等級）、**Colored gap min**、
   **Save empty captures**。
@@ -337,6 +341,10 @@ image(s) from logs/captures.」；其餘日誌會保留。它只是家務清理�
 餵食器也會保存自己的執行進度：工作時它會寫入 `food_slots_used` 與每一列的 `boarding_running`，所以當機或
 重新啟動後不會再對已用過的格子或錯誤的 boarding 狀態繼續。Pet 分頁的已存值因此可能在執行期間更新 —— 那是
 餵食器自己的進度寫入，不是你做的編輯。
+
+頁面會先顯示就緒判定與精簡摘要（列 · 佇列 · 食物格 · 下一隻），寬螢幕時再把編輯器分成兩欄：左邊是
+列／佇列／用圖示新增；右邊是背包掃描、食物格、返回格與食物裝載。**Timing & read thresholds** 與可攜的
+**Feeding** 欄位收進預設收合的 **Timing & thresholds** 區塊，常用設定因此保持精簡；窄視窗會改成上下堆疊。
 
 **Setup so far & Ready to run。** 分頁在開啟時、按 **Refresh checklists**、成功 **Save** 之後，以及成功勾選
 boarding 之後讀取核心的 preflight：先 **Calibration** 清單、再 **Setup so far** 清單，最後是核心的就緒行
@@ -444,8 +452,9 @@ Arduino 分頁是唯讀的連線卡加上測試介面。它開啟時會呼叫 `b
 
 ### 5.9 Setup
 
-視窗、客戶端變體與板子設定，加上 **Find window**／**Measure**／**Probe board** 與會儲存的
-**Use detected title** 動作。見第 3.1 節 —— 同一個分頁就是第一次啟動的設定介面。
+視窗、客戶端變體與板子設定，加上 **Find window**／**Measure**／**Probe board**、會儲存的
+**Use detected title** 動作，以及 **Appearance** 外觀選項（Follow system／Light／Dark）。見第 3.1 節
+—— 同一個分頁就是第一次啟動的設定介面。
 
 ### 5.10 Hotkeys
 
@@ -455,40 +464,52 @@ Arduino 分頁是唯讀的連線卡加上測試介面。它開啟時會呼叫 `b
 
 ### 5.11 Calibrate
 
-所有工具共用的校正介面。第 6 節是完整流程：拍下遊戲視窗、選**種類**、必要時選**目標實例**、繪製標記、
-**Save mark**，然後在下方讀核心回報的已存標記/衍生值/產物。分頁上的說明也再次說明拍攝行為：殼層會為了
-擷取隱藏自己、等一個影格、再開回來。
+所有工具共用的校正介面。第 6 節是完整流程：拍下遊戲視窗、選 **Surface**、必要時選**目標實例**、繪製標記、
+**Save mark**，然後讀核心回報的已存標記/衍生值/產物。**工具分頁**選擇要校正的對象：**Buy / Sell**、
+**Gem Composer**、**Magic Tuner**、**Pet Feeder**、**Tooltip**。前三者會把 Targets 與編輯器限定在該工具，
+而且各自記住你在該分頁拍的畫面——切換分頁會回到該工具自己的擷取，不會顯示別的工具的畫面。工作區上方的
+精簡**擷取列**顯示目前畫面與顯示環境，並開啟 **Captures**、**Details**（顯示環境 + Detect）與
+**Stored marks**；畫布保持固定，目標清單與 inspector 各自獨立捲動，Revert/Save 固定在 inspector 下方。
+**Magic Tuner** 與 **Tooltip** 直接把一次拍攝的會談開在工作區，而不是放在已存表格下方。分頁上的說明也再次
+說明拍攝行為：殼層會為了擷取隱藏自己、等一個影格、再開回來。標題列也有一個快速外觀選單
+（Follow system／Light／Dark）。
 
 ---
 
-## 6. 校正：18 種標記
+## 6. 校正：17 種標記
 
 校正標記以**遊戲視窗客戶區的實體像素**儲存（原點 = 客戶區左上角，不含標題列），所以移動視窗不會讓校正
 失效；它**不會**被 Windows 顯示縮放換算。契約與原因在倉庫的 `v3/docs/spec/CALIBRATION.md`；本節是操作者
 視角。
 
+> **第一次使用這個畫面？** [CALIBRATION-GUIDE.zh-TW.md](CALIBRATION-GUIDE.zh-TW.md) 是逐步操作版：怎麼
+> 拍攝、**點選要編輯的影格卡片**、點與矩形的差別，以及兩個 session 校正。
+
 ### 6.1 儲存一個標記
 
 1. 把遊戲視窗放到最前面（遊戲必須是前景視窗；殼層會為了擷取隱藏自己，所以拍到的是遊戲，不是 Seal
    Tools）。
-2. **Capture** —— 視窗會閃一下：Seal Tools 隱藏一個影格、拍下完整客戶區、再開回來。畫面與量到的顯示摘要
-   會出現。
-3. 從分組清單選擇 **Kind**。若是*具名實例*種類，還要選 **Target instance**（選了才會列出目標；未選目標
-   前 Save 停用）。
-4. 在圖片上繪製（點擊設點；拖曳設矩形）或直接輸入 **x / y / (w / h)** 欄位 —— 欄位才是權威，圖片只是
-   鏡射。
-5. **Result gem area** 先回答**空結果問題**：現在結果框是空的嗎？**回答前 Save 停用。** `empty: true`
+2. 在 **Calibrate → Captures** 按 **Capture the window** —— 視窗會閃一下：Seal Tools 隱藏一個影格、拍下
+   完整客戶區、再開回來。Captures 下會出現一張 **Frame** 卡片，中間出現畫面。標題的 `1 / 4` 是四張影格
+   快取數量，不是「需要拍四張」；一張有效的拍攝就夠校正。
+3. **點選要編輯的影格卡片**。最新一張會自動選取；點較舊的卡片即改選那張影格，儲存會用被選取影格的 id。
+   標示 **next capture evicts this one** 的是四張中最舊的 —— 先儲存再拍。點卡片只是選影格，不會放標記。
+4. 從分組清單選擇 **Surface**（或直接點左邊 Targets 樹的種類）。若是*具名實例* surface，還要選
+   **Target instance**（選了才會列出目標；未選目標前 Save 停用）。
+5. 在中間的**大圖片**上繪製：單擊設點、拖曳設矩形；或直接輸入 **x / y / (w / h)** 欄位 —— 欄位才是
+   權威，圖片只是鏡射。拖曳小於 4 px 會被忽略；點到黑邊會被忽略。縮放/平移細節見 CALIBRATION-GUIDE §5。
+6. **Result gem area** 先回答**空結果問題**：現在結果框是空的嗎？**回答前 Save 停用。** `empty: true`
    會同時儲存裁切圖*並*取樣顏色特徵；`empty: false` 只取樣特徵（拍到有寶石的框會污染強的空結果測試）。
-6. **Save mark**。結果行顯示種類、修訂版與標記；`bag_grid` 另外顯示衍生間距，結果寶石裁切圖會出現在
+7. **Save mark**。結果行顯示 surface、修訂版與標記；`bag_grid` 另外顯示衍生間距，結果寶石裁切圖會出現在
    **Artifact** 下。**Refresh stored** 重新讀取已存標記。
-7. **Stored mark** 區塊顯示所選種類/目標的標記（以及核心回傳的目標），或「Not calibrated yet」。
+8. **Stored mark** 區塊顯示所選 surface/目標的標記（以及核心回傳的目標），或「Not calibrated yet」。
 
 拒絕是核心的句子，不是默默失敗：背包格必須與背包格網的間距一致（「兩個不可能都對的數字代表拖錯了」）、
 設定沒有承載的目標會被拒絕，未儲存的標記不會寫入任何東西。
 
 ### 6.2 種類（分組）
 
-選擇器以分組呈現，讓 18 個項目保持可讀。**各工具使用：**
+選擇器以分組呈現，讓 17 個項目保持可讀。**各工具使用：**
 
 | 群組 | 種類 | 形狀 | 使用者 |
 |---|---|---|---|
@@ -509,7 +530,10 @@ Arduino 分頁是唯讀的連線卡加上測試介面。它開啟時會呼叫 `b
 | Pet — rows | **Row start/end button** | 矩形 | Pet Feeder —— 目標 "1".."4" |
 | Pet — rows | **Row boarding pet slot** | 矩形 | Pet Feeder —— 目標 "1".."4" |
 | Pet — rows | **Row food strip** | 矩形 | Pet Feeder —— 目標 "1".."4"（依該列的堆疊數分割） |
-| Tuner | **Spring point** | 點 | Tuner —— 只在 `spring_mode: hid` 時讀取 |
+
+**Spring point 不在這個表裡。** 它和三個 OCR 框一起在 **Tuner OCR 3-box + Spring point** 會談（§6.5）設定，
+所以一次改造師拍攝就涵蓋整個讀取。核心仍為相容性提供舊的 `spring_point` 種類；v3.0.9 的 UI 不會要玩家校正
+兩次。
 
 **具名實例。** 標記重複項目的種類需要一個**目標** —— 玩家看得懂的實例名稱，不是陣列索引：
 `pet_page_tab` 用 `ITEM1`…`ITEM3`；三種寵物列種類用列 `"1"`…`"4"`；`gem_grade` 用 `N`、`G`、`DG`、
@@ -526,21 +550,51 @@ Arduino 分頁是唯讀的連線卡加上測試介面。它開啟時會呼叫 `b
 
 答案不是「哪個比較好」，而是「你擷取那一刻框裡有什麼」。之後可以在框是空的時候重新儲存同一種類，補上裁切圖。
 
-### 6.4 目前尚不能校正的部分
+### 6.4 會談與剩下的非標記工作
 
-以下不是「可以隨手補的標記」：每一項需要不同形式的會談，v3.0 刻意不提供假的替代品。
+只有兩個校正需要會談，因為單一標記表達不了；兩者都列在 **Targets** 中各自工具的群組內，並開啟
+**Sessions** 面板：
 
-- **改造師的三框幾何** —— v2 拖出等級區、屬性帶與剩餘帶，核心再*推導* OCR 區域、各帶與列高。v3.0 只有
-  **Spring point** 種類，沒有 `tuner_region`，改造師的 OCR 幾何在該會談完成前仍由 `local.yaml`
-  （`tuner.ocr`）設定。Calibrate 分頁的改造師說明也會這樣寫。
-- **提示面板（tooltip）** —— 停住、懸停、擷取量到的偏移無法用單張畫面的標記表達；由 v2 設定手動編輯。
-- **寵物的參考裁切圖與列項目** —— 即時畫面的會談功能（連代養視窗的關閉鈕的裁切都由執行時學習），不是畫面
-  標記。Pet 分頁可以新增佇列寵物（圖示擷取），但要新增列或重新擷取該列的參考裁切圖，仍需要寵物擷取會談
-  （第 11 節）。
+- **Tuner OCR 3-box + Spring point** —— 一次拍攝，三個 OCR 框與選用的發條點（§6.5）。
+- **Pet tooltip offset + shape** —— Pet Feeder 讀取的提示面板（§6.6）。
+
+九個 Pet 標記（menu/feed/close/page 點、bag grid/slot、列矩形）就是上方標記編輯器裡的一般標記 ——
+刻意**沒有**另一個 Pet crops/rows 會談，因為那會重複這些標記。列、佇列寵物與食物格仍在 **Pet** 分頁編輯。
+
+剩下的非標記工作：
+
 - **賣出格子選擇** —— 不是校正標記：它是 **Buy/Sell** 分頁上為下一次執行做的、只存在記憶體的背包格選擇
   （第 5.4 節）。它需要已校正的 **Bag grid** 才能對到格子，但沒有自己的校正種類。
 - **環境檢查（Detect）** —— 比對規則已在核心，但 v3.0 的 Setup 還沒顯示「你的顯示環境變了」。若換螢幕、
   縮放、視窗大小或換電腦，請**重新校正**；標記是實體位移，v3 刻意不做比例換算（遊戲 UI 不是線性縮放）。
+
+### 6.5 Tuner OCR 3-box + Spring point 會談
+
+1. 在 **Calibrate** 選 **Magic Tuner** 工具分頁。讓遊戲裡的改造師狀態視窗可見，按卡片最上方的
+   **Capture screen**（或 **Recapture screen**）。**這一次拍攝就涵蓋三個 OCR 框與 Spring point** ——
+   就是 v2 的一次拍攝流程。拍完後畫面固定在左側，框的卡片在右側獨立捲動，所以拖曳與欄位編輯不需要
+   上下捲動切換。
+2. 選一個 **Target to drag** chip —— **Grade letter**（綠）、**Attribute rows**（藍）、**Remaining count**
+   （琥珀）或 **Spring point** —— 然後在**左側的畫面**上直接拖曳。拖曳會填入目前的框並自動跳到下一個；
+   要回頭可點卡片標題或 chip。`x / y / w / h` 欄位是替代方式，仍是權威。Spring point 是單擊且選用
+   （只在 `spring_mode: hid` 時讀取）。
+3. 若不想讓 Check 量測列高，可在 **row height** 指定。
+4. 按 **Check boxes**。結果卡片會列出推導出的 region、列高、grade、remaining、filter 判定與符合的屬性列數；
+   與遊戲畫面不符就修正框再 Check。
+5. 按 **Save tuner**：寫入 `tuner.ocr` + `tuner.spring_point`，並產生標註過的 `calib_tuner.png`；狀態列會顯示
+   核心的 revision。
+
+### 6.6 Pet tooltip 位移與面板形狀會談
+
+1. 在 **Calibrate** 選 **Tooltip** 工具分頁。把遊戲放到最前面，讓要量測的提示面板（物品或寵物）可見。
+   在 **Tooltip offset + shape** 卡片設定 **hover x / y** 與延遲，按 **Capture hover**。殼層會隱藏、核心把
+   游標放到該點並擷取面板；畫面回來後固定顯示在左側，hover/offset 控制項留在右側，游標位置以粉紅色十字
+   顯示。
+2. 在畫面上框住面板（核心要求至少 20×20 px），或直接輸入 **offset x / y** 與 **width / height**。公式行會顯示
+   `cursor + offset = panel top-left`，面板框會疊在游標上。
+3. 按 **Save tooltip**：寫入這台機器的 `tooltip` 區塊（位移、大小、延遲）。
+4. 按 **Test read** 會再次在同一個點懸停，並用已儲存的位移讀取面板。**Read result** 卡片會列出 OCR 文字；
+   結果與 debug 裁切圖也會寫到 `logs/reads/`。
 
 ---
 
@@ -659,7 +713,7 @@ INSTALL 的 *Migrating from v2*）。要保留設定，複製 `config/setup/` �
 | 「No buy preset selected.」/「No slots are selected to sell.」 | 在 Buy/Sell 新增/選擇買入預設（卡片的選擇器）。Sell 請在 Buy/Sell 的 **Sell** 格網標記插槽（格網需要已校正的 **Bag grid**，第 5.4 節），再按 Sell 卡片上的 **Start**；沒有標記任何插槽時卡片會顯示這一行。選擇不會被儲存。 |
 | 「{n} slots selected but the per-run cap is {cap}…」 | 選取的插槽數超過 **Max slots per run (sell cap)**。刻意調高上限，或縮小選擇；核心會在**任何點擊之前**拒絕啟動，並完整印出這一行（含數量與上限）。 |
 | 「The active preset … was not found — pick one in the Spammer tab.」 | 在 Spammer 分頁設定 **Active preset (runs)**。 |
-| 寵物餵食器啟動被拒絕（標記或繁殖列相關的行） | 餵食器的標記與列必須存在。校正它的 `pet_*` 種類；Pet 分頁可編輯設定中既有的列（啟用/堆疊）與食物格，但新安裝還沒有列 —— 遷移 v2 的 `local.yaml`，或開著倉庫的 `v3/docs/spec/CONFIG.md` 編輯該區塊（新增列需要寵物擷取會談，第 11 節）。 |
+| 寵物餵食器啟動被拒絕（標記或繁殖列相關的行） | 餵食器的標記與列必須存在。在 Calibrate 的標記編輯器校正它的 `pet_*` 種類；Pet 分頁可編輯設定中既有的列（啟用/堆疊）與食物格，但新安裝還沒有列 —— 遷移 v2 的 `local.yaml`，或開著倉庫的 `v3/docs/spec/CONFIG.md` 編輯該區塊。 |
 | 熱鍵在遊戲中沒反應 | v3.0 的正常情況 —— 沒有輪詢器（第 8 節）。用殼層的 Stop。 |
 | 「按 Capture 時視窗會閃」 | 正常：殼層隱藏一個影格，讓擷取拍到遊戲，然後開回來。v2 閃約 0.3 秒；v3 是一個影格加上來回通訊。 |
 | 需要上次執行的細節 | 讀 `<root>/logs/<tool>.log`（狀態列會印 root）；`error.log` 與 `ocr_errors.jsonl` 就在旁邊。 |
@@ -672,12 +726,8 @@ INSTALL 的 *Migrating from v2*）。要保留設定，複製 `config/setup/` �
 都是「3.0 沒有」，不是「明天就會有」，除非倉庫另外說明。
 
 - **全域熱鍵。** 沒有輪詢器；見第 8 節。Stop 與殼層控制項都能用。
-- **改造師的三框校正會談。** 只有發條點可校正；`tuner.ocr` 幾何在會談完成前由設定手動編輯。
-- **提示面板（tooltip）兩次擷取會談** —— 由 v2 設定手動編輯。
-- **寵物擷取會談（increment 4+）。** Pet 分頁可編輯機器已帶著的設定 —— 列啟用/堆疊、佇列新增/編輯（圖示
-  擷取）、背包食物格、逐頁背包掃描與明確的食物掃描套用、回歸格、載入模式與計時 —— 但要新增列、重新擷取
-  列參考裁切圖/矩形、面板測試讀取與可餵食掃描/佇列重建，仍需要即時的寵物擷取會談（掃描衍生的佇列重建會在
-  之後）；遷移的 v2 設定會帶著目前的資料。
+- **獨立的寵物 crops/rows 校正會談。** 九個寵物標記在標記編輯器個別校正；Pet 分頁編輯列/佇列/食物格。
+  沒有第二個寵物會談。
 - **環境檢查（Detect）介面** —— 顯示環境變更後請手動重新校正。
 - **單一實例防護。** 協定的實例鎖有規格但未實作：不要同時開兩份 Seal Tools。
 - **安裝程式與自動更新。** v3.0 是壓縮檔；更新時替換程式檔案並保留你的 `config/`。

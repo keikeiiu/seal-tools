@@ -70,14 +70,39 @@ class _CardGridState extends State<CardGrid> {
   @override
   void initState() {
     super.initState();
+    widget.model.tools.addListener(_onToolModelChanged);
+    widget.model.config.addListener(_onConfigModelChanged);
     _adoptSnapshots();
     _syncBuyChoiceWithConfig();
     _syncTimer();
   }
 
+  /// SHELL-F5: the card grid renders the tool snapshots and buy presets itself; it must not rely on
+  /// the page/root rebuilding for a `state` event.
+  void _onToolModelChanged() {
+    if (mounted) {
+      _adoptSnapshots();
+      _syncTimer();
+      setState(() {});
+    }
+  }
+
+  void _onConfigModelChanged() {
+    if (mounted) {
+      _syncBuyChoiceWithConfig();
+      setState(() {});
+    }
+  }
+
   @override
   void didUpdateWidget(covariant CardGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.model, widget.model)) {
+      oldWidget.model.tools.removeListener(_onToolModelChanged);
+      oldWidget.model.config.removeListener(_onConfigModelChanged);
+      widget.model.tools.addListener(_onToolModelChanged);
+      widget.model.config.addListener(_onConfigModelChanged);
+    }
     _adoptSnapshots();
     _syncBuyChoiceWithConfig();
     _syncTimer();
@@ -85,6 +110,8 @@ class _CardGridState extends State<CardGrid> {
 
   @override
   void dispose() {
+    widget.model.tools.removeListener(_onToolModelChanged);
+    widget.model.config.removeListener(_onConfigModelChanged);
     _timer?.cancel();
     super.dispose();
   }

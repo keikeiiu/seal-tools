@@ -49,12 +49,34 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
   @override
   void initState() {
     super.initState();
+    widget.model.tools.addListener(_onToolModelChanged);
+    widget.model.config.addListener(_onConfigModelChanged);
     _ticker = Timer.periodic(const Duration(seconds: 1), _onTick);
+  }
+
+  /// SHELL-F5: mini/dock content renders tool/config facts directly, so it listens to those two
+  /// sub-models instead of the whole shell rebuilding on every event.
+  void _onToolModelChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _onConfigModelChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
   void didUpdateWidget(MiniRunningCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.model, widget.model)) {
+      oldWidget.model.tools.removeListener(_onToolModelChanged);
+      oldWidget.model.config.removeListener(_onConfigModelChanged);
+      widget.model.tools.addListener(_onToolModelChanged);
+      widget.model.config.addListener(_onConfigModelChanged);
+    }
     final tool = widget.model.miniTool;
     final countdown = tool == null
         ? null
@@ -84,6 +106,8 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
 
   @override
   void dispose() {
+    widget.model.tools.removeListener(_onToolModelChanged);
+    widget.model.config.removeListener(_onConfigModelChanged);
     _ticker?.cancel();
     super.dispose();
   }
@@ -117,6 +141,51 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
     }
     _dragOrigin = null;
     unawaited(widget.model.settleMiniWindow());
+  }
+
+  /// One compact line from the live `state.detail`, so the bar carries the facts v2's running card
+  /// showed instead of only the action message. Tuner gets the v2 density (`DG · 9 left · attempt
+  /// 4`); other tools get up to three labelled facts. Null when the snapshot has no detail.
+  String? _detailSummary(ToolId tool, ToolSnapshot? snapshot) {
+    final detail = snapshot?.detail ?? const [];
+    if (detail.isEmpty) {
+      return null;
+    }
+    String? value(String label) {
+      for (final line in detail) {
+        if (line.label == label) {
+          return line.value;
+        }
+      }
+      return null;
+    }
+
+    if (tool == ToolId.tuner) {
+      final parts = <String>[
+        if (value('Grade') case final grade? when grade.isNotEmpty) grade,
+        if (value('Remaining') case final remaining? when remaining.isNotEmpty)
+          '$remaining left',
+        if (value('Attempt') case final attempt? when attempt.isNotEmpty)
+          'attempt $attempt',
+      ];
+      if (parts.isNotEmpty) {
+        return parts.join(' · ');
+      }
+    }
+    final parts = <String>[];
+    for (final line in detail) {
+      final text = line.label == null || line.label!.isEmpty
+          ? line.value
+          : '${line.label} ${line.value}';
+      if (text.trim().isEmpty) {
+        continue;
+      }
+      parts.add(text);
+      if (parts.length == 3) {
+        break;
+      }
+    }
+    return parts.isEmpty ? null : parts.join(' · ');
   }
 
   @override
@@ -171,6 +240,10 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
               ? snapshot!.message.trim()
               : 'Running')
         : (finished?.message ?? 'Run ended');
+    // The live read facts outrank the generic action line while a run is active: the bar is the
+    // only surface a collapsed player can see. Finished bar still shows the outcome.
+    final detailSummary = active ? _detailSummary(tool, snapshot) : null;
+    final barMessage = detailSummary ?? message;
     // The "next moment" belongs to a live run. The bar is 360 px wide, so drop the full window's
     // "next action " prefix ("in 11 s" instead of "next action in 11 s"); a stopped bar shows the
     // outcome sentence only.
@@ -296,7 +369,7 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
                           child: Tooltip(
                             message: message,
                             child: Text(
-                              message,
+                              barMessage,
                               key: const ValueKey('mini-message'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,

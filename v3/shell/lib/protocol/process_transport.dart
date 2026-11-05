@@ -52,6 +52,7 @@ class CoreProcessTransport implements Transport {
   }
 
   /// The process's exit code, completing when the core exits.
+  @override
   Future<int> get exitCode => _process.exitCode;
 
   /// The OS process, for a caller that needs the pid.

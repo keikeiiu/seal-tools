@@ -209,6 +209,10 @@ pub fn hover_capture(state: &mut CoreState, request: &Request) -> Response {
             return fail(&request.id, message, json!({"field": field}));
         }
     };
+    let allow_covered = match crate::win::parse_allow_covered(&request.args) {
+        Ok(allow) => allow,
+        Err(error) => return win_error_response(&request.id, error),
+    };
     let title = match crate::win::configured_title(&state.config) {
         Ok(title) => title,
         Err(error) => return win_error_response(&request.id, error),
@@ -217,12 +221,12 @@ pub fn hover_capture(state: &mut CoreState, request: &Request) -> Response {
     {
         return response;
     }
-    let (frame, display) = match crate::win::capture(&title, None) {
+    let (frame, display) = match crate::win::capture_with(&title, None, allow_covered) {
         Ok(result) => result,
         Err(error) => return win_error_response(&request.id, error),
     };
     let frame_id = state.frames.insert(frame);
-    let Some(frame) = state.frames.get(&frame_id).cloned() else {
+    let Some(frame) = state.frames.get_value(&frame_id) else {
         return Response::err(
             &request.id,
             Error::new(
@@ -366,7 +370,11 @@ pub fn test(state: &mut CoreState, request: &Request) -> Response {
         return response;
     }
     let region = region_for(point, &tooltip);
-    let (frame, _display) = match crate::win::capture(&title, Some(region)) {
+    let allow_covered = match crate::win::parse_allow_covered(&request.args) {
+        Ok(allow) => allow,
+        Err(error) => return win_error_response(&request.id, error),
+    };
+    let (frame, _display) = match crate::win::capture_with(&title, Some(region), allow_covered) {
         Ok(result) => result,
         Err(error) => return win_error_response(&request.id, error),
     };

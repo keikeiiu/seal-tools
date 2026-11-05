@@ -229,3 +229,61 @@ fn a_loader_read_heals_an_interrupted_save_first() {
     assert_eq!(loaded.config["tuner"]["ocr"]["row_height"], 10);
     assert!(!dir.path().join(JOURNAL_DIR).join("txn-test").exists());
 }
+
+#[test]
+fn a_committed_transaction_is_cleaned_up_without_rolling_back() {
+    let dir = TestDir::new();
+    seed(
+        &dir,
+        "setup/common.yaml",
+        &json!({"window": {"title": "NEW"}}),
+    );
+    let directory = dir.path().join(JOURNAL_DIR).join("txn-done");
+    fs::create_dir_all(&directory).unwrap();
+    // The commit wrote the new target and marked the journal done; only cleanup was interrupted.
+    fs::write(directory.join("journal.done"), "{}").unwrap();
+    fs::write(directory.join("0.bak"), "old").unwrap();
+
+    assert_eq!(recover(dir.path()).unwrap(), 1);
+    assert_eq!(
+        file::read(dir.path(), def("setup/common.yaml"))
+            .unwrap()
+            .unwrap()["window"]["title"],
+        "NEW",
+        "a committed transaction must never be rolled back"
+    );
+    assert!(!directory.exists(), "the committed scratch is cleaned up");
+}
+
+#[test]
+fn a_missing_backup_refuses_recovery_instead_of_half_restoring() {
+    let dir = TestDir::new();
+    seed(
+        &dir,
+        "setup/common.yaml",
+        &json!({"window": {"title": "NEW"}}),
+    );
+    let directory = dir.path().join(JOURNAL_DIR).join("txn-missing-bak");
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(
+        directory.join("journal.json"),
+        serde_json::to_string_pretty(&json!({
+            "v": 1,
+            "files": [{
+                "path": "setup/common.yaml",
+                "backup": "0.bak",
+                "temp": "0.tmp",
+                "existed": true
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let error = recover(dir.path()).expect_err("a missing backup is not restorable");
+    assert!(error.to_string().contains("partial save"), "{error}");
+    assert!(
+        directory.join("journal.json").exists(),
+        "the journal stays for a later, complete recovery attempt"
+    );
+}

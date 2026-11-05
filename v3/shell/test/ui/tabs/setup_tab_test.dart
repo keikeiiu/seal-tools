@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:seal_shell/app/dock_placement.dart';
+import 'package:seal_shell/app/theme_preference.dart';
 import 'package:seal_shell/ui/tabs/setup_tab.dart';
 import 'package:seal_shell/ui/theme.dart';
 
@@ -27,6 +28,9 @@ Map<String, dynamic> _setupConfig() => {
     'pid': [32822, 32823],
     'baud': 115200,
     'port': '',
+  },
+  'settings': {
+    'ui': {'collapse_on_run_start': true, 'return_after_run': false},
   },
 };
 
@@ -334,5 +338,66 @@ void main() {
                 as Map<String, dynamic>)['quick_dock']
             as Map<String, dynamic>;
     expect(dock['behavior'], 'always_open');
+  });
+
+  testWidgets('Run window switches save the portable preference', (
+    tester,
+  ) async {
+    final harness = await _pumpSetup(tester);
+    harness.answerConfigCommands();
+
+    final collapse = find.byKey(const ValueKey('setup-collapse-on-run-start'));
+    await tester.ensureVisible(collapse);
+    await tester.pump();
+    await tester.tap(collapse);
+    await _flush(tester);
+
+    expect(harness.model.collapseOnRunStart, isFalse);
+    final collapseApply = harness.lastSentWithCmd('config.apply');
+    expect(collapseApply, isNotNull);
+    final collapseUi =
+        (((collapseApply!['args'] as Map<String, dynamic>)['sections']
+                    as Map<String, dynamic>)['settings']
+                as Map<String, dynamic>)['ui']
+            as Map<String, dynamic>;
+    expect(collapseUi['collapse_on_run_start'], isFalse);
+
+    final afterRun = find.byKey(const ValueKey('setup-return-after-run'));
+    await tester.ensureVisible(afterRun);
+    await tester.pump();
+    await tester.tap(afterRun);
+    await _flush(tester);
+
+    expect(harness.model.returnAfterRun, isTrue);
+    final afterApply = harness.lastSentWithCmd('config.apply');
+    expect(afterApply, isNotNull);
+    final afterUi =
+        (((afterApply!['args'] as Map<String, dynamic>)['sections']
+                    as Map<String, dynamic>)['settings']
+                as Map<String, dynamic>)['ui']
+            as Map<String, dynamic>;
+    expect(afterUi['return_after_run'], isTrue);
+  });
+
+  testWidgets('Appearance chips save the chosen theme', (tester) async {
+    final harness = await _pumpSetup(tester);
+    harness.answerConfigCommands();
+
+    final light = find.byKey(const ValueKey('setup-theme-light'));
+    await tester.ensureVisible(light);
+    await tester.pump();
+    await tester.tap(light);
+    await _flush(tester);
+
+    expect(harness.model.themeMode, ShellThemeMode.light);
+    final apply = harness.lastSentWithCmd('config.apply');
+    expect(apply, isNotNull);
+    final sections =
+        (apply!['args'] as Map<String, dynamic>)['sections']
+            as Map<String, dynamic>;
+    final ui =
+        (sections['settings'] as Map<String, dynamic>)['ui']
+            as Map<String, dynamic>;
+    expect(ui['theme'], 'light');
   });
 }

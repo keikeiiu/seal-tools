@@ -7,7 +7,7 @@
 
 use seal_domain::decision::StopReason;
 use seal_tools::arbiter::{Arbiter, GameRelease, GameUse, Start, Stop};
-use seal_tools::tool::{ToolId, ToolPhase};
+use seal_tools::tool::{ToolDetail, ToolId, ToolPhase, ToolRow, ToolSnapshot};
 
 fn started(start: Start) -> seal_tools::arbiter::RunHandle {
     match start {
@@ -105,6 +105,42 @@ fn stop_cancels_the_run_and_keeps_the_slot_until_it_has_finished() {
     assert!(!final_snapshot.running);
     assert_eq!(final_snapshot.message, "DONE — 4 row(s)");
     assert!(!arbiter.is_running(ToolId::Quest), "the slot is now clear");
+}
+
+#[test]
+fn the_final_snapshot_keeps_the_last_rows_and_detail() {
+    let mut arbiter = Arbiter::new();
+    let handle = started(arbiter.start(ToolId::Tuner));
+    handle.state.publish(
+        ToolSnapshot::new(ToolId::Tuner)
+            .running(ToolPhase::Running)
+            .countdown_s(Some(30.0))
+            .rows(vec![ToolRow::new("row 1", "feeding")])
+            .detail(vec![
+                ToolDetail::labeled("Grade", "DG"),
+                ToolDetail::labeled("Attempt", "4"),
+            ]),
+    );
+
+    let final_snapshot = arbiter
+        .finished(ToolId::Tuner, StopReason::done("DONE — DG"))
+        .final_snapshot
+        .expect("a final snapshot");
+
+    assert_eq!(final_snapshot.phase, ToolPhase::Idle);
+    assert_eq!(
+        final_snapshot.rows.len(),
+        1,
+        "the finished card keeps the last row table"
+    );
+    assert_eq!(final_snapshot.rows[0].name, "row 1");
+    assert_eq!(final_snapshot.detail.len(), 2);
+    assert_eq!(final_snapshot.detail[0].label.as_deref(), Some("Grade"));
+    assert_eq!(final_snapshot.detail[0].value, "DG");
+    assert_eq!(
+        final_snapshot.countdown_s, None,
+        "a finished run has no next moment"
+    );
 }
 
 #[test]

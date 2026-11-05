@@ -16,12 +16,15 @@
 //! matters for the row sort. `OpenCV`'s exact diagonal 8-connectivity tie-breaking on self-touching
 //! contours is not reproduced; that is the documented ambiguity.
 //!
+//! The walk keeps its directed edges in a sorted `Vec` (by start vertex) and each component's pixels
+//! in a `Vec`, with the component label image as the inside test. A per-start `HashMap` used to
+//! overwrite one of the two edges a pinch vertex can own, cutting the boundary into open chains, and
+//! a per-pixel `BTreeSet` membership test made the walk O(boundary · log pixels) (OCR-F16).
+//!
 //! Orientation follows `OpenCV`'s `contourArea` sign convention: outer boundaries are
 //! counter-clockwise (positive area under `OpenCV`'s convention; the opposite shoelace sign in image
 //! coordinates) and holes the other way, which is what `detgeom::polygon_is_counter_clockwise`
 //! exposes.
-
-use std::collections::{BTreeSet, HashMap};
 
 /// A detector output: one f32 probability per pixel, row-major `[height, width]`.
 #[derive(Debug, Clone, PartialEq)]
@@ -127,10 +130,12 @@ pub struct Contour {
     pub points: Vec<(i32, i32)>,
 }
 
-/// One foreground component: its pixels and the scan-first pixel.
-type Cluster = (BTreeSet<(i32, i32)>, (i32, i32));
+/// One foreground component: its label in the label image, and its pixels in discovery order.
+type Cluster = (usize, Vec<(i32, i32)>);
 
-/// Eight-neighbour offsets in screen-clockwise order starting east (y down).
+/// One directed boundary edge between two grid vertices, with a component pixel on its RIGHT.
+type Edge = ((i32, i32), (i32, i32));
+
 #[must_use]
 #[allow(
     clippy::cast_possible_truncation,
@@ -139,7 +144,8 @@ type Cluster = (BTreeSet<(i32, i32)>, (i32, i32));
     reason = "the mask's pixel coordinates come from the detector map, whose dimensions fit i32, and every i32-to-usize conversion is preceded by a non-negative check"
 )]
 pub fn find_contours(mask: &Mask) -> Vec<Contour> {
-    // 1. 4-connected foreground components, raster order of their first pixel.
+    // 1. 4-connected foreground components, raster order of their first pixel, on a label image that
+    //    the boundary walk then uses as its inside test (no per-pixel set membership, OCR-F16).
     let mut labels = vec![usize::MAX; mask.width * mask.height];
     let mut components: Vec<Cluster> = Vec::new();
     for y in 0..mask.height {
@@ -149,7 +155,7 @@ pub fn find_contours(mask: &Mask) -> Vec<Contour> {
                 continue;
             }
             let label = components.len();
-            let mut pixels = BTreeSet::new();
+            let mut pixels = Vec::new();
             let mut stack = vec![(x as i32, y as i32)];
             while let Some((px, py)) = stack.pop() {
                 if px < 0 || py < 0 || px as usize >= mask.width || py as usize >= mask.height {
@@ -160,20 +166,20 @@ pub fn find_contours(mask: &Mask) -> Vec<Contour> {
                     continue;
                 }
                 labels[pixel_index] = label;
-                pixels.insert((px, py));
+                pixels.push((px, py));
                 stack.push((px - 1, py));
                 stack.push((px + 1, py));
                 stack.push((px, py - 1));
                 stack.push((px, py + 1));
             }
-            components.push((pixels, (x as i32, y as i32)));
+            components.push((label, pixels));
         }
     }
 
     // 2. Each component's boundary cycles via crack following; largest first (outer then holes).
     let mut contours = Vec::new();
-    for (pixels, start) in components {
-        let mut cycles = boundary_cycles(&pixels, start);
+    for (label, pixels) in &components {
+        let mut cycles = boundary_cycles(mask, &labels, *label, pixels);
         cycles.sort_by(|a, b| {
             let area_a = polygon_area(a);
             let area_b = polygon_area(b);
@@ -226,63 +232,126 @@ fn polygon_area(points: &[(i32, i32)]) -> f64 {
     shoelace(points)
 }
 
-/// All closed boundary cycles of a pixel set, walking directed grid edges with the set on the right.
-fn boundary_cycles(component: &BTreeSet<(i32, i32)>, start: (i32, i32)) -> Vec<Vec<(i32, i32)>> {
+/// All closed boundary cycles of one labeled component, walking directed grid edges with the
+/// component on the right. The edges live in a sorted `Vec` (start vertex, then end vertex), so a
+/// pinch vertex's two outgoing edges are both kept: a per-start `HashMap` overwrote one of them and
+/// cut the boundary into open chains. Each edge is visited exactly once, and the inside test is the
+/// label image, which makes the walk O(boundary · log boundary) rather than O(boundary · pixels)
+/// (OCR-F16).
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "pixels come from the detector map, whose dimensions fit i32; every i32-to-usize conversion here is behind a non-negative bounds check"
+)]
+fn boundary_cycles(
+    mask: &Mask,
+    labels: &[usize],
+    label: usize,
+    pixels: &[(i32, i32)],
+) -> Vec<Vec<(i32, i32)>> {
+    let inside = |x: i32, y: i32| -> bool {
+        if x < 0 || y < 0 {
+            return false;
+        }
+        let (x, y) = (x as usize, y as usize);
+        x < mask.width && y < mask.height && labels[y * mask.width + x] == label
+    };
+
     // Directed edges (vertex -> vertex) with a component pixel on the right.
-    let mut edges: HashMap<(i32, i32), (i32, i32)> = HashMap::new();
-    for &(x, y) in component {
-        let inside = |cx: i32, cy: i32| component.contains(&(cx, cy));
+    let mut edges: Vec<Edge> = Vec::new();
+    for &(x, y) in pixels {
         if !inside(x, y - 1) {
-            edges.insert((x, y), (x + 1, y)); // top edge, east; set is south (right)
+            edges.push(((x, y), (x + 1, y))); // top edge, east; the component is south (right)
         }
         if !inside(x + 1, y) {
-            edges.insert((x + 1, y), (x + 1, y + 1)); // right edge, south
+            edges.push(((x + 1, y), (x + 1, y + 1))); // right edge, south
         }
         if !inside(x, y + 1) {
-            edges.insert((x + 1, y + 1), (x, y + 1)); // bottom edge, west
+            edges.push(((x + 1, y + 1), (x, y + 1))); // bottom edge, west
         }
         if !inside(x - 1, y) {
-            edges.insert((x, y + 1), (x, y)); // left edge, north
+            edges.push(((x, y + 1), (x, y))); // left edge, north
         }
     }
+    edges.sort_unstable();
 
-    // Start from the top edge of the scan-first pixel, then walk; remaining edges are further cycles.
-    let mut unvisited: BTreeSet<(i32, i32)> = edges.keys().copied().collect();
+    let mut visited = vec![false; edges.len()];
     let mut cycles = Vec::new();
-    while let Some(&vertex_start) = unvisited.iter().next() {
-        let mut vertex = vertex_start;
-        let mut pixels: Vec<(i32, i32)> = Vec::new();
-        for _ in 0..=edges.len() {
-            unvisited.remove(&vertex);
-            let Some(&next) = edges.get(&vertex) else {
-                break;
-            };
-            let (dx, dy) = (next.0 - vertex.0, next.1 - vertex.1);
+    let mut cursor = 0usize;
+    while cursor < edges.len() {
+        let start_edge = cursor;
+        let mut edge_index = start_edge;
+        let mut points: Vec<(i32, i32)> = Vec::new();
+        loop {
+            visited[edge_index] = true;
+            let vertex = edges[edge_index].0;
+            let next = edges[edge_index].1;
+            let step = (next.0 - vertex.0, next.1 - vertex.1);
             // The component pixel on the right of the directed edge.
-            let pixel = match (dx, dy) {
+            let pixel = match step {
                 (1, 0) => (vertex.0, vertex.1),          // east: south cell
                 (0, 1) => (vertex.0 - 1, vertex.1),      // south: west cell
                 (-1, 0) => (vertex.0 - 1, vertex.1 - 1), // west: north cell
                 (0, -1) => (vertex.0, vertex.1 - 1),     // north: east cell
                 _ => (vertex.0, vertex.1),
             };
-            if pixels.last() != Some(&pixel) {
-                pixels.push(pixel);
+            if points.last() != Some(&pixel) {
+                points.push(pixel);
             }
-            vertex = next;
-            if vertex == vertex_start {
+            let Some(found) = next_edge_by_turn(&edges, next, step) else {
+                break;
+            };
+            if found == start_edge || visited[found] {
                 break;
             }
+            edge_index = found;
         }
-        if pixels.len() > 1 && pixels.first() == pixels.last() {
-            pixels.pop();
+        if points.len() > 1 && points.first() == points.last() {
+            points.pop();
         }
-        if !pixels.is_empty() {
-            cycles.push(pixels);
+        if !points.is_empty() {
+            cycles.push(points);
+        }
+        while cursor < edges.len() && visited[cursor] {
+            cursor += 1;
         }
     }
-    // The cycle containing the scan-first pixel's top-left vertex comes first among equals; the
-    // caller sorts by area, which puts the outer boundary first for every shape here.
-    let _ = start;
     cycles
+}
+
+/// The outgoing edge that keeps the walk on the same face: the next one CLOCKWISE from the reverse of
+/// the incoming direction (the standard planar face traversal). With one outgoing edge it is that
+/// edge; at a pinch vertex, where two leave, this is what keeps the two loops apart instead of
+/// hopping between them (OCR-F16).
+fn next_edge_by_turn(edges: &[Edge], vertex: (i32, i32), incoming: (i32, i32)) -> Option<usize> {
+    let reverse_rank = direction_rank(-incoming.0, -incoming.1)?;
+    let mut best: Option<(usize, usize)> = None;
+    let mut index = edges.partition_point(|edge| edge.0 < vertex);
+    while index < edges.len() && edges[index].0 == vertex {
+        let step = (edges[index].1.0 - vertex.0, edges[index].1.1 - vertex.1);
+        if let Some(rank) = direction_rank(step.0, step.1) {
+            // Clockwise distance from the reverse of the incoming direction; a full turn is last.
+            let offset = match (rank + 4 - reverse_rank) % 4 {
+                0 => 4,
+                other => other,
+            };
+            if best.is_none_or(|(current, _)| offset < current) {
+                best = Some((offset, index));
+            }
+        }
+        index += 1;
+    }
+    best.map(|(_, index)| index)
+}
+
+/// One of the four grid directions, ranked clockwise on screen (y down): north, east, south, west.
+fn direction_rank(dx: i32, dy: i32) -> Option<usize> {
+    match (dx, dy) {
+        (0, -1) => Some(0),
+        (1, 0) => Some(1),
+        (0, 1) => Some(2),
+        (-1, 0) => Some(3),
+        _ => None,
+    }
 }

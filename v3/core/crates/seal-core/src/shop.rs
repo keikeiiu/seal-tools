@@ -24,7 +24,7 @@ use seal_domain::config::BuyPreset;
 use seal_domain::decision::{Decision, StopReason};
 use seal_domain::tools::shop::{ClickButton, ShopPlan, ShopSettings, ShopStep};
 use seal_tools::runner::{Tool, ToolStatus};
-use seal_tools::tool::ToolId;
+use seal_tools::tool::{ToolDetail, ToolId};
 use serde_json::Value;
 
 /// The merged config's `buy_sell` block as the DOMAIN decision half wants it. Deliberately does
@@ -145,18 +145,75 @@ pub fn buy_plan(
 pub struct ShopTool {
     id: ToolId,
     plan: ShopPlan,
+    /// Steps of `plan.steps` already performed.
     index: usize,
+    /// Steps of the repeated transaction block already performed (BUY).
+    repeat_index: usize,
+    /// Transactions of the block still to run. Walked here rather than expanded into `12 · count`
+    /// steps up front (TOOL-F11): a large count used to allocate the whole run before the first click.
+    remaining: i32,
+    /// Steps performed so far, and the run's total, for the card's step line.
+    steps_done: usize,
+    total_steps: usize,
     message: String,
+    /// Transactions started (their right click performed). v2 set `Cycle` to the transaction's number
+    /// (`ShopTool.cs:168,212`) and `Current` to its item/slot line.
+    transactions_done: i32,
+    /// Transactions the plan will run, from the domain plan.
+    total_transactions: i32,
+    /// The buy preset's name for the `Current` line, from the plan's own done line. `None` for a sell
+    /// plan (and for an unparseable buy line), which then names the position only.
+    item: Option<String>,
 }
 
 impl ShopTool {
     #[must_use]
+    #[allow(
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation,
+        reason = "transaction counts are bounded by the domain's cap (100) and the bag's 64 cells"
+    )]
     pub fn new(id: ToolId, plan: ShopPlan) -> Self {
+        let total_steps = plan.steps.len() + plan.repeat.len() * plan.transactions.max(0) as usize;
+        let item = buy_item(&plan.done_message);
+        let total_transactions = plan.transactions;
+        let remaining = plan.remaining;
         Self {
             id,
             plan,
             index: 0,
+            repeat_index: 0,
+            remaining,
+            steps_done: 0,
+            total_steps,
             message: String::new(),
+            transactions_done: 0,
+            total_transactions,
+            item,
+        }
+    }
+
+    /// The next step of the pass, walking the fixed steps first and then the repeated transaction
+    /// block `remaining` times. `None` means the plan is complete.
+    fn next_step(&mut self) -> Option<ShopStep> {
+        if let Some(step) = self.plan.steps.get(self.index).cloned() {
+            self.index += 1;
+            return Some(step);
+        }
+        if self.plan.repeat.is_empty() {
+            return None;
+        }
+        loop {
+            if self.remaining <= 0 {
+                return None;
+            }
+            if let Some(step) = self.plan.repeat.get(self.repeat_index).cloned() {
+                self.repeat_index += 1;
+                return Some(step);
+            }
+            // The block finished: one transaction fewer to run, then round again.
+            self.repeat_index = 0;
+            self.remaining -= 1;
         }
     }
 
@@ -171,6 +228,45 @@ impl ShopTool {
         };
         format!("step {index}/{total}: {what}")
     }
+
+    /// v2's `Cycle` + `Current` (`ShopTool.cs:168-169,212-213`).
+    ///
+    /// `Cycle` is the transaction being worked (1-based; empty before the first right click). `Current`
+    /// is v2's sentence where the plan can still supply it: a BUY plan's done line names its preset, so
+    /// the line reads `"{preset} {n}/{total}"`; a SELL plan carries neither the selection nor the bag
+    /// indices (`ShopPlan` is steps + a done line), so its line names the position only — completing it
+    /// needs the domain plan to carry the selection, which is outside this increment's write scope.
+    fn card_detail(&self) -> Vec<ToolDetail> {
+        let total = self.total_transactions;
+        let cycle = self.transactions_done;
+        if cycle == 0 || total <= 0 {
+            return Vec::new();
+        }
+        let current = if self.id == ToolId::Buy {
+            self.item.as_ref().map_or_else(
+                || format!("{cycle}/{total}"),
+                |item| format!("{item} {cycle}/{total}"),
+            )
+        } else {
+            format!("slot ({cycle}/{total})")
+        };
+        vec![
+            ToolDetail::labeled("Cycle", cycle.to_string()),
+            ToolDetail::labeled("Current", current),
+        ]
+    }
+}
+
+/// The buy preset's name out of the plan's own done line (`Bought {count}x '{preset}'.`).
+///
+/// `ShopPlan` has no preset field, and the domain plan and the registry are outside this increment's
+/// write scope, so the word the run already reports is the carrier. A line this does not recognise
+/// yields `None`, and the card falls back to the position only — never a wrong name.
+fn buy_item(done_message: &str) -> Option<String> {
+    let rest = done_message.strip_prefix("Bought ")?;
+    let (_, named) = rest.split_once("x '")?;
+    let (name, _) = named.split_once("'.")?;
+    (!name.is_empty()).then(|| name.to_owned())
 }
 
 impl Tool for ShopTool {
@@ -183,17 +279,19 @@ impl Tool for ShopTool {
             message: self.message.clone(),
             countdown_s: None,
             rows: Vec::new(),
-            detail: Vec::new(),
+            detail: self.card_detail(),
         }
     }
 
     fn decide(&mut self) -> Decision {
-        if self.index >= self.plan.steps.len() {
+        let Some(step) = self.next_step() else {
             return Decision::Stop(StopReason::done(self.plan.done_message.clone()));
+        };
+        self.steps_done += 1;
+        if matches!(step, ShopStep::Click(ClickButton::Right)) {
+            self.transactions_done = self.transactions_done.saturating_add(1);
         }
-        let step = self.plan.steps[self.index].clone();
-        self.index += 1;
-        self.message = Self::describe(&step, self.index, self.plan.steps.len());
+        self.message = Self::describe(&step, self.steps_done, self.total_steps);
 
         match step {
             ShopStep::Place(point) => Decision::Place(point),
@@ -371,15 +469,54 @@ mod tests {
     fn a_buy_pass_uses_the_run_count_and_names_the_preset() {
         let plan = buy_plan(&config(), Some("potion"), Some(5)).expect("the plan validates");
         assert_eq!(plan.done_message, "Bought 5x 'potion'.");
+        assert_eq!(plan.remaining, 5, "the count is carried, not expanded");
+        assert_eq!(plan.transactions, 5);
 
-        // One transaction per run count: each extra buy adds the same steps, so the deltas between
-        // counts must be equal (this is the run number, not the preset's configured count).
+        // TOOL-F11: each count value carries the SAME single transaction block — the plan no longer
+        // grows by 12 steps per count, so a large count cannot allocate the whole run up front.
         let three = buy_plan(&config(), Some("potion"), Some(3)).expect("the plan validates");
         let one = buy_plan(&config(), Some("potion"), Some(1)).expect("the plan validates");
         assert_eq!(
-            plan.steps.len() - three.steps.len(),
-            three.steps.len() - one.steps.len(),
-            "one transaction per run count"
+            three.steps, one.steps,
+            "the fixed steps do not depend on the count"
+        );
+        assert_eq!(
+            three.repeat, one.repeat,
+            "one transaction block, walked `remaining` times"
+        );
+        assert_eq!(three.repeat.len(), 12, "a transaction is twelve steps");
+        assert_eq!(plan.steps.len(), one.steps.len());
+    }
+
+    /// TOOL-F11: the count is capped, so a typo cannot buy a hundred items too many, and the row the
+    /// preset names must be inside the calibrated list — a row past the bottom right-clicks below it.
+    #[test]
+    fn a_buy_row_past_the_shop_list_and_an_absurd_count_are_refused() {
+        let over_capped = buy_plan(&config(), Some("potion"), Some(1_000))
+            .expect_err("a thousand transactions is not a run");
+        assert!(
+            over_capped.message.contains("capped at 100"),
+            "the refusal names the cap: {}",
+            over_capped.message
+        );
+
+        let mut config = config();
+        config["buy_sell"]["presets"]["potion"]["row"] = serde_json::json!(5);
+        let past_the_bottom = buy_plan(&config, Some("potion"), Some(1))
+            .expect_err("row 6 does not exist in a five-row list");
+        assert!(
+            past_the_bottom
+                .message
+                .contains("row 6 of a 5-row shop list"),
+            "the refusal names the row and the list: {}",
+            past_the_bottom.message
+        );
+
+        // The LAST row is a real row: only one past it is refused.
+        config["buy_sell"]["presets"]["potion"]["row"] = serde_json::json!(4);
+        assert!(
+            buy_plan(&config, Some("potion"), Some(1)).is_ok(),
+            "row 5 of a five-row list is the bottom row, not one past it"
         );
     }
 
@@ -412,15 +549,72 @@ mod tests {
         }
     }
 
+    /// A plan with fixed steps only (the shape a SELL has), for the decision-mapping tests.
+    fn plan_of(steps: Vec<ShopStep>, done: &str) -> ShopPlan {
+        ShopPlan {
+            steps,
+            repeat: Vec::new(),
+            remaining: 0,
+            transactions: 0,
+            done_message: done.to_owned(),
+        }
+    }
+
+    /// TOOL-F11: the transaction block is walked `count` times at run time, so the whole pass still
+    /// performs exactly `count` transactions even though the plan no longer holds `12 · count` steps.
+    #[test]
+    fn a_lazy_buy_plan_walks_the_transaction_exactly_count_times() {
+        let plan = buy_plan(&config(), Some("potion"), Some(3)).expect("the plan validates");
+        let fixed_steps = plan.steps.len();
+        let block = plan.repeat.len();
+        let mut tool = ShopTool::new(ToolId::Buy, plan);
+
+        let mut rights = 0;
+        let mut steps = 0;
+        let mut done = None;
+        for _ in 0..500 {
+            match tool.decide() {
+                Decision::RightClickHere => {
+                    rights += 1;
+                    steps += 1;
+                }
+                Decision::Stop(reason) => {
+                    done = Some(reason);
+                    break;
+                }
+                _ => steps += 1,
+            }
+        }
+
+        assert_eq!(rights, 3, "one right click per transaction");
+        assert_eq!(
+            steps,
+            fixed_steps + 3 * block,
+            "the fixed steps once, then the transaction block three times"
+        );
+        assert_eq!(
+            done.expect("the pass finishes").message,
+            "Bought 3x 'potion'."
+        );
+        // The card's Cycle counts the transactions already started.
+        assert_eq!(
+            tool.status().detail,
+            vec![
+                ToolDetail::labeled("Cycle", "3"),
+                ToolDetail::labeled("Current", "potion 3/3"),
+            ]
+        );
+    }
+
     #[test]
     fn a_scroll_step_becomes_the_wheel_decision() {
-        let plan = ShopPlan {
-            steps: vec![ShopStep::Scroll {
+        let plan = plan_of(
+            vec![ShopStep::Scroll {
                 notches: 3,
                 down: true,
             }],
-            done_message: "scrolled".to_owned(),
-        };
+            "scrolled",
+        );
         let mut tool = ShopTool::new(ToolId::Buy, plan);
 
         assert_eq!(
@@ -435,13 +629,67 @@ mod tests {
 
     #[test]
     fn the_status_names_the_step_it_is_about_to_perform() {
-        let plan = ShopPlan {
-            steps: vec![ShopStep::Enter],
-            done_message: "done".to_owned(),
-        };
+        let plan = plan_of(vec![ShopStep::Enter], "done");
         let mut tool = ShopTool::new(ToolId::Sell, plan);
 
         tool.decide();
         assert_eq!(tool.status().message, "step 1/1: pressing Enter");
+    }
+
+    /// Walk the plan until the next transaction's right click has been performed — the step v2
+    /// counted as the transaction's start.
+    fn walk_to_right_click(tool: &mut ShopTool) {
+        for _ in 0..200 {
+            if tool.decide() == Decision::RightClickHere {
+                return;
+            }
+        }
+        panic!("the plan never reached a transaction's right click");
+    }
+
+    #[test]
+    fn a_buy_card_carries_the_transaction_cycle_and_the_preset_progress() {
+        let plan = buy_plan(&config(), Some("potion"), Some(3)).expect("the plan validates");
+        let mut tool = ShopTool::new(ToolId::Buy, plan);
+
+        assert!(
+            tool.status().detail.is_empty(),
+            "before the first transaction there is no cycle to report"
+        );
+
+        walk_to_right_click(&mut tool);
+        assert_eq!(
+            tool.status().detail,
+            vec![
+                ToolDetail::labeled("Cycle", "1"),
+                ToolDetail::labeled("Current", "potion 1/3"),
+            ],
+            "v2's Current is the preset's progress through this run"
+        );
+
+        walk_to_right_click(&mut tool);
+        assert_eq!(
+            tool.status().detail,
+            vec![
+                ToolDetail::labeled("Cycle", "2"),
+                ToolDetail::labeled("Current", "potion 2/3"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_sell_card_carries_the_transaction_cycle_and_the_position() {
+        let plan = sell_plan_with_slots(&config(), Some(&[3, 1])).expect("two slots");
+        let mut tool = ShopTool::new(ToolId::Sell, plan);
+
+        walk_to_right_click(&mut tool);
+        assert_eq!(
+            tool.status().detail,
+            vec![
+                ToolDetail::labeled("Cycle", "1"),
+                ToolDetail::labeled("Current", "slot (1/2)"),
+            ],
+            "the bag slot number is not carried by ShopPlan, so the position is named"
+        );
     }
 }

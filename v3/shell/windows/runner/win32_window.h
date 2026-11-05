@@ -61,6 +61,10 @@ class Win32Window {
   // re-applies the saved style/EX style. Idempotent.
   void SetMiniChrome(bool mini);
 
+  // Match the native title bar to the shell's appearance: 0 = follow the Windows setting,
+  // 1 = force light, 2 = force dark. The system-follow mode still reacts to Windows changes.
+  void SetTitleBarTheme(int mode);
+
   // Return a RECT representing the bounds of the current client area.
   RECT GetClientArea();
 
@@ -99,7 +103,13 @@ class Win32Window {
   // Update the window frame's theme to match the system theme.
   static void UpdateTheme(HWND const window);
 
+  // Apply |title_bar_theme_|: system (0) re-reads Windows, light (1)/dark (2) pin DWM explicitly.
+  void ApplyTitleBarTheme();
+
   bool quit_on_close_ = false;
+
+  // 0 = follow the Windows setting, 1 = light title bar, 2 = dark title bar.
+  int title_bar_theme_ = 0;
 
   // Minimum logical (DIP) window size enforced by WM_GETMINMAXINFO. The mini running card lowers
   // this while a foreground tool runs; the full shell restores the default afterwards.
