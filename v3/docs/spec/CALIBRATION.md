@@ -149,7 +149,7 @@ a cursor to a pixel v2 never clicked. Pinned by
   tool reads keep the gate.
 - **Frames carry their origin**: the frame is a rectangle of the physical screen, and
   [`Frame`](PROTOCOL.md#3-types) carries `origin` so the shell never has to guess where it came from.
-  Frames are PNG+base64; the core retains the last four by `frame_id` (a FIFO cache in `dispatch.rs`),
+  Frames are PNG+base64; the core retains the last twelve by `frame_id` (a FIFO cache in `dispatch.rs`),
   so `calibration.save` references the frame the calibrator just took instead of shipping megabytes
   twice.
 

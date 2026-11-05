@@ -2,7 +2,7 @@
 //! shapes `PROTOCOL.md` §3/§4 define.
 //!
 //! Everything Win32-shaped lives in `seal-win`; this module only translates. The frame cache is here
-//! because the protocol retains the last four frames by `frame_id` (§8) so `calibration.save` can
+//! because the protocol retains the last twelve frames by `frame_id` (§8) so `calibration.save` can
 //! reference the frame the calibrator just took instead of re-sending megabytes.
 
 use std::collections::VecDeque;
@@ -366,8 +366,8 @@ impl CachedFrame {
     }
 }
 
-/// The last four frames, newest last, keyed by an id the core invents (`PROTOCOL.md` §8). A fifth
-/// frame pushes the oldest out; `calibration.save` referencing an evicted id answers `bad_request`.
+/// The last twelve frames, newest last, keyed by an id the core invents (`PROTOCOL.md` §8). The
+/// thirteenth pushes the oldest out; `calibration.save` referencing an evicted id answers `bad_request`.
 #[derive(Debug, Default)]
 pub struct FrameCache {
     entries: VecDeque<(String, CachedFrame)>,
@@ -375,7 +375,10 @@ pub struct FrameCache {
 }
 
 impl FrameCache {
-    pub const CAPACITY: usize = 4;
+    /// Twelve live frames cover a whole calibration pass (Buy/Sell bag + shop, Gem composer and the
+    /// Pet panel/bag screens) with retry margin; the old four-frame cache forced a capture before
+    /// every save. The cache holds PNG bytes and decodes RGBA lazily, so this stays bounded.
+    pub const CAPACITY: usize = 12;
 
     /// Store a frame, assign its `frame_id`, and return the id. The base64 payload is decoded here
     /// once, so later scans reuse the bytes/RGBA instead of decoding per command (CORE-F11).
@@ -462,17 +465,18 @@ mod tests {
     }
 
     #[test]
-    fn the_frame_cache_keeps_four_and_ids_them() {
+    fn the_frame_cache_keeps_capacity_and_ids_them() {
         let mut cache = FrameCache::default();
-        for index in 0..6 {
+        for index in 0..14 {
             let id = cache.insert(json!({"format": "png", "n": index}));
             assert_eq!(id, format!("f{}", index + 1));
         }
         assert_eq!(cache.len(), FrameCache::CAPACITY);
         assert!(cache.get("f1").is_none(), "the oldest was evicted");
         assert!(cache.get("f2").is_none(), "the oldest was evicted");
-        let newest = cache.get("f6").expect("the newest is kept");
-        assert_eq!(newest.to_value()["frame_id"], "f6");
+        assert!(cache.get("f3").is_some(), "the capacity boundary is kept");
+        let newest = cache.get("f14").expect("the newest is kept");
+        assert_eq!(newest.to_value()["frame_id"], "f14");
     }
 
     #[test]
