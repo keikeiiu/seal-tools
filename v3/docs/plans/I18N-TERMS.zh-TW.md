@@ -4,6 +4,11 @@
 multi-language plan in [../backlog/OPEN.md §7](../backlog/OPEN.md). The player confirmed **CH-ZH =
 Traditional Chinese (`zh-TW` / `zh-Hant`)**; Simplified is out of scope.
 
+**Player-confirmed game terms (2026-11-05):** Magic Tuner = **發條**, boarding = **代養**, grade
+ladder = **等級表**, Hold Space = **長按空白鍵**. The remaining policy question is whether every
+tool label becomes Chinese (B) or keeps English proper names (A/C); these terms are used wherever a
+Chinese display label is needed.
+
 The first decision to approve is the **tool-name policy**:
 
 | policy | result | trade-off |
@@ -50,12 +55,12 @@ the player or the TW game client to confirm the term.
 | English | Suggested treatment | Notes |
 |---|---|---|
 | Skill Spammer | keep `Skill Spammer` | description: 技能連發／按鍵輪替 |
-| Magic Tuner | keep `Magic Tuner` | description mentions 發條；**待確認** whether the TW client calls the system 發條 or 魔法鑑定 |
+| Magic Tuner | **發條** (player-confirmed) | keep `Magic Tuner` in code/config; display 發條 |
 | Gem Composer | keep `Gem Composer` | description: 寶石合成 |
 | Buy / Sell | keep `Buy` / `Sell` | or 購買 / 販賣 if the player chooses policy B |
 | Quest Hand-in | keep `Quest Hand-in` | description: 任務繳交 |
 | Pet Feeder | keep `Pet Feeder` | description: 寵物餵食器 |
-| Hold Space | keep `Hold Space` | description: 長按空白鍵 |
+| Hold Space | **長按空白鍵** (player-confirmed) | keep `Hold Space` in code/config |
 
 ## Card states and actions
 
@@ -108,16 +113,16 @@ the player or the TW game client to confirm the term.
 | Run session | 執行工作階段 | |
 | Check / Save / Test read | 檢查 / 儲存 / 測試讀取 | |
 | Reference gallery | 參考圖庫 | |
-| Grade ladder | 等級階梯 | **待確認**; alternative 等級表 |
+| Grade ladder | 等級表 | player-confirmed |
 | Minimum grade | 最低等級 | |
 | OCR | OCR（文字辨識） | keep `OCR` in compact labels |
 | Retries | 重試次數 | |
 | Row height | 列高 | |
-| Spring mode | 發條模式 | **待確認** against the TW client |
+| Spring mode | 發條模式 | player-confirmed system term |
 | Mouse guard | 滑鼠防護 | |
 | Filter | 篩選 | |
 | Grade / Remaining | 等級 / 剩餘數量 | |
-| Boarding | 寄養 | **待確認**; guide currently uses 繁殖列 for the feeder rows |
+| Boarding | 代養 | player-confirmed; guide's 繁殖列 wording may need a follow-up pass |
 | Reload | 重新載入 | pet feeder cycle |
 | Food cells | 食物格 | |
 | Bag grid | 背包格線 | |
@@ -173,8 +178,9 @@ the player or the TW game client to confirm the term.
 
 ## Decisions still needed
 
-1. Tool-name policy **A**, **B** or **C**.
-2. Confirm the **待確認** game terms (Magic Tuner/發條, boarding/寄養 vs 繁殖, grade ladder wording).
+1. Tool-name policy **A**, **B** or **C**. The confirmed game terms above apply either way.
+2. Remaining Chinese tool labels if policy B: Skill Spammer, Gem Composer, Buy, Sell, Quest Hand-in,
+   Pet Feeder. Proposed: 技能連發 / 寶石合成 / 購買 / 販賣 / 任務繳交 / 寵物餵食器.
 3. Whether core/domain refusal sentences are translated by the core or mapped by the shell. The
    protocol currently carries English, and card/error lines are rendered verbatim.
 4. Locale persistence: config field or shell preference; and whether the in-app language follows the
