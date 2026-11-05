@@ -5,20 +5,20 @@ multi-language plan in [../backlog/OPEN.md §7](../backlog/OPEN.md). The player 
 Traditional Chinese (`zh-TW` / `zh-Hant`)**; Simplified is out of scope.
 
 **Player-confirmed game terms (2026-11-05):** Magic Tuner = **發條**, boarding = **代養**, grade
-ladder = **等級表**, Hold Space = **長按空白鍵**. The remaining policy question is whether every
-tool label becomes Chinese (B) or keeps English proper names (A/C); these terms are used wherever a
-Chinese display label is needed.
+ladder = **等級表**, Hold Space = **長按空白鍵**.
 
-The first decision to approve is the **tool-name policy**:
+**Tool-name policy: B — full Chinese labels** (decided 2026-11-05). Every visible tool label is
+Chinese; internal identifiers, config keys, protocol names and board commands stay English. The
+proposed labels are in the next section; only labels the player changes later would diverge.
 
-| policy | result | trade-off |
+| policy | result | decision |
 |---|---|---|
-| **A. Keep English tool names** (recommended) | `Skill Spammer`, `Magic Tuner`, `Gem Composer`, `Pet Feeder`, `Hold Space` stay as proper names; every surrounding label, button, help line and error is Chinese | players recognise the names from the guides and the game community; less risk of inventing a wrong game term |
-| B. Translate tool names | 技能連發 / 發條鑑定 / 寶石合成 / 寵物餵食器 / 長按空白鍵 | fully Chinese; needs the player to confirm each game term |
-| C. Bilingual | 技能連發（Skill Spammer） | unambiguous but long; awkward in the rail and cards |
+| A. Keep English tool names | `Skill Spammer`, `Magic Tuner`, … stay as proper names | not chosen |
+| **B. Translate tool names** (chosen) | 技能連發 / 發條 / 寶石合成 / 購買 / 販賣 / 任務繳交 / 寵物餵食器 / 長按空白鍵 | fully Chinese; game terms confirmed by the player |
+| C. Bilingual | 技能連發（Skill Spammer） | not chosen; too long for the rail/cards |
 
-Tables below assume **A** for tool names and translate everything else. Entries marked **待確認** need
-the player or the TW game client to confirm the term.
+Tables below use **B**: the Chinese label is what the shell displays; code/config identifiers remain
+English.
 
 ## Navigation and shell
 
@@ -50,17 +50,18 @@ the player or the TW game client to confirm the term.
 | Exit code | 結束代碼 | |
 | Core / shell | 核心 / 殼層 | |
 
-## Tool names (policy A: keep English)
+## Tool names (policy B: full Chinese labels)
 
-| English | Suggested treatment | Notes |
+| English / identifier | Display zh-TW | Notes |
 |---|---|---|
-| Skill Spammer | keep `Skill Spammer` | description: 技能連發／按鍵輪替 |
-| Magic Tuner | **發條** (player-confirmed) | keep `Magic Tuner` in code/config; display 發條 |
-| Gem Composer | keep `Gem Composer` | description: 寶石合成 |
-| Buy / Sell | keep `Buy` / `Sell` | or 購買 / 販賣 if the player chooses policy B |
-| Quest Hand-in | keep `Quest Hand-in` | description: 任務繳交 |
-| Pet Feeder | keep `Pet Feeder` | description: 寵物餵食器 |
-| Hold Space | **長按空白鍵** (player-confirmed) | keep `Hold Space` in code/config |
+| Skill Spammer | 技能連發 | internal id/key: `spammer`; label may wrap in the rail |
+| Magic Tuner | 發條 | player-confirmed game term; internal: `tuner` |
+| Gem Composer | 寶石合成 | internal: `gem` |
+| Buy | 購買 | internal: `buy` |
+| Sell | 販賣 | internal: `sell` |
+| Quest Hand-in | 任務繳交 | internal: `quest` |
+| Pet Feeder | 寵物餵食器 | internal: `pet` |
+| Hold Space | 長按空白鍵 | internal: `holdspace` |
 
 ## Card states and actions
 
@@ -178,10 +179,11 @@ the player or the TW game client to confirm the term.
 
 ## Decisions still needed
 
-1. Tool-name policy **A**, **B** or **C**. The confirmed game terms above apply either way.
-2. Remaining Chinese tool labels if policy B: Skill Spammer, Gem Composer, Buy, Sell, Quest Hand-in,
-   Pet Feeder. Proposed: 技能連發 / 寶石合成 / 購買 / 販賣 / 任務繳交 / 寵物餵食器.
-3. Whether core/domain refusal sentences are translated by the core or mapped by the shell. The
+1. **Translated copy.** This glossary fixes terms, not the ~456 sentences. The player will provide the
+   translated copy (or approve a first-pass translation before it is committed).
+2. Whether core/domain refusal sentences are translated by the core or mapped by the shell. The
    protocol currently carries English, and card/error lines are rendered verbatim.
-4. Locale persistence: config field or shell preference; and whether the in-app language follows the
+3. Locale persistence: config field or shell preference; and whether the in-app language follows the
    system locale on first run.
+4. Whether the shipped guides and `INSTALL.md` are regenerated with the same bilingual structure as
+   `USER_GUIDE.zh-TW.md`, or remain English + the current Traditional Chinese twin.
