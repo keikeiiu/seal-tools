@@ -302,25 +302,31 @@ The one-form screen became the demo's workspace. Layout: at **content width ≥ 
 window leaves ~1064 px beside the rail, and the 1120 minimum still leaves ~872) — target tree 250 px ·
 flexible canvas · mark editor + reference gallery 340 px; below the breakpoint the panels stack in one
 scroll column with a "collapse the sidebar" hint. A compact **capture bar** sits between the tool tabs and
-the fixed panes: active frame/display summary plus **Captures**, **Details**, and **Stored marks**
-buttons (those three open dialogs, so the canvas is above the fold at 720 px). The page header keeps the
-display/match chips and Refresh/Capture actions. A **tool tab row** sits between the header and the
-workspace: **Buy / Sell** (Shop), **Gem Composer**, **Magic Tuner**, **Pet Feeder**, **Tooltip**. The
-three mark tabs scope the target tree and editor to that tool; the two session tabs replace the mark
-workspace with that session's one-capture workspace. A mark tool also remembers the frame it last
-captured or selected: switching tabs restores that tool's frame, and a tab with no frame of its own
-adopts the newest live shelf frame so it never starts blank while a capture is available.
+the fixed panes: active frame/display summary, its own **Capture** action (filled when no screen exists),
+**Captures**, **Details**, and **Stored marks** buttons (those three open dialogs, so the canvas is above
+the fold at 720 px). The page header keeps the display/match chips and Refresh. A **tool tab row** sits
+between the header and the workspace: **Buy / Sell** (Shop), **Gem Composer**, **Magic Tuner**, **Pet
+Feeder**, **Tooltip**. The three mark tabs scope the target tree and editor to that tool; the two session
+tabs replace the mark workspace with that session's one-capture workspace. A **Screens strip** under the
+capture bar lists every live capture (up to the core's twelve), newest first, labelled by the tool that
+took it (`Shop · 1`) with the count of targets assigned to it.
 
+- **Per-target capture assignment:** each mark target has its own assigned screen, keyed by
+  `kind`/`kind@target`. A target with no assignment starts empty and Save stays disabled; it never borrows
+  another tool's newest frame. Selecting a target restores its assigned screen. Clicking a screen in the
+  strip only previews it; the editor's **Screen** row and **Use “Shop · 1” for this target** action perform
+  the assignment. A capture auto-assigns only to the selected target that has no screen yet. Assignments
+  are session state; saved marks never store a frame id.
 - **Tool-scoped target tree:** the active mark tool's 17 presentation marks / 34 instances are listed
   (Shop 5/5, Gem 3/9, Pet 9/20), with saved/partial/not-set dots and counts; named-instance kinds expand
   their targets (N/G/DG/Register/Combine, ITEM1–3, row 1–4). Selecting a kind/target drives canvas and
   editor. Switching the kind picker to another tool's kind moves the tool tab with it.
-- **Capture shelf:** behind the capture bar's **Captures** dialog. At most four frames (the core's
+- **Capture shelf:** behind the capture bar's **Captures** dialog. At most twelve frames (the core's
   FIFO). Each item: label/time, physical size, that capture's **own `DisplayInfo`**, frame id, and an
-  eviction marker on the oldest; a fifth capture evicts the oldest and a save against an evicted id is
-  refused — the screen says so and never auto-recaptures. Selecting a shelf frame assigns it to the
-  active tool. The hide → one frame → show flow and its status are unchanged; the capture result/refusal
-  stays visible in the compact capture bar.
+  eviction marker on the oldest; the thirteenth capture evicts the oldest and a save against an evicted id
+  is refused — the screen says so and never auto-recaptures. Selecting a shelf frame previews it; assigning
+  it is the editor's explicit action. The hide → one frame → show flow and its status are unchanged; the
+  capture result/refusal stays visible in the compact capture bar.
 - **Canvas:** fit / 1:1 / zoom ± / pan, zoom % and "1 display px = N physical px"; the selected mark is
   drawn with its label. The typed x/y/(w/h) fields stay authoritative and the mapping function is
   unchanged and single. Overlay labels choose white or black text from the label background's luminance,

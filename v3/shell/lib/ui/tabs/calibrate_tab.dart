@@ -1,4 +1,4 @@
-/// The Calibrate workspace: capture shelf (the core's four-frame FIFO), target tree for the 17
+/// The Calibrate workspace: capture shelf (the core's twelve-frame FIFO), target tree for the 17
 /// presentation marks, canvas with fit/1:1/pan, mark editor with the target/verdict/artifact rules,
 /// stored-coordinate table, reference-image gallery and the two multi-mark Sessions (Tuner OCR+spring,
 /// Pet tooltip). The Pet crops/rows session is deliberately absent: it duplicated the nine Pet marks.
@@ -37,6 +37,7 @@ import 'calibration/calibration_catalog.dart';
 import 'calibration/capture_shelf.dart';
 import 'calibration/detect_panel.dart';
 import 'calibration/reference_gallery.dart';
+import 'calibration/screen_strip.dart';
 import 'calibration/session_panel.dart';
 import 'calibration/stored_marks_table.dart';
 import 'calibration/target_tree.dart';
@@ -55,6 +56,9 @@ const double _workspaceBreakpoint = 850;
 
 /// The canvas viewport's height; fit mode contains the frame inside (available width, this).
 const double _canvasHeight = 420;
+
+/// Mirrors `seal_core::win::FrameCache::CAPACITY`; keep the two in sync (PROTOCOL §8).
+const int _captureCapacity = 12;
 
 class CalibrateTab extends StatefulWidget {
   const CalibrateTab({
@@ -97,17 +101,21 @@ class _CalibrateTabState extends State<CalibrateTab>
   /// question). A fetch never re-seeds a touched draft; a save/revert clears it.
   bool _draftTouched = false;
 
-  /// The captures this screen took, newest first; the core keeps the last four, so 4 is the cap.
+  /// The captures this screen took, newest first. The core keeps twelve live frames; the shell
+  /// mirrors that capacity so its shelf and the `frame_id` a save references cannot drift.
   final List<CalibrationCapture> _captures = <CalibrationCapture>[];
 
   /// The active tool tab. Mark tools scope the target tree/canvas/editor to one tool; Tuner and
   /// Tooltip replace that workspace with their session panel, so their capture is the tool's own.
   String _tool = calibrationKinds.first.tool;
 
-  /// The frame each mark tool last captured/selected. The session tools keep their capture inside
-  /// their panel; these ids are only consulted while a mark tab is active, so one capture can serve
-  /// every mark for that tool without switching to another tool's frame.
-  final Map<String, String> _toolFrameIds = <String, String>{};
+  /// The screen assigned to each MARK TARGET (`kind` or `kind@target`). A capture is never borrowed
+  /// across targets: different tools read different game windows, so a Pet mark must not land on a
+  /// Shop frame. Assignments are session-only; saved marks never store a frame id.
+  final Map<String, String> _targetFrameIds = <String, String>{};
+
+  /// The screen currently previewed/selected. On a target change it is reset to that target's
+  /// assigned screen (or null); clicking a screen in the strip previews it without assigning it.
   String? _selectedFrameId;
   int _captureSequence = 0;
 
@@ -143,21 +151,40 @@ class _CalibrateTabState extends State<CalibrateTab>
 
   String _toolFilter = 'All';
 
-  /// The frame id to show for [tool]. A live per-tool mapping wins; a tool with no mapping adopts
-  /// the newest shelf frame so switching tabs never strands a capture the player just took. Returns
-  /// null only when the shelf is empty.
-  String? _frameIdForTool(String tool) {
-    final mapped = _toolFrameIds[tool];
-    if (mapped != null &&
-        _captures.any((capture) => capture.frameId == mapped)) {
-      return mapped;
-    }
-    if (_captures.isEmpty) {
+  /// The live frame id for a target, if its assignment still exists in the shelf.
+  String? _liveFrameForTarget(String kind, String? target) {
+    final mapped = _targetFrameIds[calibrationStoredKey(kind, target)];
+    if (mapped == null) {
       return null;
     }
-    final fallback = _captures.first.frameId;
-    _toolFrameIds[tool] = fallback;
-    return fallback;
+    return _captures.any((capture) => capture.frameId == mapped)
+        ? mapped
+        : null;
+  }
+
+  CalibrationCapture? _captureById(String? frameId) {
+    if (frameId == null) {
+      return null;
+    }
+    for (final capture in _captures) {
+      if (capture.frameId == frameId) {
+        return capture;
+      }
+    }
+    return null;
+  }
+
+  /// The screen assigned to the selected target, when it is still live.
+  CalibrationCapture? get _assignedCapture =>
+      _captureById(_targetFrameIds[_currentStoredKey]);
+
+  /// The assignment target's display name, for the Screens strip / editor.
+  String get _selectedTargetLabel {
+    final kind = _selected;
+    if (kind.isTargeted && _target != null) {
+      return '${kind.label} · $_target';
+    }
+    return kind.label;
   }
 
   CalibrationKind get _selected => calibrationKindByName(_kindName);
@@ -177,17 +204,35 @@ class _CalibrateTabState extends State<CalibrateTab>
 
   String get _currentStoredKey => calibrationStoredKey(_kindName, _target);
 
-  /// The selected capture, or the newest one when the selection was evicted.
-  CalibrationCapture? get _activeCapture {
-    if (_captures.isEmpty) {
-      return null;
+  /// The preview capture, or null when nothing is selected. No fallback to the newest frame: a
+  /// target with no assignment must show the empty canvas instead of another target's screen.
+  CalibrationCapture? get _activeCapture => _captureById(_selectedFrameId);
+
+  /// How many targets currently reference [frameId], for the strip's badge.
+  int _assignmentCount(String frameId) =>
+      _targetFrameIds.values.where((assigned) => assigned == frameId).length;
+
+  /// Assign a live screen to the selected target and make it the preview.
+  void _assignScreen(String? frameId) {
+    if (frameId == null || _captureById(frameId) == null) {
+      return;
     }
-    for (final capture in _captures) {
-      if (capture.frameId == _selectedFrameId) {
-        return capture;
-      }
+    setState(() {
+      _targetFrameIds[_currentStoredKey] = frameId;
+      _selectedFrameId = frameId;
+      _save = null;
+    });
+  }
+
+  /// Select a screen for preview only. The editor's explicit action performs the assignment.
+  void _previewScreen(String frameId) {
+    if (_captureById(frameId) == null) {
+      return;
     }
-    return _captures.first;
+    setState(() {
+      _selectedFrameId = frameId;
+      _save = null;
+    });
   }
 
   /// The capture's own display environment, as the save will send it.
@@ -387,9 +432,9 @@ class _CalibrateTabState extends State<CalibrateTab>
     }
   }
 
-  /// Adds a successful capture to the shelf and enforces the core's own capacity: the last FOUR
-  /// frames are kept, so a fifth evicts the oldest (PROTOCOL §8). Eviction is shown, never hidden;
-  /// the evicted frame is dropped, not re-captured.
+  /// Adds a successful capture to the shelf and enforces the core's own capacity (12 live frames).
+  /// An evicted frame's target assignments are dropped with it; the player is told, and the target
+  /// must be reassigned rather than silently saving against a dead id.
   void _recordCapture(proto.CaptureResult capture) {
     _captureSequence += 1;
     _captures.insert(
@@ -399,26 +444,32 @@ class _CalibrateTabState extends State<CalibrateTab>
         display: capture.display,
         sequence: _captureSequence,
         capturedAt: DateTime.now(),
+        tool: _tool,
       ),
     );
     final evicted = <CalibrationCapture>[];
-    while (_captures.length > 4) {
+    while (_captures.length > _captureCapacity) {
       evicted.add(_captures.removeLast());
     }
     for (final item in evicted) {
-      _toolFrameIds.removeWhere((_, frameId) => frameId == item.frameId);
+      _targetFrameIds.removeWhere((_, frameId) => frameId == item.frameId);
     }
     _selectedFrameId = capture.frame.frameId;
-    if (!_sessionTool) {
-      _toolFrameIds[_tool] = capture.frame.frameId;
+    // Capture-as-you-go: a selected target with no screen adopts this one. A target that already
+    // has a screen keeps it; the new screenshot waits in the strip to be assigned explicitly.
+    if (!_sessionTool && (!_selected.isTargeted || _target != null)) {
+      final key = _currentStoredKey;
+      if (!_targetFrameIds.containsKey(key)) {
+        _targetFrameIds[key] = capture.frame.frameId;
+      }
     }
     if (evicted.isNotEmpty) {
       final names = evicted
           .map((item) => '${item.label} (id ${item.frameId})')
           .join(', ');
       _shelfNote =
-          'The core keeps the last four frames, so $names dropped out of its cache. A save '
-          'needs a live frame id — capture again instead of re-using it.';
+          'The core keeps the last $_captureCapacity frames, so $names dropped out of its '
+          'cache. A target assigned to an evicted screen needs a new capture.';
     }
   }
 
@@ -518,11 +569,11 @@ class _CalibrateTabState extends State<CalibrateTab>
     setState(() {
       _kindName = name;
       _tool = kind.tool;
-      _selectedFrameId = _frameIdForTool(kind.tool);
-      _save = null;
-      _emptyChoice = null;
       // Switching kind never carries a target over: the new kind's instances are its own.
       _target = null;
+      _selectedFrameId = _liveFrameForTarget(name, null) ?? _selectedFrameId;
+      _save = null;
+      _emptyChoice = null;
       _draftTouched = false;
       _seedEditorForSelection();
     });
@@ -545,7 +596,6 @@ class _CalibrateTabState extends State<CalibrateTab>
     final kind = group.kinds.first;
     setState(() {
       _tool = tool;
-      _selectedFrameId = _frameIdForTool(tool);
       if (_kindName != kind.name) {
         _kindName = kind.name;
         _target = null;
@@ -554,6 +604,7 @@ class _CalibrateTabState extends State<CalibrateTab>
         _save = null;
         _seedEditorForSelection();
       }
+      _selectedFrameId = _liveFrameForTarget(_kindName, _target);
     });
   }
 
@@ -562,6 +613,8 @@ class _CalibrateTabState extends State<CalibrateTab>
   void _onTargetChanged(String? target) {
     setState(() {
       _target = target;
+      _selectedFrameId =
+          _liveFrameForTarget(_kindName, target) ?? _selectedFrameId;
       _save = null;
       _draftTouched = false;
       _seedEditorForSelection();
@@ -575,12 +628,13 @@ class _CalibrateTabState extends State<CalibrateTab>
   void _selectTreeTarget(CalibrationKind kind, String target) {
     setState(() {
       _tool = kind.tool;
-      _selectedFrameId = _frameIdForTool(kind.tool);
       if (_kindName != kind.name) {
         _kindName = kind.name;
         _emptyChoice = null;
       }
       _target = target;
+      _selectedFrameId =
+          _liveFrameForTarget(kind.name, target) ?? _selectedFrameId;
       _save = null;
       _draftTouched = false;
       _seedEditorForSelection();
@@ -595,9 +649,9 @@ class _CalibrateTabState extends State<CalibrateTab>
     }
     setState(() {
       _tool = slot.kind.tool;
-      _selectedFrameId = _frameIdForTool(slot.kind.tool);
       _kindName = slot.kind.name;
       _target = slot.target;
+      _selectedFrameId = _liveFrameForTarget(slot.kind.name, slot.target);
       _save = null;
       _emptyChoice = null;
       _draftTouched = false;
@@ -608,14 +662,17 @@ class _CalibrateTabState extends State<CalibrateTab>
     }
   }
 
-  /// Save stays disabled while any answer the core requires is missing — target, empty verdict — and
-  /// while there is no LIVE frame (an evicted/refused frame needs a new capture; never automatic).
+  /// Save stays disabled while the target has no assigned LIVE frame, while the preview differs
+  /// from the assignment (assign it first), or while any answer the core requires is missing.
   bool get _canSave {
     if (_saving) {
       return false;
     }
-    final capture = _activeCapture;
+    final capture = _assignedCapture;
     if (capture == null || _refusedFrameIds.contains(capture.frameId)) {
+      return false;
+    }
+    if (_selectedFrameId != capture.frameId) {
       return false;
     }
     if (_selected.isTargeted && _target == null) {
@@ -628,11 +685,11 @@ class _CalibrateTabState extends State<CalibrateTab>
   }
 
   Future<void> _saveMark() async {
-    final capture = _activeCapture;
+    final capture = _assignedCapture;
     if (capture == null) {
       setState(() {
         _save = const CoreActionResult.failure(
-          shellNote: 'capture the window first — the mark needs its frame',
+          shellNote: 'assign a live screen to this target first — the mark needs its frame',
         );
       });
       return;
@@ -712,13 +769,13 @@ class _CalibrateTabState extends State<CalibrateTab>
       }
       if (refusedFrame) {
         _refusedFrameIds.add(capture.frame.frameId);
-        _toolFrameIds.removeWhere(
+        _targetFrameIds.removeWhere(
           (_, frameId) => frameId == capture.frame.frameId,
         );
         _shelfNote =
             'The core refused ${capture.label} (id ${capture.frame.frameId}) as an unknown '
-            'frame id: it is no longer in the four-frame cache. Capture again — this screen never '
-            're-captures automatically.';
+            'frame id: it is no longer in the $_captureCapacity-frame cache. Capture again — this '
+            'screen never re-captures automatically.';
       }
     });
     if (result.ok) {
@@ -737,7 +794,7 @@ class _CalibrateTabState extends State<CalibrateTab>
     super.build(context); // AutomaticKeepAliveClientMixin bookkeeping.
     final theme = Theme.of(context);
     final capture = _activeCapture;
-    return Column(
+    final page = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
@@ -770,6 +827,19 @@ class _CalibrateTabState extends State<CalibrateTab>
           ),
         ),
       ],
+    );
+    // At the 680 px minimum the page header and the new Screens strip leave too little height for
+    // the fixed panes. Scroll the page as one block there instead of letting a flex overflow; wider
+    // windows keep the fixed cockpit.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxHeight < 760) {
+          return SingleChildScrollView(
+            child: SizedBox(height: 900, child: page),
+          );
+        }
+        return page;
+      },
     );
   }
 
@@ -817,7 +887,31 @@ class _CalibrateTabState extends State<CalibrateTab>
     );
   }
 
+  /// The minimum height at which the fixed three-pane workspace still fits under the capture bar and
+  /// Screens strip. Below it the workspace scrolls as one block, so the strip cannot squeeze the
+  /// canvas into an overflow.
+  static const double _fixedWorkspaceMinHeight = 480;
+
   Widget _buildMarkWorkspace(ThemeData theme, CalibrationCapture? capture) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxHeight < _fixedWorkspaceMinHeight) {
+          return SingleChildScrollView(
+            child: SizedBox(
+              height: _fixedWorkspaceMinHeight + 160,
+              child: _buildMarkWorkspaceFixed(theme, capture),
+            ),
+          );
+        }
+        return _buildMarkWorkspaceFixed(theme, capture);
+      },
+    );
+  }
+
+  Widget _buildMarkWorkspaceFixed(
+    ThemeData theme,
+    CalibrationCapture? capture,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -830,13 +924,22 @@ class _CalibrateTabState extends State<CalibrateTab>
           ),
           child: _buildCaptureBar(theme, capture),
         ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            ShellSpace.lg,
+            0,
+            ShellSpace.lg,
+            ShellSpace.sm,
+          ),
+          child: _buildScreenStrip(theme),
+        ),
         _buildExternalChangeBanner(),
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
               final wide = constraints.maxWidth >= _workspaceBreakpoint;
               final canvasMaxHeight = wide
-                  ? (constraints.maxHeight - 96).clamp(220.0, 520.0).toDouble()
+                  ? (constraints.maxHeight - 160).clamp(140.0, 520.0).toDouble()
                   : _canvasHeight;
               final left = Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1012,6 +1115,56 @@ class _CalibrateTabState extends State<CalibrateTab>
     );
   }
 
+  /// The one capture action for the active mark tool. It lives in the capture bar so every tool tab
+  /// has a visible, local capture instead of one shared page-level button.
+  Widget _captureActionButton() {
+    final icon = _capturing
+        ? const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : const Icon(Icons.photo_camera_outlined, size: ShellSize.iconMd);
+    final label = _capturing
+        ? 'Capturing…'
+        : (_captures.isEmpty ? 'Capture screen' : 'Capture again');
+    if (_captures.isEmpty) {
+      return FilledButton.icon(
+        key: const ValueKey('calibrate-capture'),
+        onPressed: _capturing ? null : _captureFrame,
+        icon: icon,
+        label: Text(label),
+      );
+    }
+    return OutlinedButton.icon(
+      key: const ValueKey('calibrate-capture'),
+      onPressed: _capturing ? null : _captureFrame,
+      icon: icon,
+      label: Text(label),
+    );
+  }
+
+  /// Every live capture, newest first. Clicking one only previews it; the editor's Screen row
+  /// performs the assignment. This is what lets the player take all the game screens first.
+  Widget _buildScreenStrip(ThemeData theme) {
+    final counts = <String, int>{
+      for (final capture in _captures)
+        capture.frameId: _assignmentCount(capture.frameId),
+    };
+    return ScreenStripPanel(
+      captures: _captures,
+      selectedFrameId: _selectedFrameId,
+      assignedFrameId: _targetFrameIds[_currentStoredKey],
+      assignmentCounts: counts,
+      onSelect: _previewScreen,
+      onCapture: _captureFrame,
+      capturing: _capturing,
+      capacity: _captureCapacity,
+      targetLabel: _selectedTargetLabel,
+      refusedFrameIds: _refusedFrameIds,
+    );
+  }
+
   Widget _buildCaptureBar(ThemeData theme, CalibrationCapture? capture) {
     final colors = theme.colorScheme;
     final hasStatus =
@@ -1083,6 +1236,8 @@ class _CalibrateTabState extends State<CalibrateTab>
                 icon: const Icon(Icons.table_chart_outlined, size: 16),
                 label: const Text('Stored marks'),
               ),
+              const SizedBox(width: ShellSpace.xs),
+              _captureActionButton(),
             ],
           ),
           if (hasStatus) ...[
@@ -1216,29 +1371,6 @@ class _CalibrateTabState extends State<CalibrateTab>
   }
 
   Widget _buildHeader(ThemeData theme, CalibrationCapture? capture) {
-    final captureLabel = _capturing ? 'Capturing…' : 'Capture';
-    final captureIcon = _capturing
-        ? const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
-        : const Icon(Icons.photo_camera_outlined, size: ShellSize.iconMd);
-    // Save is the screen's only filled action; Capture is filled only while there is no frame yet,
-    // so the two never compete for the eye.
-    final captureButton = _captures.isEmpty
-        ? FilledButton.icon(
-            key: const ValueKey('calibrate-capture'),
-            onPressed: _capturing ? null : _captureFrame,
-            icon: captureIcon,
-            label: Text(captureLabel),
-          )
-        : OutlinedButton.icon(
-            key: const ValueKey('calibrate-capture'),
-            onPressed: _capturing ? null : _captureFrame,
-            icon: captureIcon,
-            label: Text(captureLabel),
-          );
     final storedEnvironment = _storedEnvironment;
     final differences = capture == null
         ? const <String>[]
@@ -1313,7 +1445,6 @@ class _CalibrateTabState extends State<CalibrateTab>
               icon: const Icon(Icons.refresh, size: ShellSize.iconMd),
               label: Text(_loadingStored ? 'Refreshing…' : 'Refresh stored'),
             ),
-            captureButton,
           ],
         ),
       ],
@@ -1444,13 +1575,11 @@ class _CalibrateTabState extends State<CalibrateTab>
         _captureAttempt != null || _hostNote != null || _capturing;
     return CaptureShelfPanel(
       captures: _captures,
-      selectedFrameId: _activeCapture?.frameId,
-      onSelect: (frameId) => setState(() {
-        _selectedFrameId = frameId;
-        _toolFrameIds[_tool] = frameId;
-      }),
+      selectedFrameId: _selectedFrameId,
+      onSelect: _previewScreen,
       onCapture: _captureFrame,
       capturing: _capturing,
+      capacity: _captureCapacity,
       refusedFrameIds: _refusedFrameIds,
       status: hasStatus ? _buildCaptureStatus(theme) : null,
       note: null,
@@ -1545,7 +1674,7 @@ class _CalibrateTabState extends State<CalibrateTab>
     final capture = _activeCapture;
     final evictionRisk =
         capture != null &&
-        _captures.length >= 4 &&
+        _captures.length >= _captureCapacity &&
         capture.frameId == _captures.last.frameId;
     return SurfacePanel(
       title: 'Mark',
@@ -1626,6 +1755,8 @@ class _CalibrateTabState extends State<CalibrateTab>
             ),
           ],
           const SizedBox(height: ShellSpace.sm),
+          _buildScreenAssignment(theme),
+          const SizedBox(height: ShellSpace.sm),
           Wrap(
             spacing: ShellSpace.sm,
             runSpacing: ShellSpace.sm,
@@ -1641,8 +1772,9 @@ class _CalibrateTabState extends State<CalibrateTab>
           if (evictionRisk) ...[
             const SizedBox(height: ShellSpace.sm),
             Text(
-              'This frame is the oldest of the four and the next capture evicts it. Save this '
-              'mark before capturing again — an evicted frame is refused, never re-captured.',
+              'This frame is the oldest of the $_captureCapacity and the next capture evicts it. '
+              'Save this mark before capturing again — an evicted frame is refused, never '
+              're-captured.',
               key: const ValueKey('calibrate-eviction-risk'),
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.shellColors.warning,
@@ -1703,6 +1835,108 @@ class _CalibrateTabState extends State<CalibrateTab>
           _buildStoredMarkSection(theme, stored, storedError),
         ],
       ),
+    );
+  }
+
+  /// The screen assignment for the selected target. The dropdown assigns; it never silently changes
+  /// on a preview click. A screen shared by sibling targets stays visible through the strip's count.
+  Widget _buildScreenAssignment(ThemeData theme) {
+    final colors = theme.colorScheme;
+    final assignedId = _targetFrameIds[_currentStoredKey];
+    final assigned = _captureById(assignedId);
+    final preview = _activeCapture;
+    final canAssign = preview != null && preview.frameId != assignedId;
+    final evicted = assignedId != null && assigned == null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InputDecorator(
+          decoration: const InputDecoration(
+            labelText: 'Screen',
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              key: const ValueKey('calibrate-screen'),
+              value: assigned?.frameId,
+              isExpanded: true,
+              isDense: true,
+              hint: Text(
+                _captures.isEmpty
+                    ? 'Capture a screen first'
+                    : (evicted ? 'Choose another screen' : 'Choose a screen'),
+              ),
+              items: [
+                for (final capture in _captures)
+                  DropdownMenuItem(
+                    key: ValueKey('calibrate-screen-item-${capture.frameId}'),
+                    value: capture.frameId,
+                    child: Text(
+                      '${capture.title}  ·  frame ${capture.frameId}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: _captures.isEmpty ? null : _assignScreen,
+            ),
+          ),
+        ),
+        const SizedBox(height: ShellSpace.xs),
+        if (evicted)
+          Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, size: 14, color: colors.error),
+              const SizedBox(width: ShellSpace.xs),
+              Expanded(
+                child: Text(
+                  'The assigned screen was evicted — capture again or choose another.',
+                  key: const ValueKey('calibrate-screen-evicted'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.error,
+                  ),
+                ),
+              ),
+            ],
+          )
+        else if (canAssign)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              key: const ValueKey('calibrate-screen-assign'),
+              onPressed: () => _assignScreen(preview.frameId),
+              icon: const Icon(Icons.link, size: 14),
+              label: Text('Use “${preview.title}” for this target'),
+            ),
+          )
+        else if (assigned != null)
+          Row(
+            children: [
+              Icon(
+                Icons.check_circle_outline,
+                size: 14,
+                color: theme.shellColors.success,
+              ),
+              const SizedBox(width: ShellSpace.xs),
+              Expanded(
+                child: Text(
+                  'assigned · ${assigned.title}',
+                  key: const ValueKey('calibrate-screen-assigned'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.shellColors.success,
+                  ),
+                ),
+              ),
+            ],
+          )
+        else
+          Text(
+            'Every target needs its own live screen. Screens and assignments are session-only.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+      ],
     );
   }
 

@@ -236,12 +236,26 @@ Future<void> _dragOnSessionFrame(
   await _flush(tester);
 }
 
+/// After a target change the captured screen is only a preview; the tests that calibrate and save
+/// now assign it explicitly, exactly as the player must.
+Future<void> _assignPreviewIfAny(WidgetTester tester) async {
+  final assign = find.byKey(const ValueKey('calibrate-screen-assign'));
+  if (assign.evaluate().isEmpty) {
+    return;
+  }
+  await tester.ensureVisible(assign);
+  await tester.pump();
+  await tester.tap(assign);
+  await tester.pumpAndSettle();
+}
+
 /// Opens the kind picker and taps an item by its stable key.
 Future<void> _selectKind(WidgetTester tester, String kind) async {
   await tester.tap(find.byKey(const ValueKey('calibrate-kind')));
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(ValueKey('calibrate-kind-item-$kind')).last);
   await tester.pumpAndSettle();
+  await _assignPreviewIfAny(tester);
 }
 
 Future<void> _selectTarget(WidgetTester tester, String target) async {
@@ -250,6 +264,7 @@ Future<void> _selectTarget(WidgetTester tester, String target) async {
   // The menu is open: the route's copy is the last one in the tree.
   await tester.tap(find.byKey(ValueKey('calibrate-target-item-$target')).last);
   await tester.pumpAndSettle();
+  await _assignPreviewIfAny(tester);
 }
 
 /// Switches the Calibrate tool tab. Session tools replace the mark workspace with their own panel,
@@ -399,17 +414,118 @@ void main() {
     await _flush(tester);
     expect(caption(), contains('frame f1'));
 
-    // Pet has no frame of its own yet, so it adopts the live shelf capture instead of going blank.
+    // A different tool never borrows another tool's screen: no assignment means no canvas frame.
     await _selectTool(tester, 'pet');
-    expect(caption(), contains('frame f1'));
+    expect(find.byKey(const ValueKey('calibrate-frame-caption')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('calibrate-screen-capture')),
+      findsOneWidget,
+      reason: 'each mark tool workspace has its own capture action',
+    );
+    expect(
+      find.byKey(const ValueKey('calibrate-screen-f1')),
+      findsOneWidget,
+      reason: 'the shop screen is still in the shared live shelf, just not assigned here',
+    );
 
     await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
     await _flush(tester);
     expect(caption(), contains('frame f2'));
 
-    // Shop remembers the frame it took, not Pet's newer frame.
+    // Shop remembers the screen it assigned, not Pet's newer frame.
     await _selectTool(tester, 'shop');
     expect(caption(), contains('frame f1'));
+
+    // Gem has no capture yet, so it starts empty too instead of inheriting Shop's frame.
+    await _selectTool(tester, 'gem');
+    expect(find.byKey(const ValueKey('calibrate-frame-caption')), findsNothing);
+    expect(find.byKey(const ValueKey('calibrate-capture')), findsOneWidget);
+  });
+
+  testWidgets('each target saves the screen assigned to it', (tester) async {
+    var captures = 0;
+    final harness = await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'capture' => {'result': _captureAnswer(frameId: 'f${++captures}')},
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        'calibration.save' => {
+          'result': {
+            'rev': 5,
+            'kind': 'scroll_point',
+            'mark': [7, 8],
+            'derived': <String, dynamic>{},
+            'artifact': null,
+          },
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+    await _flush(tester);
+
+    // f1 belongs to the initial bag_grid target; f2 is a second Shop screen for scroll_point.
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+    await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+    await _flush(tester);
+    await _selectKind(tester, 'scroll_point');
+    await _tapSave(tester);
+    await _flush(tester);
+    expect(_saveArgs(harness)['frame_id'], 'f2');
+
+    // Returning to bag_grid restores ITS screen, not the newest one.
+    await _selectKind(tester, 'bag_grid');
+    await _tapSave(tester);
+    await _flush(tester);
+    expect(_saveArgs(harness)['frame_id'], 'f1');
+  });
+
+  testWidgets('the shelf keeps twelve screens and Save needs an assignment', (
+    tester,
+  ) async {
+    var captures = 0;
+    await _pumpCalibrate(
+      tester,
+      answer: (request) => switch (request['cmd']) {
+        'capture' => {'result': _captureAnswer(frameId: 'f${++captures}')},
+        'calibration.fetch' => {
+          'result': _fetchAnswer(
+            (request['args'] as Map<String, dynamic>)['kind'] as String,
+          ),
+        },
+        _ => {'result': <String, dynamic>{}},
+      },
+    );
+    await _flush(tester);
+    for (var index = 0; index < 13; index += 1) {
+      await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+      await _flush(tester);
+    }
+    expect(find.text('12/12 live'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('calibrate-screen-f1')),
+      findsNothing,
+      reason: 'the thirteenth capture evicts the first',
+    );
+    expect(
+      find.byKey(const ValueKey('calibrate-screen-f13')),
+      findsOneWidget,
+      reason: 'the newest screen stays in the strip',
+    );
+
+    // A new tool target has no assignment; Save must be disabled until one is chosen.
+    await _selectTool(tester, 'gem');
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const ValueKey('calibrate-save')))
+          .onPressed,
+      isNull,
+    );
   });
 
   testWidgets('a capture refusal renders the core line verbatim', (
