@@ -642,7 +642,7 @@ The picker groups them so 17 entries stay readable. **One tool each:**
 
 **Spring point is not in this table.** It is set inside the **Tuner OCR 3-box + Spring point** session
 (§6.5) together with the three OCR boxes, so one tuner capture covers the whole tuner read. The core
-still serves the old `spring_point` kind for compatibility; the v3.0.8 UI does not ask for it twice.
+still serves the old `spring_point` kind for compatibility; the v3.0.9 UI does not ask for it twice.
 
 **Named instances.** A kind that marks a repeated thing takes a **target** — the player-facing instance
 name, not an array index: `pet_page_tab` takes `ITEM1`…`ITEM3`; the three pet-row kinds take row `"1"`…

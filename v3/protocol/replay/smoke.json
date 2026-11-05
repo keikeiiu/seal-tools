@@ -6,7 +6,7 @@
       "response": {
         "result": {
           "protocol": 1,
-          "core_version": "3.0.8",
+          "core_version": "3.0.9",
           "root": "replay",
           "rev": 0,
           "config": {}

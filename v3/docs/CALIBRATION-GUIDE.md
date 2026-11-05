@@ -1,6 +1,6 @@
 # Calibrating v3: a practical walkthrough
 
-This is the click-by-click companion to **USER_GUIDE §6**. It assumes the v3.0.8 **Calibrate** tab and
+This is the click-by-click companion to **USER_GUIDE §6**. It assumes the v3.0.9 **Calibrate** tab and
 covers the part that is easiest to get wrong: **capturing, then clicking the capture and drawing on
 it**. The reference for what a mark means is `spec/CALIBRATION.md`; the list of all 17 marks is
 USER_GUIDE §6.2.

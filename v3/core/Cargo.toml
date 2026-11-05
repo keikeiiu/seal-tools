@@ -14,7 +14,7 @@ members = [
 [workspace.package]
 # The PRODUCT version, kept equal to v3/shell/pubspec.yaml's `version:` (checked by publish.ps1).
 # `hello` reports it as `core_version`, so a bug report can tell two core builds apart.
-version = "3.0.8"
+version = "3.0.9"
 edition = "2024"
 publish = false
 
