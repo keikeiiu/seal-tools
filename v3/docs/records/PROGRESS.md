@@ -19,6 +19,22 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-05 (48) — screens can be deleted, with two confirmations
+
+The Screens shelf had no way to remove a stale screenshot; only FIFO eviction or a capture could get
+rid of it. Each mark/session screen tile now has a small delete action. It opens **two** dialogs:
+the first reports what uses the screen (targets/session) and that deleting clears those assignments;
+the second is the irreversible confirmation and explicitly states that **saved calibration
+coordinates are not deleted**. Only the second writes.
+
+Core `capture.discard` (`FrameCache::discard`) removes the live PNG/RGBA and is idempotent
+(`discarded:false` for an already-evicted id), so the shell can clean up after a cache race. The
+delete path never touches `config/` and never issues `calibration.save`; a saved mark remains
+fetchable with unchanged coordinates. Eviction is unchanged and still automatic.
+
+Verification: Rust fmt/clippy/rustdoc clean; **95 suites, 1,357 passed, 0 failed, 6 ignored**. Shell
+format/analyze clean; **380/380 tests**, Windows debug build. Commit attached to this entry.
+
 ## 2026-11-05 (47) — Tuner and Tooltip reuse the shared Screens bar
 
 The mark tools had per-target screens; the two sessions still owned a private capture. The session
