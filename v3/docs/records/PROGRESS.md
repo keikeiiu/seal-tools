@@ -19,6 +19,26 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-05 (47) — Tuner and Tooltip reuse the shared Screens bar
+
+The mark tools had per-target screens; the two sessions still owned a private capture. The session
+tabs now show the same capture bar and Screens strip, and reuse the selected shared screen:
+
+- **Tuner `034d3cb`:** the existing right-side three-box editor is unchanged. Its Capture screen
+  button delegates to the shared capture action, the picture comes from the selected shared frame,
+  Check runs against that frame, and Save requires a Check for the current frame. Selecting another
+  screen clears the Check and disables Save until Check boxes runs again.
+- **Tooltip `034d3cb`:** the selected shared screen becomes the visual background for the offset
+  fields. Capture hover remains the live cursor-anchor action for Test read; the right-side layout is
+  unchanged.
+- Each session remembers its own selected screen; sessions do not participate in the mark tools'
+  per-target assignment map. Switching away and back restores the session's screen.
+- The page scroll fallback at short heights now covers session tabs; `UI.md` documents the shared
+  session capture rule.
+
+Verification: `flutter analyze --fatal-infos` clean, `dart format` clean, **379/379 tests**, Windows
+debug build. No Rust change; the twelve-frame cache from `ae1bfaa` is the limit.
+
 ## 2026-11-05 (46) — calibration screens become per-target instead of one shared frame
 
 The Calibrate page used one selected frame for every mark tool and let a tool with no frame adopt the
