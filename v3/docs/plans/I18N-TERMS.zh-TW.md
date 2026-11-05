@@ -4,6 +4,11 @@
 multi-language plan in [../backlog/OPEN.md §7](../backlog/OPEN.md). The player confirmed **CH-ZH =
 Traditional Chinese (`zh-TW` / `zh-Hant`)**; Simplified is out of scope.
 
+**Full review list:** [I18N-TERMS.zh-TW.csv](I18N-TERMS.zh-TW.csv) — **356 proposed rows** grouped by
+surface (Shell, Tools, Cards, Setup, Calibration, Tuner, Gem, Buy/Sell, Spammer, Quest, Pet,
+Attributes, Arduino, Hotkeys, Dialogs, Logs, Crash, Status, Formatting). Change `zh_tw` in place and
+mark `status` if you reject/replace a term; the markdown below is the shorter policy/decision summary.
+
 **Player-confirmed game terms (2026-11-05):** Magic Tuner = **發條**, boarding = **代養**, grade
 ladder = **等級表**, Hold Space = **長按空白鍵**.
 
