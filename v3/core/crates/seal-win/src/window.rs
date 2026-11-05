@@ -22,13 +22,15 @@ use windows_sys::Win32::Graphics::Gdi::{
     CreateCompatibleBitmap, CreateCompatibleDC, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC,
     GetDIBits, HBITMAP, HDC, HGDIOBJ, RGBQUAD, ReleaseDC, SRCCOPY, SelectObject,
 };
+use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows_sys::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetThreadDpiAwarenessContext,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetClientRect, GetCursorPos, GetForegroundWindow, GetSystemMetrics, GetWindowRect,
-    GetWindowTextLengthW, GetWindowTextW, IsWindowVisible, SM_CXSCREEN, SM_CYSCREEN,
-    SetForegroundWindow,
+    BringWindowToTop, EnumWindows, GetClientRect, GetCursorPos, GetForegroundWindow,
+    GetSystemMetrics, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
+    GetWindowThreadProcessId, IsIconic, IsWindowVisible, SM_CXSCREEN, SM_CYSCREEN, SW_RESTORE,
+    SetForegroundWindow, ShowWindow,
 };
 
 use crate::error::WinError;
@@ -188,16 +190,46 @@ pub fn is_foreground(hwnd: Hwnd) -> bool {
 /// documented conditions in `SetForegroundWindow`'s Remarks — so the core can nudge the game back in
 /// front itself, without a shell-side window call.
 ///
-/// Best effort by contract: for a foreground window owned by another application Windows may refuse
-/// and only flash the game's taskbar button, so a `true` means "the request was accepted", not "the
-/// game is now in front". Callers must still gate every capture on [`is_foreground`]; this never
-/// replaces the pixel-integrity check, it only gives the game a chance to satisfy it.
+/// `SetForegroundWindow` alone is refused while another application owns the foreground. The
+/// calibration capture cannot use a covered frame, so the activation briefly attaches this thread's
+/// input state to the foreground thread (the documented `AttachThreadInput` workaround), brings the
+/// target to the top, asks for the foreground, then detaches again. The attachment is bounded to
+/// this call and is released even when Windows refuses the foreground request.
+///
+/// Best effort by contract: a `true` means "the request was accepted", not "the game is now in
+/// front". Callers must still gate every capture on [`is_foreground`]; this never replaces the
+/// pixel-integrity check, it only gives the game a chance to satisfy it.
 #[must_use]
 pub fn activate(hwnd: Hwnd) -> bool {
-    // SAFETY: `SetForegroundWindow` takes the window handle by value (an opaque value, not a
-    // pointer), writes nothing through caller memory and keeps no reference; a stale or invalid
-    // handle simply makes it return 0.
-    unsafe { SetForegroundWindow(hwnd.ptr()) != 0 }
+    // SAFETY: every call takes an opaque window handle by value or a thread id; none writes through
+    // caller memory. `GetWindowThreadProcessId` writes only to the process-id pointer, which is NULL
+    // here. `AttachThreadInput` is paired with a detach on every path, and the handles are never
+    // dereferenced or retained.
+    unsafe {
+        let target = hwnd.ptr();
+        if GetForegroundWindow() == target {
+            return true;
+        }
+        if IsIconic(target) != 0 {
+            ShowWindow(target, SW_RESTORE);
+        }
+        let foreground = GetForegroundWindow();
+        let foreground_thread = if foreground == 0 {
+            0
+        } else {
+            GetWindowThreadProcessId(foreground, std::ptr::null_mut())
+        };
+        let current = GetCurrentThreadId();
+        let attached = foreground_thread != 0
+            && foreground_thread != current
+            && AttachThreadInput(current, foreground_thread, 1) != 0;
+        BringWindowToTop(target);
+        let accepted = SetForegroundWindow(target) != 0;
+        if attached {
+            AttachThreadInput(current, foreground_thread, 0);
+        }
+        accepted
+    }
 }
 
 /// Measure the window in both DPI spaces: the physical reads run under a THREAD-scoped aware context
