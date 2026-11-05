@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 
+#include <dwmapi.h>
 #include <shellapi.h>
 #include <variant>
 
@@ -180,6 +181,12 @@ bool FlutterWindow::OnCreate() {
                  result) {
         if (call.method_name() == "hideWindow") {
           ::ShowWindow(GetHandle(), SW_HIDE);
+          // The core grabs the physical screen immediately after this reply. DWM can still hold the
+          // last visible composition for a frame or two, which put the (hidden) shell into the
+          // calibration frame. Flush the composition and spend one presentation interval before
+          // answering, so the hide is really on glass when the capture starts.
+          ::DwmFlush();
+          ::Sleep(30);
           result->Success();
         } else if (call.method_name() == "showWindow") {
           ::ShowWindow(GetHandle(), SW_SHOWNORMAL);
