@@ -19,6 +19,17 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-05 (49) — the Tuner's private capture button is gone
+
+With the shared Capture bar owning capture on the session tabs, the duplicate **Capture screen** button
+inside the Tuner session was redundant. In shared mode the right-side Tuner editor keeps its box
+fields, Check/Save and guidance, but the button is not rendered; the card points to the shared bar
+instead. Direct `SessionCalibrationsPanel` tests (shared mode off) keep the old private button, and the
+Calibrate widget tests now drive capture through the shared bar. The Tooltip's **Capture hover** is
+unchanged because it captures the live cursor anchor, not a generic screenshot.
+
+Verification: shell format/analyze clean, **380/380 tests**, Windows debug build.
+
 ## 2026-11-05 (48) — screens can be deleted, with two confirmations
 
 The Screens shelf had no way to remove a stale screenshot; only FIFO eviction or a capture could get
