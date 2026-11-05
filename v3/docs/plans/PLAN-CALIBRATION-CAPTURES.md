@@ -86,9 +86,9 @@ Capture every screen the tools read, then assign one screen to each target.
 - Selecting a target restores its assigned screen in the canvas and editor.
 - The editor's **Screen** row is a dropdown of live screens, each with a thumbnail and `Shop · 1`
   label. Choosing one assigns it to the current target. Targets may share one screen.
-- Clicking a screen thumbnail in the strip **selects it for preview**; a small **Use for this
-  target** action on the selected thumbnail performs the assignment. This avoids a stray click
-  silently reassigning a target.
+- Clicking a screen thumbnail in the strip **selects it for preview**; the editor then shows
+  **Use “Shop · 1” for this target**, which performs the assignment. This avoids a stray click
+  silently reassigning a target while still letting the picture be inspected first.
 - The assignment is session state, like the frame cache. Marks do not persist a frame id; after an
   app restart the player re-captures. The editor says “screens are session-only” in its help line.
 
