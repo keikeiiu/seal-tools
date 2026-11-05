@@ -196,6 +196,7 @@ a design or a status row yet.
   - **Decided 2026-11-05: `CH-ZH` means Traditional Chinese (`zh-TW`/`zh-Hant`, matching the existing `zh-TW` docs).** Simplified Chinese is not in scope unless the player asks later.
   - translated copy or a terminology glossary for tabs, cards, calibration, error lines and the
     crash view;
+  - first-pass terminology proposal: [../plans/I18N-TERMS.zh-TW.md](../plans/I18N-TERMS.zh-TW.md).
   - a decision on whether core/domain refusal sentences are translated by the core or mapped by the
     shell (the protocol carries English today);
   - locale persistence (config vs shell preference) and how the bilingual guides pair with it.
