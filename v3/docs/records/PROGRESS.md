@@ -19,6 +19,32 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-05 (46) — calibration screens become per-target instead of one shared frame
+
+The Calibrate page used one selected frame for every mark tool and let a tool with no frame adopt the
+newest shelf capture. That is wrong for the actual game: the Buy/Sell window, the Gem Composer and the
+Pet panels cannot be open together, so a Pet target could be shown on a Shop frame. The design pass
+(`a86500a`, with the plans-board row and the alignment fix in `cbb79ef`/`5a3e1e5`) proposed a
+persistent Screens strip, an explicit Screen selector per target and session-only assignments.
+
+Implementation:
+- **Core `ae1bfaa`:** `FrameCache` keeps 12 live frames instead of four, so a whole calibration pass
+  can be captured before saving. PNG bytes + lazily decoded RGBA stay as before; PROTOCOL/CALIBRATION
+  and the capacity test move to 12.
+- **Shell `c5a964f`:** every mark target has its own assigned screen (`kind`/`kind@target`); a new
+  capture auto-assigns only when the selected target has none. The capture action now lives in each
+  mark tool's capture bar. A Screens strip under it previews captures (newest first, tool-labelled,
+  assignment count), and the editor's Screen row / *Use “Shop · 1” for this target* action performs
+  the assignment. Save is disabled until the target has a live assigned screen and the preview
+  matches it. A different tool never borrows another tool's frame. Evicted screens clear their
+  assignments with a warning; assignments are session-only and saved marks still store no frame id.
+- At the 680 px minimum the page scrolls as one block; the fixed cockpit remains for normal windows.
+
+Verification: shell `flutter analyze --fatal-infos` clean, `dart format` clean, **378/378 tests**,
+Windows debug build; Rust fmt/clippy/rustdoc clean, **95 suites, 1,356 passed, 0 failed, 6 ignored**.
+The earlier four-frame assumption is gone from the specs; historical entries above keep their original
+counts.
+
 ## 2026-11-05 (45) — the grade ladder becomes colour-only and its minimum selector moves up
 
 The first ladder pass over-explained itself: flag/shield/play icons and `target`/`minimum`/`start`
