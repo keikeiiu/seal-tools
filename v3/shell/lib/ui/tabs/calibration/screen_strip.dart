@@ -26,6 +26,7 @@ class ScreenStripPanel extends StatelessWidget {
     required this.capacity,
     required this.targetLabel,
     this.assignedLabel = 'assigned',
+    this.onDiscard,
     this.refusedFrameIds = const <String>{},
   });
 
@@ -44,6 +45,9 @@ class ScreenStripPanel extends StatelessWidget {
 
   /// `assigned` for mark targets; `using` for a session's current reused screen.
   final String assignedLabel;
+
+  /// Explicit delete, after the parent's two-step confirmation. Null hides the delete affordance.
+  final ValueChanged<String>? onDiscard;
 
   /// Frame ids the core refused as `unknown frame_id`.
   final Set<String> refusedFrameIds;
@@ -239,6 +243,28 @@ class ScreenStripPanel extends StatelessWidget {
                         ),
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: theme.shellColors.success,
+                        ),
+                      ),
+                    if (onDiscard != null)
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: IconButton(
+                          key: ValueKey(
+                            'calibrate-screen-delete-${capture.frameId}',
+                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 16,
+                            height: 16,
+                          ),
+                          tooltip: 'Delete screen',
+                          onPressed: () => onDiscard!(capture.frameId),
+                          icon: Icon(
+                            Icons.close,
+                            size: 12,
+                            color: colors.onSurfaceVariant,
+                          ),
                         ),
                       ),
                   ],

@@ -528,6 +528,83 @@ void main() {
     );
   });
 
+  testWidgets(
+    'deleting a screen needs two confirmations and touches no saved mark',
+    (tester) async {
+      final harness = await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'capture' => {'result': _captureAnswer(frameId: 'f1')},
+          'capture.discard' => {
+            'result': {'frame_id': 'f1', 'discarded': true},
+          },
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+              mark: [10, 20, 30, 40],
+            ),
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+      await _flush(tester);
+      await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+      await _flush(tester);
+      expect(
+        tester
+            .widget<ButtonStyleButton>(
+              find.byKey(const ValueKey('calibrate-save')),
+            )
+            .onPressed,
+        isNotNull,
+        reason: 'the first capture auto-assigns to the selected target',
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('calibrate-screen-delete-f1')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('calibrate-delete-first')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('calibrate-delete-continue')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('calibrate-delete-second')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('calibrate-delete-confirm')));
+      await _flush(tester);
+
+      final discard =
+          harness.lastSentWithCmd('capture.discard')!['args']
+              as Map<String, dynamic>;
+      expect(discard['frame_id'], 'f1');
+      expect(
+        find.byKey(const ValueKey('calibrate-screen-f1')),
+        findsNothing,
+        reason: 'the deleted screen leaves the strip',
+      );
+      expect(
+        tester
+            .widget<ButtonStyleButton>(
+              find.byKey(const ValueKey('calibrate-save')),
+            )
+            .onPressed,
+        isNull,
+        reason: 'the target has no assigned screen after the delete',
+      );
+      expect(
+        harness.sentMessages.any(
+          (message) => message['cmd'] == 'calibration.save',
+        ),
+        isFalse,
+        reason: 'delete must not write or remove saved calibration coordinates',
+      );
+    },
+  );
+
   testWidgets('a capture refusal renders the core line verbatim', (
     tester,
   ) async {

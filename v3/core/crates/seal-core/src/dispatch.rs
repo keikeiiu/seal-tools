@@ -614,6 +614,7 @@ fn handle_inner(state: &mut CoreState, request: &Request) -> Response {
         "window.find" => window_find(state, request),
         "window.measure" => window_measure(state, request),
         "capture" => capture_command(state, request),
+        "capture.discard" => capture_discard_command(state, request),
         "ocr.scan" => ocr_scan(state, request),
         "keys.parse" => keys_parse(state, request),
         "keys.names" => keys_names(state, request),
@@ -2281,7 +2282,26 @@ fn capture_command(state: &mut CoreState, request: &Request) -> Response {
     Response::ok(&request.id, json!({"frame": frame, "display": display}))
 }
 
-/// Maps a window/capture failure to the protocol's error codes (`PROTOCOL.md` 禮6). The Win32 detail
+/// `capture.discard`: remove one live frame from the cache at the shell's explicit request. The
+/// command touches ONLY the in-memory frame cache; saved calibration marks and coordinates are
+/// config data and are deliberately untouched. A missing/evicted id is `discarded:false`, so the
+/// shell can still clear its local tile after an eviction race.
+fn capture_discard_command(state: &mut CoreState, request: &Request) -> Response {
+    let Some(frame_id) = request.args.get("frame_id").and_then(Value::as_str) else {
+        return bad_request(
+            &request.id,
+            "capture.discard needs the frame_id to discard",
+            json!({"field": "frame_id"}),
+        );
+    };
+    let discarded = state.frames.discard(frame_id);
+    Response::ok(
+        &request.id,
+        json!({"frame_id": frame_id, "discarded": discarded}),
+    )
+}
+
+/// Maps a window/capture failure to the protocol's error codes (`PROTOCOL.md` §6). The Win32 detail
 /// stays in the message so a log is debuggable; the player sees what the shell chooses to show.
 pub(crate) fn win_error_response(id: &str, error: win::CommandError) -> Response {
     let line = error.line();

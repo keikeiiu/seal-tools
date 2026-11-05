@@ -245,6 +245,108 @@ class _CalibrateTabState extends State<CalibrateTab>
     });
   }
 
+  /// Explicitly remove a live screen after TWO confirmations. Only the in-memory frame and the
+  /// session-only assignments are removed; saved calibration coordinates are config data and are
+  /// deliberately untouched.
+  Future<void> _discardCapture(String frameId) async {
+    final capture = _captureById(frameId);
+    if (capture == null) {
+      return;
+    }
+    final targetCount = _assignmentCount(frameId);
+    final sessionNames = [
+      for (final entry in _sessionFrameIds.entries)
+        if (entry.value == frameId)
+          entry.key == 'tuner' ? 'Magic Tuner' : 'Tooltip',
+    ];
+    final uses = <String>[
+      if (targetCount > 0) '$targetCount target${targetCount == 1 ? '' : 's'}',
+      ...sessionNames,
+    ];
+    final usageLine = uses.isEmpty
+        ? 'It is not assigned to any target or session.'
+        : 'It is used by ${uses.join(' and ')}.';
+
+    final first = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        key: const ValueKey('calibrate-delete-first'),
+        title: const Text('Delete screen?'),
+        content: Text(
+          '${capture.title}. $usageLine\n\n'
+          'Removing it clears the assignment to this screenshot. '
+          'Saved calibration coordinates are not deleted.',
+        ),
+        actions: [
+          TextButton(
+            key: const ValueKey('calibrate-delete-cancel'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('calibrate-delete-continue'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    if (first != true || !mounted) {
+      return;
+    }
+
+    final second = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        key: const ValueKey('calibrate-delete-second'),
+        title: Text('Delete ${capture.title} permanently?'),
+        content: const Text(
+          'The screenshot is removed from the live cache. '
+          'Saved calibration coordinates are not deleted; only assignments that point at this '
+          'screenshot are cleared.',
+        ),
+        actions: [
+          TextButton(
+            key: const ValueKey('calibrate-delete-keep'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep screen'),
+          ),
+          FilledButton(
+            key: const ValueKey('calibrate-delete-confirm'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete screen'),
+          ),
+        ],
+      ),
+    );
+    if (second != true || !mounted) {
+      return;
+    }
+
+    final result = await widget.model.discardFrame(frameId);
+    if (!mounted) {
+      return;
+    }
+    if (!result.ok) {
+      setState(() {
+        _shelfNote = result.errorLine;
+      });
+      return;
+    }
+    setState(() {
+      _captures.removeWhere((entry) => entry.frameId == frameId);
+      _targetFrameIds.removeWhere((_, assigned) => assigned == frameId);
+      _sessionFrameIds.removeWhere((_, assigned) => assigned == frameId);
+      _refusedFrameIds.remove(frameId);
+      if (_selectedFrameId == frameId) {
+        _selectedFrameId = null;
+      }
+      _shelfNote =
+          'Removed ${capture.title} from the shelf. Saved calibration coordinates were not '
+          'changed.';
+    });
+  }
+
   /// The capture's own display environment, as the save will send it.
   StoredCalibrationEnvironment get _storedEnvironment =>
       _savedEnvironment ??
@@ -1181,6 +1283,7 @@ class _CalibrateTabState extends State<CalibrateTab>
       capacity: _captureCapacity,
       targetLabel: session ? '$_tool session' : _selectedTargetLabel,
       assignedLabel: session ? 'using' : 'assigned',
+      onDiscard: _discardCapture,
       refusedFrameIds: _refusedFrameIds,
     );
   }

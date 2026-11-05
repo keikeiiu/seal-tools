@@ -767,6 +767,14 @@ class ShellModel extends ChangeNotifier {
     return _coreAction('capture', CaptureResult.fromJson, args: args);
   }
 
+  /// `capture.discard`: remove one live screen from the core cache. This does NOT touch saved
+  /// calibration marks/coordinates — only the in-memory frame and the shell-side assignment.
+  Future<CoreActionResult<JsonMap>> discardFrame(String frameId) => _coreAction(
+    'capture.discard',
+    (result) => result,
+    args: {'frame_id': frameId},
+  );
+
   /// `calibration.save`: the mark drawn on the captured frame, plus the capture's measured display so
   /// the core records the environment. Refusals (bag-slot pitch disagreement, unknown frame_id, …)
   /// come back as the core's typed error line.

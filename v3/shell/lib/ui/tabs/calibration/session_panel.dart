@@ -157,6 +157,11 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
         _tooltipPlaced = null;
         _status =
             'Reused ${shared.title} — visual offset only; Capture hover for the live anchor.';
+      } else {
+        _tooltipFrame = null;
+        _tooltipDisplay = null;
+        _tooltipPlaced = null;
+        _status = 'Screen removed — Capture hover to measure again.';
       }
     }
   }

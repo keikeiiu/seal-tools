@@ -404,6 +404,17 @@ impl FrameCache {
             .map(|(_, frame)| frame)
     }
 
+    /// Remove one frame from the live cache. Used by the shell's explicit discard action; a missing
+    /// id is a no-op (the frame may already have been evicted), so the answer is just whether it was
+    /// present.
+    pub fn discard(&mut self, id: &str) -> bool {
+        let Some(index) = self.entries.iter().position(|(entry_id, _)| entry_id == id) else {
+            return false;
+        };
+        self.entries.remove(index);
+        true
+    }
+
     /// The protocol-shaped frame; this is the ONLY path that base64-encodes the PNG again.
     #[must_use]
     pub fn get_value(&self, id: &str) -> Option<Value> {
@@ -477,6 +488,16 @@ mod tests {
         assert!(cache.get("f3").is_some(), "the capacity boundary is kept");
         let newest = cache.get("f14").expect("the newest is kept");
         assert_eq!(newest.to_value()["frame_id"], "f14");
+    }
+
+    #[test]
+    fn a_frame_can_be_discarded_and_missing_ids_are_a_no_op() {
+        let mut cache = FrameCache::default();
+        let id = cache.insert(json!({"format": "png"}));
+        assert!(cache.get(&id).is_some());
+        assert!(cache.discard(&id));
+        assert!(cache.get(&id).is_none());
+        assert!(!cache.discard(&id));
     }
 
     #[test]
