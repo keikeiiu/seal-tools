@@ -114,6 +114,10 @@ class _CalibrateTabState extends State<CalibrateTab>
   /// Shop frame. Assignments are session-only; saved marks never store a frame id.
   final Map<String, String> _targetFrameIds = <String, String>{};
 
+  /// The screen each session (tuner/tooltip) is currently using. Sessions have no per-target
+  /// assignment; they reuse one shared screen and invalidate their Check when it changes.
+  final Map<String, String> _sessionFrameIds = <String, String>{};
+
   /// The screen currently previewed/selected. On a target change it is reset to that target's
   /// assigned screen (or null); clicking a screen in the strip previews it without assigning it.
   String? _selectedFrameId;
@@ -174,6 +178,9 @@ class _CalibrateTabState extends State<CalibrateTab>
     return null;
   }
 
+  /// A mapped frame id only when it is still in the live shelf.
+  String? _liveFrameId(String? frameId) => _captureById(frameId)?.frameId;
+
   /// The screen assigned to the selected target, when it is still live.
   CalibrationCapture? get _assignedCapture =>
       _captureById(_targetFrameIds[_currentStoredKey]);
@@ -231,6 +238,9 @@ class _CalibrateTabState extends State<CalibrateTab>
     }
     setState(() {
       _selectedFrameId = frameId;
+      if (_sessionTool) {
+        _sessionFrameIds[_sessionId] = frameId;
+      }
       _save = null;
     });
   }
@@ -455,6 +465,9 @@ class _CalibrateTabState extends State<CalibrateTab>
       _targetFrameIds.removeWhere((_, frameId) => frameId == item.frameId);
     }
     _selectedFrameId = capture.frame.frameId;
+    if (_sessionTool) {
+      _sessionFrameIds[_sessionId] = capture.frame.frameId;
+    }
     // Capture-as-you-go: a selected target with no screen adopts this one. A target that already
     // has a screen keeps it; the new screenshot waits in the strip to be assigned explicitly.
     if (!_sessionTool && (!_selected.isTargeted || _target != null)) {
@@ -587,7 +600,10 @@ class _CalibrateTabState extends State<CalibrateTab>
       return;
     }
     if (tool == 'Tuner' || tool == 'Tooltip') {
-      setState(() => _tool = tool);
+      setState(() {
+        _tool = tool;
+        _selectedFrameId = _liveFrameId(_sessionFrameIds[_sessionId]);
+      });
       return;
     }
     final group = calibrationToolGroups.firstWhere(
@@ -822,7 +838,7 @@ class _CalibrateTabState extends State<CalibrateTab>
             index: _sessionTool ? 1 : 0,
             children: [
               _buildMarkWorkspace(theme, capture),
-              _buildSessionWorkspace(),
+              _buildSessionWorkspace(theme),
             ],
           ),
         ),
@@ -1151,16 +1167,20 @@ class _CalibrateTabState extends State<CalibrateTab>
       for (final capture in _captures)
         capture.frameId: _assignmentCount(capture.frameId),
     };
+    final session = _sessionTool;
     return ScreenStripPanel(
       captures: _captures,
       selectedFrameId: _selectedFrameId,
-      assignedFrameId: _targetFrameIds[_currentStoredKey],
+      assignedFrameId: session
+          ? _selectedFrameId
+          : _targetFrameIds[_currentStoredKey],
       assignmentCounts: counts,
       onSelect: _previewScreen,
       onCapture: _captureFrame,
       capturing: _capturing,
       capacity: _captureCapacity,
-      targetLabel: _selectedTargetLabel,
+      targetLabel: session ? '$_tool session' : _selectedTargetLabel,
+      assignedLabel: session ? 'using' : 'assigned',
       refusedFrameIds: _refusedFrameIds,
     );
   }
@@ -1354,19 +1374,47 @@ class _CalibrateTabState extends State<CalibrateTab>
     );
   }
 
-  Widget _buildSessionWorkspace() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-        ShellSpace.lg,
-        0,
-        ShellSpace.lg,
-        ShellSpace.lg,
-      ),
-      child: SessionCalibrationsPanel(
-        only: _sessionId,
-        model: widget.model,
-        host: widget.host,
-      ),
+  Widget _buildSessionWorkspace(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            ShellSpace.lg,
+            0,
+            ShellSpace.lg,
+            ShellSpace.sm,
+          ),
+          child: _buildCaptureBar(theme, _activeCapture),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            ShellSpace.lg,
+            0,
+            ShellSpace.lg,
+            ShellSpace.sm,
+          ),
+          child: _buildScreenStrip(theme),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+              ShellSpace.lg,
+              0,
+              ShellSpace.lg,
+              ShellSpace.lg,
+            ),
+            child: SessionCalibrationsPanel(
+              only: _sessionId,
+              model: widget.model,
+              host: widget.host,
+              useSharedCapture: true,
+              sharedCapture: _activeCapture,
+              onCapture: _captureFrame,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

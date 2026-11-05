@@ -327,6 +327,13 @@ took it (`Shop · 1`) with the count of targets assigned to it.
   is refused — the screen says so and never auto-recaptures. Selecting a shelf frame previews it; assigning
   it is the editor's explicit action. The hide → one frame → show flow and its status are unchanged; the
   capture result/refusal stays visible in the compact capture bar.
+- **Session capture reuse:** Tuner and Tooltip show the same capture bar/Screens strip above their
+  existing right-side editors. Tuner draws its three boxes and Spring point on the selected shared
+  screen; a screen change clears the Check result and disables Save until **Check boxes** runs again,
+  and Save sends that screen's `frame_id`. Tooltip reuses the selected screen as the visual background
+  for its offset/size fields, but **Capture hover** remains the live cursor-anchor/Test-read action.
+  The sessions' right-side layouts and controls are otherwise unchanged; screen selection itself has
+  no target assignment because each session has one calibration record.
 - **Canvas:** fit / 1:1 / zoom ± / pan, zoom % and "1 display px = N physical px"; the selected mark is
   drawn with its label. The typed x/y/(w/h) fields stay authoritative and the mapping function is
   unchanged and single. Overlay labels choose white or black text from the label background's luminance,

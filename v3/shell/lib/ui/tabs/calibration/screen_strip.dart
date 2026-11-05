@@ -25,6 +25,7 @@ class ScreenStripPanel extends StatelessWidget {
     required this.capturing,
     required this.capacity,
     required this.targetLabel,
+    this.assignedLabel = 'assigned',
     this.refusedFrameIds = const <String>{},
   });
 
@@ -40,6 +41,9 @@ class ScreenStripPanel extends StatelessWidget {
   final bool capturing;
   final int capacity;
   final String targetLabel;
+
+  /// `assigned` for mark targets; `using` for a session's current reused screen.
+  final String assignedLabel;
 
   /// Frame ids the core refused as `unknown frame_id`.
   final Set<String> refusedFrameIds;
@@ -243,7 +247,7 @@ class ScreenStripPanel extends StatelessWidget {
                   height: 12,
                   child: assigned
                       ? Text(
-                          'assigned',
+                          assignedLabel,
                           key: ValueKey(
                             'calibrate-screen-assigned-${capture.frameId}',
                           ),

@@ -2288,6 +2288,74 @@ void main() {
     },
   );
 
+  testWidgets(
+    'the tuner session reuses the shared screen and a screen switch invalidates its check',
+    (tester) async {
+      var captures = 9;
+      final harness = await _pumpCalibrate(
+        tester,
+        answer: (request) => switch (request['cmd']) {
+          'capture' => {'result': _captureAnswer(frameId: 'f${captures++}')},
+          'calibration.fetch' => {
+            'result': _fetchAnswer(
+              (request['args'] as Map<String, dynamic>)['kind'] as String,
+            ),
+          },
+          'confirmation' => {'result': <String, dynamic>{}},
+          'calibration.tuner.check' => {
+            'result': {
+              'geometry': {
+                'region': {'left': 0, 'top': 0, 'width': 300, 'height': 200},
+              },
+              'measured_row_height': 19,
+              'grade': 'DG',
+              'remaining': 25000,
+              'attributes': <List<String>>[],
+              'matched': <Map<String, dynamic>>[],
+              'filter': {'enabled': true, 'passed': true, 'reason': 'ok'},
+              'warnings': <String>[],
+            },
+          },
+          _ => {'result': <String, dynamic>{}},
+        },
+      );
+      await _flush(tester);
+      await _selectTool(tester, 'tuner');
+
+      final sessionCapture = find.byKey(
+        const ValueKey('session-tuner-capture'),
+      );
+      await tester.ensureVisible(sessionCapture);
+      await tester.tap(sessionCapture);
+      await _flush(tester);
+
+      final check = find.byKey(const ValueKey('session-tuner-check'));
+      await tester.ensureVisible(check);
+      await tester.tap(check);
+      await _flush(tester);
+      final checkArgs =
+          harness.sentMessages.lastWhere(
+                (message) => message['cmd'] == 'calibration.tuner.check',
+              )['args']
+              as Map<String, dynamic>;
+      expect(checkArgs['frame_id'], 'f9');
+
+      // Capturing another screen from the shared bar invalidates the Check; Save must wait for a
+      // new Check against the new frame.
+      await tester.tap(find.byKey(const ValueKey('calibrate-capture')));
+      await _flush(tester);
+      expect(
+        tester
+            .widget<ButtonStyleButton>(
+              find.byKey(const ValueKey('session-tuner-save')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(find.textContaining('Check boxes again'), findsOneWidget);
+    },
+  );
+
   testWidgets('the tuner session captures, checks and saves three boxes', (
     tester,
   ) async {
@@ -2542,6 +2610,12 @@ void main() {
       expect(int.parse(fieldText('session-tuner-attr.x')), greaterThan(0));
       expect(int.parse(fieldText('session-tuner-attr.w')), greaterThan(0));
       expect(fieldText('session-tuner-remaining.x'), '0');
+
+      // Shared mode requires a fresh Check against the selected screen before Save.
+      final check = find.byKey(const ValueKey('session-tuner-check'));
+      await tester.ensureVisible(check);
+      await tester.tap(check);
+      await _flush(tester);
 
       // The typed fields stay authoritative: Save sends what the drags wrote.
       final save = find.byKey(const ValueKey('session-tuner-save'));

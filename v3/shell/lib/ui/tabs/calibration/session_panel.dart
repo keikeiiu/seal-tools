@@ -28,6 +28,7 @@ import '../../components/status_chip.dart';
 import '../../components/surface_panel.dart';
 import '../../theme.dart';
 import '../calibration_widgets.dart';
+import 'capture_shelf.dart';
 
 class SessionCalibrationsPanel extends StatefulWidget {
   const SessionCalibrationsPanel({
@@ -37,6 +38,9 @@ class SessionCalibrationsPanel extends StatefulWidget {
     this.only,
     this.tooltipKey,
     this.tunerKey,
+    this.useSharedCapture = false,
+    this.sharedCapture,
+    this.onCapture,
   });
 
   final ShellModel model;
@@ -50,6 +54,15 @@ class SessionCalibrationsPanel extends StatefulWidget {
   /// Section anchors for the combined panel.
   final Key? tooltipKey;
   final Key? tunerKey;
+
+  /// When true the session reuses the Calibrate screen selected in the shared Screens strip instead
+  /// of owning a private capture. The right-side editor layout is unchanged.
+  final bool useSharedCapture;
+  final CalibrationCapture? sharedCapture;
+
+  /// The parent's shared capture action; the session's existing Capture screen button delegates to
+  /// it in shared mode so the right side keeps its current controls.
+  final Future<void> Function()? onCapture;
 
   @override
   State<SessionCalibrationsPanel> createState() =>
@@ -101,6 +114,52 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
   final _springY = TextEditingController(text: '0');
   CaptureResult? _tunerCapture;
   JsonMap? _tunerCheck;
+
+  /// The last shared frame the tuner saw. A change invalidates the Check and the old picture.
+  String? _sharedTunerFrameId;
+
+  /// The last shared frame the tooltip drew as its reuse background.
+  String? _sharedTooltipFrameId;
+
+  /// The session's effective tuner capture: the shared Calibrate screen when shared mode is on,
+  /// otherwise the private session capture used by the direct-panel tests.
+  CaptureResult? get _effectiveTunerCapture {
+    if (!widget.useSharedCapture) {
+      return _tunerCapture;
+    }
+    final shared = widget.sharedCapture;
+    if (shared == null) {
+      return null;
+    }
+    return CaptureResult(frame: shared.frame, display: shared.display);
+  }
+
+  @override
+  void didUpdateWidget(SessionCalibrationsPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.useSharedCapture) {
+      return;
+    }
+    final shared = widget.sharedCapture;
+    final id = shared?.frameId;
+    if (id != _sharedTunerFrameId) {
+      _sharedTunerFrameId = id;
+      _tunerCheck = null;
+      if (id != null) {
+        _status = 'Using ${shared!.title} — Check boxes again before Save.';
+      }
+    }
+    if (widget.only != 'tuner' && id != _sharedTooltipFrameId) {
+      _sharedTooltipFrameId = id;
+      if (shared != null) {
+        _tooltipFrame = shared.frame;
+        _tooltipDisplay = shared.display;
+        _tooltipPlaced = null;
+        _status =
+            'Reused ${shared.title} — visual offset only; Capture hover for the live anchor.';
+      }
+    }
+  }
 
   /// The tuner surface the next gesture writes: grade → attr → remaining (v2's order), plus the
   /// optional spring POINT.
@@ -548,6 +607,14 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
       _status = null;
       _failed = false;
     });
+    if (widget.useSharedCapture) {
+      try {
+        await widget.onCapture?.call();
+      } finally {
+        if (mounted) setState(() => _busy = false);
+      }
+      return;
+    }
     final result = await withHiddenWindow(
       widget.host,
       () => widget.model.captureFrame(allowCovered: true),
@@ -568,7 +635,7 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
   }
 
   Future<void> _checkTuner() async {
-    final capture = _tunerCapture;
+    final capture = _effectiveTunerCapture;
     if (capture == null) {
       setState(() {
         _failed = true;
@@ -599,7 +666,7 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
   }
 
   Future<void> _saveTuner() async {
-    final capture = _tunerCapture;
+    final capture = _effectiveTunerCapture;
     if (capture == null) {
       setState(() {
         _failed = true;
@@ -963,7 +1030,8 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
         if (_tunerBoxMark(name) != null) name,
     ];
     final allDrawn = drawn.length == 3;
-    final captured = _tunerCapture != null;
+    final tunerCapture = _effectiveTunerCapture;
+    final captured = tunerCapture != null;
     final controls = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1022,7 +1090,12 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
             ),
             OutlinedButton.icon(
               key: const ValueKey('session-tuner-save'),
-              onPressed: _busy ? null : _saveTuner,
+              onPressed:
+                  _busy ||
+                      !captured ||
+                      (widget.useSharedCapture && _tunerCheck == null)
+                  ? null
+                  : _saveTuner,
               icon: const Icon(Icons.save_outlined, size: 16),
               label: const Text('Save tuner'),
             ),
@@ -1047,8 +1120,8 @@ class _SessionCalibrationsPanelState extends State<SessionCalibrationsPanel> {
     final picture = captured
         ? _sessionFrame(
             key: const ValueKey('session-tuner-frame'),
-            frame: _tunerCapture!.frame,
-            display: _tunerCapture!.display,
+            frame: tunerCapture.frame,
+            display: tunerCapture.display,
             mark: _tunerTarget == 'spring' ? _tunerMark() : null,
             markLabel: _tunerTarget == 'spring'
                 ? _tunerLabel()
