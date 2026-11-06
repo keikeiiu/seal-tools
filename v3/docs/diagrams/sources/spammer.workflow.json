@@ -1,0 +1,339 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Skill spammer — rotation loop",
+    "quality_profile": "showcase",
+    "output": "v3/docs/diagrams/flows/spammer-flow.html",
+    "repository": {
+      "url": "https://github.com/keikeiiu/seal-tools",
+      "provider": "github",
+      "revision": "45cd0a92e0a8eac098d0767fde22a62513facde6"
+    },
+    "viewBox": [
+      1100,
+      676
+    ]
+  },
+  "lanes": [
+    {
+      "id": "supervisor",
+      "label": "Supervisor / input owner"
+    },
+    {
+      "id": "decision",
+      "label": "Spammer decision half"
+    },
+    {
+      "id": "runner",
+      "label": "Runner + effects"
+    },
+    {
+      "id": "board",
+      "label": "Arduino board"
+    }
+  ],
+  "phases": [
+    {
+      "id": "gate",
+      "label": "Start gate",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "loop",
+      "label": "Tick loop",
+      "fromCol": 2,
+      "toCol": 4,
+      "variant": "emphasis"
+    }
+  ],
+  "groups": [
+    {
+      "id": "yield_gate",
+      "label": "Yield gate",
+      "lane": "supervisor",
+      "fromCol": 2,
+      "toCol": 2,
+      "variant": "emphasis"
+    }
+  ],
+  "mainPath": [
+    "start",
+    "plan",
+    "tick",
+    "yield",
+    "walk",
+    "tap",
+    "exit"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "lane": "supervisor",
+      "col": 0,
+      "type": "backend",
+      "label": "Start / toggle",
+      "sublabel": "engaged = running",
+      "tag": "no auto-stop",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 21,
+          "end_line": 22
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/supervisor.rs",
+          "line": 20,
+          "end_line": 37
+        }
+      ]
+    },
+    {
+      "id": "plan",
+      "lane": "decision",
+      "col": 1,
+      "type": "backend",
+      "label": "Plan rotation",
+      "sublabel": "preset + cooldowns",
+      "tag": "refuse missing",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/spammer.rs",
+          "line": 74,
+          "end_line": 97
+        },
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/spammer.rs",
+          "line": 124,
+          "end_line": 157
+        }
+      ]
+    },
+    {
+      "id": "tick",
+      "lane": "decision",
+      "col": 2,
+      "type": "backend",
+      "label": "Tick",
+      "sublabel": "every 20 ms",
+      "tag": "due keys",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/spammer.rs",
+          "line": 70,
+          "end_line": 72
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/spammer.rs",
+          "line": 241,
+          "end_line": 273
+        }
+      ]
+    },
+    {
+      "id": "yield",
+      "lane": "supervisor",
+      "col": 2,
+      "type": "security",
+      "label": "Yield gate",
+      "sublabel": "one holder at a time",
+      "tag": "spammer only",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/supervisor.rs",
+          "line": 560,
+          "end_line": 564
+        },
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 55,
+          "end_line": 60
+        }
+      ]
+    },
+    {
+      "id": "walk",
+      "lane": "decision",
+      "col": 3,
+      "type": "backend",
+      "label": "Combo / single",
+      "sublabel": "one press per tick",
+      "tag": "atomic combos",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/spammer.rs",
+          "line": 218,
+          "end_line": 253
+        },
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/spammer.rs",
+          "line": 370,
+          "end_line": 424
+        }
+      ]
+    },
+    {
+      "id": "tap",
+      "lane": "runner",
+      "col": 3,
+      "type": "backend",
+      "label": "Tap keys",
+      "sublabel": "K / k grammar",
+      "tag": "serial write",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/spammer.rs",
+          "line": 241,
+          "end_line": 273
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/effects.rs",
+          "line": 145,
+          "end_line": 151
+        }
+      ]
+    },
+    {
+      "id": "board",
+      "lane": "board",
+      "col": 3,
+      "type": "messagebus",
+      "label": "Arduino HID",
+      "sublabel": "key lines",
+      "tag": "serial port",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/effects.rs",
+          "line": 98,
+          "end_line": 102
+        },
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 58,
+          "end_line": 60
+        }
+      ]
+    },
+    {
+      "id": "exit",
+      "lane": "supervisor",
+      "col": 4,
+      "type": "security",
+      "label": "Exit",
+      "sublabel": "quit or dead port",
+      "tag": "stand down too",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/supervisor.rs",
+          "line": 465,
+          "end_line": 478
+        },
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 55,
+          "end_line": 60
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "start-plan",
+      "from": "start",
+      "to": "plan",
+      "label": "tool.start",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "plan-tick",
+      "from": "plan",
+      "to": "tick",
+      "role": "main"
+    },
+    {
+      "id": "tick-yield",
+      "from": "tick",
+      "to": "yield",
+      "label": "stand down?",
+      "role": "main",
+      "variant": "security"
+    },
+    {
+      "id": "yield-walk",
+      "from": "yield",
+      "to": "walk",
+      "label": "resume",
+      "role": "main"
+    },
+    {
+      "id": "walk-tap",
+      "from": "walk",
+      "to": "tap",
+      "label": "press",
+      "role": "main"
+    },
+    {
+      "id": "tap-board",
+      "from": "tap",
+      "to": "board",
+      "label": "key line",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "id": "yield-exit",
+      "from": "yield",
+      "to": "exit",
+      "label": "stand down / quit",
+      "role": "branch",
+      "variant": "security"
+    },
+    {
+      "id": "tap-exit",
+      "from": "tap",
+      "to": "exit",
+      "label": "write error",
+      "role": "error",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Decision half",
+      "items": [
+        "The plan is derived once from the active preset",
+        "A missing preset or key refuses the start",
+        "tick(now) returns presses; no clock or port inside"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Runner",
+      "items": [
+        "20 ms tick; one press per tick under priority",
+        "K / k writes go through BoardEffects",
+        "A write error ends the run as the runner's error"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "One owner",
+      "items": [
+        "Only the spammer answers should_stand_down",
+        "A second start is refused while the game is held",
+        "Resume re-applies the opening stagger"
+      ]
+    }
+  ]
+}

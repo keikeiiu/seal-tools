@@ -1,0 +1,139 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Seal Tools v3 - tool run flow",
+    "quality_profile": "showcase",
+    "output": "v3/docs/diagrams/flows/suite-flow.html",
+    "repository": {
+      "url": "https://github.com/keikeiiu/seal-tools",
+      "provider": "github",
+      "revision": "45cd0a92e0a8eac098d0767fde22a62513facde6"
+    }
+  },
+  "lanes": [
+    { "id": "shell", "label": "Flutter shell" },
+    { "id": "core", "label": "seal-core supervisor" },
+    { "id": "tools", "label": "Tool decision + runner" },
+    { "id": "io", "label": "Game and board" }
+  ],
+  "phases": [
+    { "id": "start", "label": "Configure + start", "fromCol": 0, "toCol": 1 },
+    { "id": "run", "label": "One tool at a time", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "effect", "label": "Effects", "fromCol": 4, "toCol": 4, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "start_gate", "label": "Start gate", "lane": "core", "fromCol": 1, "toCol": 1, "variant": "emphasis" },
+    { "id": "actuation", "label": "Owns the board", "lane": "tools", "fromCol": 3, "toCol": 4, "variant": "dashed" }
+  ],
+  "mainPath": ["shell", "protocol", "supervisor", "decide", "effects", "board"],
+  "nodes": [
+    {
+      "id": "shell",
+      "lane": "shell",
+      "col": 0,
+      "type": "frontend",
+      "label": "Flutter shell",
+      "sublabel": "cards + settings",
+      "width": 140,
+      "sources": [{ "path": "v3/shell/lib/ui/shell_page.dart", "line": 1, "end_line": 45 }]
+    },
+    {
+      "id": "protocol",
+      "lane": "shell",
+      "col": 1,
+      "type": "frontend",
+      "label": "Protocol client",
+      "sublabel": "JSON over stdio",
+      "width": 140,
+      "sources": [{ "path": "v3/shell/lib/app/shell_model.dart", "line": 1, "end_line": 60 }]
+    },
+    {
+      "id": "supervisor",
+      "lane": "core",
+      "col": 1,
+      "type": "backend",
+      "label": "Tool supervisor",
+      "sublabel": "one input owner",
+      "width": 140,
+      "sources": [{ "path": "v3/core/crates/seal-core/src/supervisor.rs", "line": 1, "end_line": 50 }]
+    },
+    {
+      "id": "config",
+      "lane": "core",
+      "col": 0,
+      "type": "database",
+      "label": "Config",
+      "sublabel": "setup + machine",
+      "width": 140,
+      "sources": [{ "path": "v3/core/crates/seal-config/src/store.rs", "line": 1, "end_line": 45 }]
+    },
+    {
+      "id": "decide",
+      "lane": "tools",
+      "col": 2,
+      "type": "backend",
+      "label": "Decision half",
+      "sublabel": "sealed plan",
+      "width": 140,
+      "sources": [{ "path": "v3/docs/spec/TOOL-FLOWS.md", "line": 17, "end_line": 35 }]
+    },
+    {
+      "id": "effects",
+      "lane": "tools",
+      "col": 3,
+      "type": "backend",
+      "label": "Runner",
+      "sublabel": "clicks, keys, waits",
+      "width": 140,
+      "sources": [{ "path": "v3/docs/spec/TOOL-FLOWS.md", "line": 17, "end_line": 35 }]
+    },
+    {
+      "id": "game",
+      "lane": "io",
+      "col": 4,
+      "type": "external",
+      "label": "Game client",
+      "sublabel": "gated reads",
+      "width": 140,
+      "sources": [{ "path": "v3/core/crates/seal-core/src/win.rs", "line": 1, "end_line": 35 }]
+    },
+    {
+      "id": "board",
+      "lane": "io",
+      "col": 3,
+      "type": "messagebus",
+      "label": "Arduino HID",
+      "sublabel": "keys + clicks",
+      "width": 140,
+      "sources": [{ "path": "arduino/seal_mouse/seal_mouse.ino", "line": 1, "end_line": 55 }]
+    }
+  ],
+  "edges": [
+    { "id": "shell-protocol", "from": "shell", "to": "protocol", "role": "main", "variant": "emphasis" },
+    { "id": "protocol-supervisor", "from": "protocol", "to": "supervisor", "label": "tool.start / stop", "role": "main", "variant": "emphasis" },
+    { "id": "config-supervisor", "from": "config", "to": "supervisor", "label": "merged config", "role": "branch", "variant": "dashed" },
+    { "id": "supervisor-decide", "from": "supervisor", "to": "decide", "label": "start plan", "role": "main" },
+    { "id": "decide-effects", "from": "decide", "to": "effects", "label": "next decision", "role": "main" },
+    { "id": "effects-game", "from": "effects", "to": "game", "label": "capture / read", "role": "branch", "variant": "dashed" },
+    { "id": "effects-board", "from": "effects", "to": "board", "label": "D / P / U / wheel", "role": "main", "variant": "emphasis" },
+    { "id": "supervisor-protocol", "from": "supervisor", "to": "protocol", "label": "state + log events", "role": "return", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "One owner at a time",
+      "items": ["The supervisor grants one input owner", "A second start refuses while it is held"]
+    },
+    {
+      "dot": "amber",
+      "title": "Decision vs effects",
+      "items": ["The decision half returns decisions", "The runner turns them into board or read effects"]
+    },
+    {
+      "dot": "rose",
+      "title": "Every exit is reported",
+      "items": ["Stop and Stop-key cancel through protocol", "tool.finished carries the reason and summary"]
+    }
+  ]
+}

@@ -1,0 +1,201 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Seal Tools v3 - Buy: one counted pass",
+    "quality_profile": "showcase",
+    "output": "v3/docs/diagrams/flows/buy-flow.html",
+    "repository": {
+      "url": "https://github.com/keikeiiu/seal-tools",
+      "provider": "github",
+      "revision": "45cd0a92e0a8eac098d0767fde22a62513facde6"
+    }
+  },
+  "lanes": [
+    { "id": "shell", "label": "Flutter shell" },
+    { "id": "core", "label": "seal-core plan + gate" },
+    { "id": "run", "label": "Runner + effects" },
+    { "id": "io", "label": "Game + board" }
+  ],
+  "phases": [
+    { "id": "arm", "label": "Start + gate", "fromCol": 0, "toCol": 1 },
+    { "id": "seal", "label": "Buy plan", "fromCol": 2, "toCol": 2, "variant": "emphasis" },
+    { "id": "act", "label": "Effects", "fromCol": 3, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "one_pass", "label": "Transaction block", "lane": "run", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["card", "start", "gate", "plan", "focus", "txn", "done"],
+  "nodes": [
+    {
+      "id": "card",
+      "lane": "shell",
+      "col": 0,
+      "type": "frontend",
+      "label": "Buy card",
+      "sublabel": "preset + count",
+      "width": 140,
+      "sources": [
+        { "path": "v3/shell/lib/ui/card_grid.dart", "line": 224, "end_line": 249 },
+        { "path": "v3/docs/spec/TOOL-FLOWS.md", "line": 133, "end_line": 137 }
+      ]
+    },
+    {
+      "id": "start",
+      "lane": "shell",
+      "col": 1,
+      "type": "frontend",
+      "label": "tool.start",
+      "sublabel": "preset, count",
+      "width": 140,
+      "sources": [
+        { "path": "v3/shell/lib/app/shell_model.dart", "line": 544, "end_line": 557 },
+        { "path": "v3/core/crates/seal-core/src/dispatch.rs", "line": 1003, "end_line": 1010 }
+      ]
+    },
+    {
+      "id": "gate",
+      "lane": "core",
+      "col": 1,
+      "type": "security",
+      "label": "Arg gate",
+      "sublabel": "types, count 1+",
+      "width": 140,
+      "sources": [
+        { "path": "v3/core/crates/seal-core/src/dispatch.rs", "line": 1003, "end_line": 1010 },
+        { "path": "v3/core/crates/seal-core/src/dispatch.rs", "line": 1129, "end_line": 1152 }
+      ]
+    },
+    {
+      "id": "refused",
+      "lane": "shell",
+      "col": 2,
+      "type": "security",
+      "label": "Refused",
+      "sublabel": "no click made",
+      "width": 140,
+      "sources": [
+        { "path": "v3/docs/spec/TOOL-FLOWS.md", "line": 119, "end_line": 131 },
+        { "path": "v3/core/crates/seal-core/src/shop.rs", "line": 136, "end_line": 138 },
+        { "path": "v3/shell/lib/app/shell_model.dart", "line": 538, "end_line": 541 }
+      ]
+    },
+    {
+      "id": "plan",
+      "lane": "core",
+      "col": 2,
+      "type": "backend",
+      "label": "Buy plan",
+      "sublabel": "ordered, or refuse",
+      "width": 140,
+      "sources": [
+        { "path": "v3/core/crates/seal-core/src/shop.rs", "line": 131, "end_line": 146 },
+        { "path": "v3/docs/spec/TOOL-FLOWS.md", "line": 105, "end_line": 110 },
+        { "path": "v3/docs/spec/TOOL-FLOWS.md", "line": 119, "end_line": 131 }
+      ]
+    },
+    {
+      "id": "focus",
+      "lane": "run",
+      "col": 3,
+      "type": "backend",
+      "label": "Focus + scroll",
+      "sublabel": "click, then notch",
+      "width": 140,
+      "sources": [
+        { "path": "v3/docs/spec/TOOL-FLOWS.md", "line": 105, "end_line": 110 },
+        { "path": "v3/core/crates/seal-core/src/effects.rs", "line": 134, "end_line": 137 },
+        { "path": "v3/core/crates/seal-core/src/effects.rs", "line": 198, "end_line": 207 }
+      ]
+    },
+    {
+      "id": "txn",
+      "lane": "run",
+      "col": 4,
+      "type": "backend",
+      "label": "Buy x count",
+      "sublabel": "click, MAX, Enter",
+      "width": 140,
+      "sources": [
+        { "path": "v3/docs/spec/TOOL-FLOWS.md", "line": 107, "end_line": 110 },
+        { "path": "v3/core/crates/seal-core/src/shop.rs", "line": 202, "end_line": 222 }
+      ]
+    },
+    {
+      "id": "done",
+      "lane": "run",
+      "col": 5,
+      "type": "backend",
+      "label": "One pass",
+      "sublabel": "then stop",
+      "width": 140,
+      "sources": [
+        { "path": "v3/docs/spec/TOOL-FLOWS.md", "line": 102, "end_line": 103 },
+        { "path": "v3/core/crates/seal-core/src/shop.rs", "line": 290, "end_line": 293 }
+      ]
+    },
+    {
+      "id": "game",
+      "lane": "io",
+      "col": 3,
+      "type": "external",
+      "label": "Game window",
+      "sublabel": "focused + aimed",
+      "width": 140,
+      "sources": [
+        { "path": "v3/core/crates/seal-core/src/registry.rs", "line": 156, "end_line": 162 },
+        { "path": "v3/core/crates/seal-core/src/effects.rs", "line": 104, "end_line": 126 }
+      ]
+    },
+    {
+      "id": "board",
+      "lane": "io",
+      "col": 4,
+      "type": "messagebus",
+      "label": "Arduino HID",
+      "sublabel": "clicks + keys",
+      "width": 140,
+      "sources": [
+        { "path": "v3/core/crates/seal-core/src/effects.rs", "line": 98, "end_line": 102 },
+        { "path": "v3/core/crates/seal-core/src/effects.rs", "line": 161, "end_line": 175 }
+      ]
+    }
+  ],
+  "edges": [
+    { "id": "e_card_start", "from": "card", "to": "start", "role": "main", "variant": "emphasis" },
+    { "id": "e_start_gate", "from": "start", "to": "gate", "role": "main" },
+    { "id": "e_gate_plan", "from": "gate", "to": "plan", "label": "validated", "role": "main" },
+    { "id": "e_plan_refused", "from": "plan", "to": "refused", "role": "error", "variant": "security" },
+    { "id": "e_plan_focus", "from": "plan", "to": "focus", "label": "step 1..n", "role": "main" },
+    { "id": "e_focus_txn", "from": "focus", "to": "txn", "label": "count times", "role": "main" },
+    { "id": "e_txn_done", "from": "txn", "to": "done", "label": "Bought {n}x", "role": "main", "variant": "emphasis" },
+    { "id": "e_focus_game", "from": "focus", "to": "game", "label": "focus click", "role": "branch", "variant": "dashed" },
+    { "id": "e_txn_board", "from": "txn", "to": "board", "label": "clicks, Enter", "role": "branch", "variant": "emphasis" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Plan before effects",
+      "items": [
+        "ShopPlan::buy orders focus, one scroll and the transaction block",
+        "ShopGeometry derives every row centre from the calibrated list"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Refusals, verbatim",
+      "items": [
+        "No preset, unknown preset, uncalibrated grid, rows, MAX or focus",
+        "A buy count below 1 is refused, not clamped"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "One pass, then stop",
+      "items": [
+        "A counted job, not a loop: it ends by itself",
+        "Bought {count}x '{name}'. is the done line; tool.stop cancels"
+      ]
+    }
+  ]
+}

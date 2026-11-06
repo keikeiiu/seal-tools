@@ -1,0 +1,361 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Quest hand-in — plan, guard, replay",
+    "quality_profile": "showcase",
+    "output": "v3/docs/diagrams/flows/quest-flow.html",
+    "repository": {
+      "url": "https://github.com/keikeiiu/seal-tools",
+      "provider": "github",
+      "revision": "45cd0a92e0a8eac098d0767fde22a62513facde6"
+    },
+    "viewBox": [
+      1100,
+      674
+    ]
+  },
+  "lanes": [
+    {
+      "id": "supervisor",
+      "label": "Supervisor / input owner"
+    },
+    {
+      "id": "decision",
+      "label": "Quest decision half"
+    },
+    {
+      "id": "runner",
+      "label": "Quest runner"
+    },
+    {
+      "id": "board",
+      "label": "Arduino board"
+    }
+  ],
+  "phases": [
+    {
+      "id": "plan",
+      "label": "Plan gate",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "replay",
+      "label": "Replay loop",
+      "fromCol": 2,
+      "toCol": 4,
+      "variant": "emphasis"
+    }
+  ],
+  "groups": [
+    {
+      "id": "send_path",
+      "label": "Bare commands",
+      "lane": "board",
+      "fromCol": 3,
+      "toCol": 3,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "start",
+    "validate",
+    "position",
+    "guard",
+    "replay",
+    "verdict",
+    "done"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "lane": "supervisor",
+      "col": 0,
+      "type": "backend",
+      "label": "Start quest",
+      "sublabel": "one input owner",
+      "tag": "no reads",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 21,
+          "end_line": 22
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/supervisor.rs",
+          "line": 20,
+          "end_line": 37
+        }
+      ]
+    },
+    {
+      "id": "validate",
+      "lane": "decision",
+      "col": 1,
+      "type": "security",
+      "label": "Validate plan",
+      "sublabel": "no clicks yet",
+      "tag": "every step",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/quest.rs",
+          "line": 118,
+          "end_line": 140
+        },
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/quest.rs",
+          "line": 262,
+          "end_line": 280
+        }
+      ]
+    },
+    {
+      "id": "position",
+      "lane": "runner",
+      "col": 2,
+      "type": "backend",
+      "label": "Positioning",
+      "sublabel": "countdown",
+      "tag": "move the mouse",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/quest.rs",
+          "line": 256,
+          "end_line": 269
+        },
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/quest.rs",
+          "line": 92,
+          "end_line": 116
+        }
+      ]
+    },
+    {
+      "id": "replay",
+      "lane": "runner",
+      "col": 3,
+      "type": "backend",
+      "label": "Replay steps",
+      "sublabel": "click · key · wait",
+      "tag": "five commands",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/quest.rs",
+          "line": 280,
+          "end_line": 329
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/quest.rs",
+          "line": 87,
+          "end_line": 135
+        }
+      ]
+    },
+    {
+      "id": "verdict",
+      "lane": "decision",
+      "col": 4,
+      "type": "backend",
+      "label": "Loop verdict",
+      "sublabel": "loops left?",
+      "tag": "self-end",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/quest.rs",
+          "line": 280,
+          "end_line": 296
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/quest.rs",
+          "line": 330,
+          "end_line": 335
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "lane": "supervisor",
+      "col": 4,
+      "type": "backend",
+      "label": "Done",
+      "sublabel": "DONE — n loops",
+      "tag": "releases game",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/quest.rs",
+          "line": 78,
+          "end_line": 90
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/quest.rs",
+          "line": 282,
+          "end_line": 285
+        }
+      ]
+    },
+    {
+      "id": "board",
+      "lane": "board",
+      "col": 3,
+      "type": "messagebus",
+      "label": "Board only",
+      "sublabel": "no capture or OCR",
+      "tag": "bare commands",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/quest.rs",
+          "line": 1,
+          "end_line": 16
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/quest.rs",
+          "line": 87,
+          "end_line": 135
+        }
+      ]
+    },
+    {
+      "id": "guard",
+      "lane": "decision",
+      "col": 3,
+      "type": "security",
+      "label": "Cursor guard",
+      "sublabel": "drift stop",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/quest.rs",
+          "line": 344,
+          "end_line": 383
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/quest.rs",
+          "line": 264,
+          "end_line": 279
+        }
+      ]
+    },
+    {
+      "id": "stop",
+      "lane": "supervisor",
+      "col": 3,
+      "type": "security",
+      "label": "Guard stop",
+      "sublabel": "mouse moved",
+      "tag": "loop named",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/quest.rs",
+          "line": 364,
+          "end_line": 401
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/quest.rs",
+          "line": 202,
+          "end_line": 224
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "start-validate",
+      "from": "start",
+      "to": "validate",
+      "label": "tool.start",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "validate-position",
+      "from": "validate",
+      "to": "position",
+      "label": "plan holds",
+      "role": "main"
+    },
+    {
+      "id": "replay-board",
+      "from": "replay",
+      "to": "board",
+      "label": "click / key / enter",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "id": "verdict-done",
+      "from": "verdict",
+      "to": "done",
+      "label": "loops done",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "replay-verdict",
+      "from": "replay",
+      "to": "verdict",
+      "label": "pass done",
+      "role": "main"
+    },
+    {
+      "id": "position-guard",
+      "from": "position",
+      "to": "guard",
+      "label": "countdown ends",
+      "role": "main"
+    },
+    {
+      "id": "guard-replay",
+      "from": "guard",
+      "to": "replay",
+      "label": "cursor still",
+      "role": "main"
+    },
+    {
+      "id": "guard-stop",
+      "from": "guard",
+      "to": "stop",
+      "label": "drift / unreadable",
+      "role": "error",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Decision half",
+      "items": [
+        "Choice order: card sequence, card flow, active flow",
+        "Every step is checked before the first click",
+        "done_message names the flow and its loop count"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Reads nothing",
+      "items": [
+        "No capture, no OCR, no window lookup",
+        "Positioning is the only positioning",
+        "The cursor guard is the only side-effect check",
+        "A wrong flow only the player can notice"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Runner",
+      "items": [
+        "Positioning counts once, then the guard reference",
+        "The guard is checked before every send",
+        "Five bare commands; a wait step sends nothing"
+      ]
+    }
+  ]
+}

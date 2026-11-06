@@ -1,0 +1,379 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Seal Tools v3 — Magic Tuner run flow",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "output": "v3/docs/diagrams/flows/tuner-flow.html",
+    "repository": {
+      "url": "https://github.com/keikeiiu/seal-tools",
+      "provider": "github",
+      "revision": "45cd0a92e0a8eac098d0767fde22a62513facde6"
+    },
+    "viewBox": [
+      1240,
+      776
+    ]
+  },
+  "lanes": [
+    {
+      "id": "shell",
+      "label": "Flutter shell"
+    },
+    {
+      "id": "effects",
+      "label": "Board + game"
+    },
+    {
+      "id": "core",
+      "label": "seal-core runner"
+    },
+    {
+      "id": "domain",
+      "label": "seal-domain decision"
+    },
+    {
+      "id": "exits",
+      "label": "Stop paths",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "start",
+    "attempt",
+    "click",
+    "read",
+    "judge",
+    "success"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "lane": "shell",
+      "col": 1,
+      "type": "frontend",
+      "label": "Start tuner",
+      "sublabel": "countdown on card",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 68,
+          "end_line": 73
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/tuner.rs",
+          "line": 329,
+          "end_line": 339
+        }
+      ]
+    },
+    {
+      "id": "attempt",
+      "lane": "core",
+      "col": 1,
+      "type": "backend",
+      "label": "Countdown + guard",
+      "sublabel": "5 s, then drift check",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/tuner.rs",
+          "line": 377,
+          "end_line": 388
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/tuner.rs",
+          "line": 399,
+          "end_line": 433
+        },
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/tuner.rs",
+          "line": 37,
+          "end_line": 37
+        }
+      ]
+    },
+    {
+      "id": "click",
+      "lane": "core",
+      "col": 2,
+      "type": "backend",
+      "label": "Click + Enter",
+      "sublabel": "bare C / E",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/tuner.rs",
+          "line": 434,
+          "end_line": 449
+        }
+      ]
+    },
+    {
+      "id": "read",
+      "lane": "core",
+      "col": 3,
+      "type": "backend",
+      "label": "OCR read",
+      "sublabel": "grade, attrs, left",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/tuner.rs",
+          "line": 450,
+          "end_line": 461
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/tuner.rs",
+          "line": 591,
+          "end_line": 617
+        },
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/tuner.rs",
+          "line": 63,
+          "end_line": 72
+        }
+      ]
+    },
+    {
+      "id": "judge",
+      "lane": "domain",
+      "col": 3,
+      "type": "backend",
+      "label": "Decide",
+      "sublabel": "grade, filter, budget",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/tuner.rs",
+          "line": 243,
+          "end_line": 329
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/tuner.rs",
+          "line": 460,
+          "end_line": 472
+        }
+      ]
+    },
+    {
+      "id": "success",
+      "lane": "domain",
+      "col": 4,
+      "type": "backend",
+      "label": "Success",
+      "sublabel": "REACHED + filter",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/tuner.rs",
+          "line": 297,
+          "end_line": 309
+        },
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 79,
+          "end_line": 81
+        }
+      ]
+    },
+    {
+      "id": "halt",
+      "lane": "exits",
+      "col": 3,
+      "type": "security",
+      "label": "Stop reason",
+      "sublabel": "OOS, x3, max",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/tuner.rs",
+          "line": 310,
+          "end_line": 320
+        },
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 82,
+          "end_line": 84
+        }
+      ]
+    },
+    {
+      "id": "guardstop",
+      "lane": "exits",
+      "col": 1,
+      "type": "security",
+      "label": "Guard stop",
+      "sublabel": "moved / drifting",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/tuner.rs",
+          "line": 386,
+          "end_line": 415
+        },
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 86,
+          "end_line": 87
+        }
+      ]
+    },
+    {
+      "id": "hid",
+      "lane": "effects",
+      "col": 2,
+      "type": "messagebus",
+      "label": "Arduino HID",
+      "sublabel": "C / E writes",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 96,
+          "end_line": 98
+        }
+      ]
+    },
+    {
+      "id": "panel",
+      "lane": "effects",
+      "col": 3,
+      "type": "external",
+      "label": "Game panel",
+      "sublabel": "OCR region",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/tuner.rs",
+          "line": 669,
+          "end_line": 676
+        },
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 92,
+          "end_line": 95
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "start-attempt",
+      "from": "start",
+      "to": "attempt",
+      "label": "tool.start",
+      "role": "main",
+      "variant": "emphasis",
+      "fromSide": "bottom"
+    },
+    {
+      "id": "attempt-click",
+      "from": "attempt",
+      "to": "click",
+      "role": "main"
+    },
+    {
+      "id": "click-read",
+      "from": "click",
+      "to": "read",
+      "role": "main"
+    },
+    {
+      "id": "read-judge",
+      "from": "read",
+      "to": "judge",
+      "label": "TunerRead",
+      "role": "main",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "judge-success",
+      "from": "judge",
+      "to": "success",
+      "label": "match + filter",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "judge-halt",
+      "from": "judge",
+      "to": "halt",
+      "label": "exhausted",
+      "role": "error",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "judge-retry",
+      "from": "judge",
+      "to": "click",
+      "label": "Retry",
+      "role": "return",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "bottom"
+    },
+    {
+      "id": "attempt-guard",
+      "from": "attempt",
+      "to": "guardstop",
+      "label": "drift",
+      "role": "error",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "click-hid",
+      "from": "click",
+      "to": "hid",
+      "label": "board writes",
+      "role": "branch",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "read-panel",
+      "from": "read",
+      "to": "panel",
+      "label": "capture",
+      "role": "branch",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Decision vs effects",
+      "items": [
+        "seal-domain returns Retry or Stop(reason) — never an input",
+        "seal-core turns that answer into clicks, keys and captures"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Every stop is a line",
+      "items": [
+        "Match, out of springs, three repeats and the retry budget each carry their own wording",
+        "A guard stop names the drift instead of clicking on"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Reads must confirm",
+      "items": [
+        "A partial read is re-captured up to tuner.ocr_retries",
+        "An unconfirmed read stops rather than counting as a repeat"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,410 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Seal Tools v3 — Gem Composer run flow",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "output": "v3/docs/diagrams/flows/gem-flow.html",
+    "repository": {
+      "url": "https://github.com/keikeiiu/seal-tools",
+      "provider": "github",
+      "revision": "45cd0a92e0a8eac098d0767fde22a62513facde6"
+    },
+    "viewBox": [
+      1240,
+      776
+    ]
+  },
+  "lanes": [
+    {
+      "id": "shell",
+      "label": "Flutter shell"
+    },
+    {
+      "id": "effects",
+      "label": "Board + result box"
+    },
+    {
+      "id": "core",
+      "label": "seal-core runner"
+    },
+    {
+      "id": "domain",
+      "label": "seal-domain composer"
+    },
+    {
+      "id": "exits",
+      "label": "Stop paths",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "start",
+    "select",
+    "combine",
+    "read",
+    "finish",
+    "advance",
+    "done"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "lane": "shell",
+      "col": 1,
+      "type": "frontend",
+      "label": "Start composer",
+      "sublabel": "grades + empty mode",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 141,
+          "end_line": 146
+        },
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/gem.rs",
+          "line": 402,
+          "end_line": 430
+        }
+      ]
+    },
+    {
+      "id": "select",
+      "lane": "core",
+      "col": 1,
+      "type": "backend",
+      "label": "Select turn",
+      "sublabel": "grade → Register",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/gem.rs",
+          "line": 623,
+          "end_line": 631
+        },
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/gem.rs",
+          "line": 462,
+          "end_line": 485
+        }
+      ]
+    },
+    {
+      "id": "combine",
+      "lane": "core",
+      "col": 2,
+      "type": "backend",
+      "label": "Combine",
+      "sublabel": "count, then click",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/gem.rs",
+          "line": 632,
+          "end_line": 644
+        },
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/gem.rs",
+          "line": 487,
+          "end_line": 509
+        }
+      ]
+    },
+    {
+      "id": "read",
+      "lane": "core",
+      "col": 3,
+      "type": "backend",
+      "label": "Read result",
+      "sublabel": "crop diff vs empty",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/gem.rs",
+          "line": 645,
+          "end_line": 657
+        },
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/gem.rs",
+          "line": 322,
+          "end_line": 335
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/gem.rs",
+          "line": 355,
+          "end_line": 369
+        }
+      ]
+    },
+    {
+      "id": "finish",
+      "lane": "domain",
+      "col": 3,
+      "type": "backend",
+      "label": "Finish turn",
+      "sublabel": "streak gate",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/gem.rs",
+          "line": 521,
+          "end_line": 560
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/gem.rs",
+          "line": 636,
+          "end_line": 641
+        }
+      ]
+    },
+    {
+      "id": "advance",
+      "lane": "domain",
+      "col": 4,
+      "type": "backend",
+      "label": "Advance grade",
+      "sublabel": "N → G → DG",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/gem.rs",
+          "line": 577,
+          "end_line": 632
+        },
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 147,
+          "end_line": 149
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "lane": "domain",
+      "col": 5,
+      "type": "backend",
+      "label": "All grades done",
+      "sublabel": "composer stopped",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/gem.rs",
+          "line": 584,
+          "end_line": 592
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/gem.rs",
+          "line": 619,
+          "end_line": 621
+        }
+      ]
+    },
+    {
+      "id": "routfail",
+      "lane": "exits",
+      "col": 1,
+      "type": "security",
+      "label": "Route failure",
+      "sublabel": "unknown / unsaved",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/gem.rs",
+          "line": 674,
+          "end_line": 711
+        },
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/gem.rs",
+          "line": 723,
+          "end_line": 733
+        }
+      ]
+    },
+    {
+      "id": "stopmode",
+      "lane": "exits",
+      "col": 3,
+      "type": "security",
+      "label": "empty_mode: stop",
+      "sublabel": "no read, no advance",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/gem.rs",
+          "line": 450,
+          "end_line": 460
+        },
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 166,
+          "end_line": 168
+        }
+      ]
+    },
+    {
+      "id": "hid",
+      "lane": "effects",
+      "col": 2,
+      "type": "messagebus",
+      "label": "Arduino HID",
+      "sublabel": "moves + clicks",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/gem.rs",
+          "line": 572,
+          "end_line": 580
+        },
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 168,
+          "end_line": 170
+        }
+      ]
+    },
+    {
+      "id": "panel",
+      "lane": "effects",
+      "col": 3,
+      "type": "external",
+      "label": "Result box",
+      "sublabel": "calibrated crop",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/gem.rs",
+          "line": 430,
+          "end_line": 463
+        },
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 150,
+          "end_line": 152
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "start-select",
+      "from": "start",
+      "to": "select",
+      "label": "tool.start",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "select-combine",
+      "from": "select",
+      "to": "combine",
+      "label": "GemTurn",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "combine-read",
+      "from": "combine",
+      "to": "read",
+      "role": "main"
+    },
+    {
+      "id": "read-finish",
+      "from": "read",
+      "to": "finish",
+      "label": "empty?",
+      "role": "main"
+    },
+    {
+      "id": "finish-advance",
+      "from": "finish",
+      "to": "advance",
+      "label": "streak hit",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "advance-done",
+      "from": "advance",
+      "to": "done",
+      "label": "last grade",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "next-cycle",
+      "from": "finish",
+      "to": "combine",
+      "label": "next cycle",
+      "role": "return",
+      "variant": "dashed"
+    },
+    {
+      "id": "select-routfail",
+      "from": "select",
+      "to": "routfail",
+      "label": "unknown route",
+      "role": "error",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "finish-stopmode",
+      "from": "finish",
+      "to": "stopmode",
+      "label": "no read",
+      "role": "error",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "combine-hid",
+      "from": "combine",
+      "to": "hid",
+      "label": "D / click",
+      "role": "branch",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "read-panel",
+      "from": "read",
+      "to": "panel",
+      "label": "crop",
+      "role": "branch",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "Plan, then effects",
+      "items": [
+        "seal-domain builds each turn as GemTurn step lists",
+        "seal-core drains them as place, click and wait decisions"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "The streak gate",
+      "items": [
+        "One empty read never advances a grade",
+        "empty_mode: stop never reads, so the grade never changes"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Refuse before clicking",
+      "items": [
+        "An unknown route or uncalibrated point stops the turn",
+        "Grade dots and resource slots use the same refusal"
+      ]
+    }
+  ]
+}

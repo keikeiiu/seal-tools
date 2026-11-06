@@ -1,0 +1,425 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Pet feeder — resident run",
+    "quality_profile": "showcase",
+    "output": "v3/docs/diagrams/flows/pet-flow.html",
+    "repository": {
+      "url": "https://github.com/keikeiiu/seal-tools",
+      "provider": "github",
+      "revision": "45cd0a92e0a8eac098d0767fde22a62513facde6"
+    }
+  },
+  "lanes": [
+    {
+      "id": "supervisor",
+      "label": "Supervisor / input owner"
+    },
+    {
+      "id": "decision",
+      "label": "Pet decision half"
+    },
+    {
+      "id": "runner",
+      "label": "Feeder loop"
+    },
+    {
+      "id": "io",
+      "label": "Game + board"
+    }
+  ],
+  "phases": [
+    {
+      "id": "gate",
+      "label": "Start gate",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "cycle",
+      "label": "Resident cycle",
+      "fromCol": 2,
+      "toCol": 5,
+      "variant": "emphasis"
+    }
+  ],
+  "groups": [
+    {
+      "id": "owner_gate",
+      "label": "One input owner",
+      "lane": "supervisor",
+      "fromCol": 1,
+      "toCol": 1,
+      "variant": "emphasis"
+    },
+    {
+      "id": "strikes",
+      "label": "Strikes + stop",
+      "lane": "decision",
+      "fromCol": 3,
+      "toCol": 5,
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "start",
+    "owner",
+    "ready",
+    "look",
+    "sched",
+    "visit",
+    "wait"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "lane": "supervisor",
+      "col": 0,
+      "type": "backend",
+      "label": "Start pet",
+      "sublabel": "resident tool",
+      "tag": "one holder",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 21,
+          "end_line": 23
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/supervisor.rs",
+          "line": 20,
+          "end_line": 37
+        }
+      ]
+    },
+    {
+      "id": "owner",
+      "lane": "supervisor",
+      "col": 1,
+      "type": "security",
+      "label": "Input owner",
+      "sublabel": "claim · defer · release",
+      "tag": "resident",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/pet.rs",
+          "line": 19,
+          "end_line": 28
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/pet.rs",
+          "line": 1432,
+          "end_line": 1451
+        }
+      ]
+    },
+    {
+      "id": "ready",
+      "lane": "decision",
+      "col": 1,
+      "type": "security",
+      "label": "Preflight",
+      "sublabel": "ready() gate",
+      "tag": "before any click",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/pet/decision.rs",
+          "line": 781,
+          "end_line": 886
+        },
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 242,
+          "end_line": 253
+        }
+      ]
+    },
+    {
+      "id": "look",
+      "lane": "runner",
+      "col": 2,
+      "type": "backend",
+      "label": "Read rows",
+      "sublabel": "slot · time · counts",
+      "tag": "one pass",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/pet.rs",
+          "line": 1542,
+          "end_line": 1560
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/pet.rs",
+          "line": 1726,
+          "end_line": 1755
+        }
+      ]
+    },
+    {
+      "id": "sched",
+      "lane": "decision",
+      "col": 2,
+      "type": "backend",
+      "label": "Schedule + veto",
+      "sublabel": "minutes from now",
+      "tag": "food seen only",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/pet/decision.rs",
+          "line": 320,
+          "end_line": 391
+        },
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/pet/decision.rs",
+          "line": 393,
+          "end_line": 449
+        }
+      ]
+    },
+    {
+      "id": "drop",
+      "lane": "decision",
+      "col": 3,
+      "type": "security",
+      "label": "3 strikes",
+      "sublabel": "drop row",
+      "tag": "run carries on",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/pet/decision.rs",
+          "line": 20,
+          "end_line": 27
+        },
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/pet/decision.rs",
+          "line": 548,
+          "end_line": 571
+        }
+      ]
+    },
+    {
+      "id": "visit",
+      "lane": "runner",
+      "col": 3,
+      "type": "backend",
+      "label": "Reload row",
+      "sublabel": "end · place · food",
+      "tag": "five steps",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/pet.rs",
+          "line": 1915,
+          "end_line": 1938
+        },
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 256,
+          "end_line": 258
+        }
+      ]
+    },
+    {
+      "id": "wait",
+      "lane": "runner",
+      "col": 4,
+      "type": "backend",
+      "label": "Wait next",
+      "sublabel": "release game",
+      "tag": "wakes to look",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/pet.rs",
+          "line": 2402,
+          "end_line": 2461
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/pet.rs",
+          "line": 10,
+          "end_line": 17
+        }
+      ]
+    },
+    {
+      "id": "stop",
+      "lane": "decision",
+      "col": 5,
+      "type": "security",
+      "label": "Stop",
+      "sublabel": "every row dropped",
+      "tag": "error",
+      "width": 166,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/pet.rs",
+          "line": 2406,
+          "end_line": 2415
+        },
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/pet/decision.rs",
+          "line": 1033,
+          "end_line": 1037
+        }
+      ]
+    },
+    {
+      "id": "game",
+      "lane": "io",
+      "col": 2,
+      "type": "external",
+      "label": "Game + OCR",
+      "sublabel": "row lines · counts",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/pet.rs",
+          "line": 604,
+          "end_line": 647
+        },
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/pet/decision.rs",
+          "line": 54,
+          "end_line": 98
+        }
+      ]
+    },
+    {
+      "id": "board",
+      "lane": "io",
+      "col": 3,
+      "type": "messagebus",
+      "label": "Arduino HID",
+      "sublabel": "clicks + keys",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/effects.rs",
+          "line": 54,
+          "end_line": 60
+        },
+        {
+          "path": "v3/core/crates/seal-core/src/effects.rs",
+          "line": 134,
+          "end_line": 166
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "start-owner",
+      "from": "start",
+      "to": "owner",
+      "label": "tool.start",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "owner-ready",
+      "from": "owner",
+      "to": "ready",
+      "label": "claim",
+      "role": "main"
+    },
+    {
+      "id": "ready-look",
+      "from": "ready",
+      "to": "look",
+      "label": "setup ok",
+      "role": "main"
+    },
+    {
+      "id": "look-sched",
+      "from": "look",
+      "to": "sched",
+      "label": "per row",
+      "role": "main"
+    },
+    {
+      "id": "sched-visit",
+      "from": "sched",
+      "to": "visit",
+      "label": "due now",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "visit-wait",
+      "from": "visit",
+      "to": "wait",
+      "label": "reloaded",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "look-game",
+      "from": "look",
+      "to": "game",
+      "label": "read rows",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "id": "visit-board",
+      "from": "visit",
+      "to": "board",
+      "label": "click / key",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "id": "visit-drop",
+      "from": "visit",
+      "to": "drop",
+      "label": "3rd strike",
+      "role": "error",
+      "variant": "security"
+    },
+    {
+      "id": "wait-stop",
+      "from": "wait",
+      "to": "stop",
+      "label": "no rows left",
+      "role": "error",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Decision half",
+      "items": [
+        "One row read becomes minutes from now",
+        "Only a fresh count with food cancels a reload",
+        "fold_back counts strikes; the third drops the row"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Resident boundary",
+      "items": [
+        "Arms without the game; asks before its first click",
+        "Releases the game before the long wait",
+        "A foreground start waits behind a resident reload",
+        "It ignores the quit hotkey by design"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Effects",
+      "items": [
+        "The look opens, reads and closes the window",
+        "A visit clicks the calibrated points through BoardEffects",
+        "No board writes while it waits"
+      ]
+    }
+  ]
+}

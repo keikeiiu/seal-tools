@@ -1,0 +1,200 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Seal Tools v3 - Sell: one counted pass",
+    "quality_profile": "showcase",
+    "output": "v3/docs/diagrams/flows/sell-flow.html",
+    "repository": {
+      "url": "https://github.com/keikeiiu/seal-tools",
+      "provider": "github",
+      "revision": "45cd0a92e0a8eac098d0767fde22a62513facde6"
+    }
+  },
+  "lanes": [
+    { "id": "shell", "label": "Flutter shell" },
+    { "id": "core", "label": "seal-core plan + gate" },
+    { "id": "run", "label": "Runner + effects" },
+    { "id": "io", "label": "Game + board" }
+  ],
+  "phases": [
+    { "id": "arm", "label": "Start + gate", "fromCol": 0, "toCol": 1 },
+    { "id": "seal", "label": "Selection plan", "fromCol": 2, "toCol": 2, "variant": "emphasis" },
+    { "id": "act", "label": "Effects", "fromCol": 3, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "one_pass", "label": "Transaction block", "lane": "run", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["card", "start", "gate", "plan", "focus", "txn", "done"],
+  "nodes": [
+    {
+      "id": "card",
+      "lane": "shell",
+      "col": 0,
+      "type": "frontend",
+      "label": "Sell card",
+      "sublabel": "bag cells armed",
+      "width": 140,
+      "sources": [
+        { "path": "v3/shell/lib/ui/card_grid.dart", "line": 224, "end_line": 249 },
+        { "path": "v3/shell/lib/app/shell_model.dart", "line": 565, "end_line": 576 }
+      ]
+    },
+    {
+      "id": "start",
+      "lane": "shell",
+      "col": 1,
+      "type": "frontend",
+      "label": "tool.start",
+      "sublabel": "slots only",
+      "width": 140,
+      "sources": [
+        { "path": "v3/shell/lib/app/shell_model.dart", "line": 544, "end_line": 557 },
+        { "path": "v3/core/crates/seal-core/src/dispatch.rs", "line": 1164, "end_line": 1172 }
+      ]
+    },
+    {
+      "id": "gate",
+      "lane": "core",
+      "col": 1,
+      "type": "security",
+      "label": "Ready probe",
+      "sublabel": "grid + marks",
+      "width": 140,
+      "sources": [
+        { "path": "v3/core/crates/seal-core/src/shop.rs", "line": 104, "end_line": 118 },
+        { "path": "v3/core/crates/seal-core/src/registry.rs", "line": 386, "end_line": 390 }
+      ]
+    },
+    {
+      "id": "refused",
+      "lane": "shell",
+      "col": 2,
+      "type": "security",
+      "label": "Refused",
+      "sublabel": "cap or no slots",
+      "width": 140,
+      "sources": [
+        { "path": "v3/docs/spec/TOOL-FLOWS.md", "line": 114, "end_line": 122 },
+        { "path": "v3/core/crates/seal-core/src/shop.rs", "line": 420, "end_line": 428 }
+      ]
+    },
+    {
+      "id": "plan",
+      "lane": "core",
+      "col": 2,
+      "type": "backend",
+      "label": "Selection plan",
+      "sublabel": "dedupe, then cap",
+      "width": 140,
+      "sources": [
+        { "path": "v3/core/crates/seal-core/src/shop.rs", "line": 88, "end_line": 102 },
+        { "path": "v3/docs/spec/TOOL-FLOWS.md", "line": 111, "end_line": 117 },
+        { "path": "v3/docs/spec/TOOL-FLOWS.md", "line": 119, "end_line": 122 }
+      ]
+    },
+    {
+      "id": "focus",
+      "lane": "run",
+      "col": 3,
+      "type": "backend",
+      "label": "Focus + order",
+      "sublabel": "highest slot first",
+      "width": 140,
+      "sources": [
+        { "path": "v3/docs/spec/TOOL-FLOWS.md", "line": 133, "end_line": 134 },
+        { "path": "v3/core/crates/seal-core/src/shop.rs", "line": 376, "end_line": 388 }
+      ]
+    },
+    {
+      "id": "txn",
+      "lane": "run",
+      "col": 4,
+      "type": "backend",
+      "label": "MAX + Enter",
+      "sublabel": "per armed slot",
+      "width": 140,
+      "sources": [
+        { "path": "v3/docs/spec/TOOL-FLOWS.md", "line": 115, "end_line": 116 },
+        { "path": "v3/core/crates/seal-core/src/shop.rs", "line": 389, "end_line": 416 }
+      ]
+    },
+    {
+      "id": "done",
+      "lane": "run",
+      "col": 5,
+      "type": "backend",
+      "label": "One pass",
+      "sublabel": "then stop",
+      "width": 140,
+      "sources": [
+        { "path": "v3/docs/spec/TOOL-FLOWS.md", "line": 102, "end_line": 103 },
+        { "path": "v3/core/crates/seal-core/src/shop.rs", "line": 414, "end_line": 416 }
+      ]
+    },
+    {
+      "id": "game",
+      "lane": "io",
+      "col": 3,
+      "type": "external",
+      "label": "Game window",
+      "sublabel": "focused + aimed",
+      "width": 140,
+      "sources": [
+        { "path": "v3/core/crates/seal-core/src/registry.rs", "line": 156, "end_line": 162 },
+        { "path": "v3/core/crates/seal-core/src/effects.rs", "line": 104, "end_line": 126 }
+      ]
+    },
+    {
+      "id": "board",
+      "lane": "io",
+      "col": 4,
+      "type": "messagebus",
+      "label": "Arduino HID",
+      "sublabel": "clicks + keys",
+      "width": 140,
+      "sources": [
+        { "path": "v3/core/crates/seal-core/src/effects.rs", "line": 98, "end_line": 102 },
+        { "path": "v3/core/crates/seal-core/src/effects.rs", "line": 161, "end_line": 175 }
+      ]
+    }
+  ],
+  "edges": [
+    { "id": "e_card_start", "from": "card", "to": "start", "role": "main", "variant": "emphasis" },
+    { "id": "e_start_gate", "from": "start", "to": "gate", "role": "main" },
+    { "id": "e_gate_plan", "from": "gate", "to": "plan", "label": "probe ok", "role": "main" },
+    { "id": "e_plan_refused", "from": "plan", "to": "refused", "role": "error", "variant": "security" },
+    { "id": "e_plan_focus", "from": "plan", "to": "focus", "label": "focus first", "role": "main" },
+    { "id": "e_focus_txn", "from": "focus", "to": "txn", "label": "slot by slot", "role": "main" },
+    { "id": "e_txn_done", "from": "txn", "to": "done", "label": "Sold {n} slot(s).", "role": "main", "variant": "emphasis" },
+    { "id": "e_focus_game", "from": "focus", "to": "game", "label": "focus click", "role": "branch", "variant": "dashed" },
+    { "id": "e_txn_board", "from": "txn", "to": "board", "label": "MAX, Enter", "role": "branch", "variant": "emphasis" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Selection is run data",
+      "items": [
+        "tool.start's slots, deduped and sold highest index first",
+        "buy_sell.sell_slots is never consulted"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Refusals, verbatim",
+      "items": [
+        "No slots answers its own \"No slots are selected to sell.\"",
+        "Above the cap: raise it on purpose, or narrow the selection",
+        "A missing MAX or focus mark stops the plan"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "One pass, then stop",
+      "items": [
+        "One transaction per armed slot, then Sold {n} slot(s).",
+        "The cap is enforced in the plan, not advised"
+      ]
+    }
+  ]
+}
