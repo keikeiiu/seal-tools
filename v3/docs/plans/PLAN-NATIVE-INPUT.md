@@ -1,4 +1,4 @@
-# PLAN-AHI-INPUT — native Interception as the board alternative
+# PLAN-NATIVE-INPUT — native Interception as the board alternative
 
 **Decision (2026-11-07): AHI / AutoHotkey is excluded.** nGuard does not accept AutoHotkey, so no AHK
 runtime, compiled AHI helper, or AutoHotkey script may be shipped, launched, or used for testing.
