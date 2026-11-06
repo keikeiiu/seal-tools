@@ -16,8 +16,9 @@ They are generated with **Archify 3.0.1** from the facts in
 | [quest-flow.html](flows/quest-flow.html) | Quest Hand-in: validate, positioning + cursor guard, replay steps, loop verdict |
 | [pet-flow.html](flows/pet-flow.html) | Pet Feeder: preflight, row reads, schedule, visit/reload, wait, row drop |
 | [spammer-flow.html](flows/spammer-flow.html) | Skill Spammer: tick, yield gate, combo/single walk, key writes, exits |
+| [calibration-flow.html](flows/calibration-flow.html) | Calibrate: capture + assign, draw mark/session, validate, save + derive, verify/delete |
 
-Every page passed Archify's `validate`, `deliver`, strict `check` and real-browser
+All nine pages passed Archify's `validate`, `deliver`, strict `check` and real-browser
 `browser-check` gates for the final candidate.
 
 ## Sources
@@ -33,6 +34,7 @@ sources/gem.workflow.json
 sources/quest.workflow.json
 sources/pet.workflow.json
 sources/spammer.workflow.json
+sources/calibration.workflow.json
 ```
 
 Regenerate one page with:

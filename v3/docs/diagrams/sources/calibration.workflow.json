@@ -1,0 +1,270 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Seal Tools v3 - calibration flow",
+    "quality_profile": "showcase",
+    "output": "v3/docs/diagrams/flows/calibration-flow.html",
+    "repository": {
+      "url": "https://github.com/keikeiiu/seal-tools",
+      "provider": "github",
+      "revision": "07371dbecd59e8f969e1fb451057d4c0fa965f77"
+    }
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "Calibrate screen"
+    },
+    {
+      "id": "core",
+      "label": "seal-core calibration"
+    },
+    {
+      "id": "store",
+      "label": "Config + artifacts"
+    }
+  ],
+  "phases": [
+    {
+      "id": "capture",
+      "label": "Capture + assign",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "measure",
+      "label": "Measure + validate",
+      "fromCol": 3,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "persist",
+      "label": "Save + verify",
+      "fromCol": 4,
+      "toCol": 4,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "target",
+    "capture",
+    "assign",
+    "draw",
+    "validate",
+    "save",
+    "verify"
+  ],
+  "nodes": [
+    {
+      "id": "target",
+      "lane": "ui",
+      "col": 0,
+      "type": "frontend",
+      "label": "Tool + target",
+      "sublabel": "Shop / Gem / Pet / Tuner",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/shell/lib/ui/tabs/calibrate_tab.dart",
+          "line": 1,
+          "end_line": 80
+        }
+      ]
+    },
+    {
+      "id": "capture",
+      "lane": "ui",
+      "col": 1,
+      "type": "frontend",
+      "label": "Capture screen",
+      "sublabel": "hide, settle, grab",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/docs/spec/UI.md",
+          "line": 300,
+          "end_line": 340
+        }
+      ]
+    },
+    {
+      "id": "assign",
+      "lane": "ui",
+      "col": 2,
+      "type": "frontend",
+      "label": "Assign screen",
+      "sublabel": "explicit or empty target",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/docs/spec/UI.md",
+          "line": 300,
+          "end_line": 330
+        }
+      ]
+    },
+    {
+      "id": "draw",
+      "lane": "ui",
+      "col": 3,
+      "type": "frontend",
+      "label": "Draw mark/session",
+      "sublabel": "point, box, or three-box",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/docs/spec/CALIBRATION.md",
+          "line": 30,
+          "end_line": 55
+        }
+      ]
+    },
+    {
+      "id": "verify",
+      "lane": "ui",
+      "col": 4,
+      "type": "frontend",
+      "label": "Stored mark / Detect",
+      "sublabel": "gallery + environment",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/docs/spec/UI.md",
+          "line": 300,
+          "end_line": 350
+        }
+      ]
+    },
+    {
+      "id": "validate",
+      "lane": "core",
+      "col": 3,
+      "type": "security",
+      "label": "Validate",
+      "sublabel": "kind rules + artifact",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/calibration.rs",
+          "line": 1,
+          "end_line": 25
+        }
+      ]
+    },
+    {
+      "id": "save",
+      "lane": "core",
+      "col": 4,
+      "type": "backend",
+      "label": "Save + derive",
+      "sublabel": "one writer, rev + event",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/calibration.rs",
+          "line": 1,
+          "end_line": 25
+        }
+      ]
+    },
+    {
+      "id": "store",
+      "lane": "store",
+      "col": 4,
+      "type": "database",
+      "label": "config + artifact",
+      "sublabel": "machine / setup + PNG",
+      "width": 140,
+      "sources": [
+        {
+          "path": "v3/docs/spec/CALIBRATION.md",
+          "line": 180,
+          "end_line": 195
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "target-capture",
+      "from": "target",
+      "to": "capture",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "capture-assign",
+      "from": "capture",
+      "to": "assign",
+      "label": "Screens strip",
+      "role": "main"
+    },
+    {
+      "id": "assign-draw",
+      "from": "assign",
+      "to": "draw",
+      "label": "target has a screen",
+      "role": "main"
+    },
+    {
+      "id": "draw-validate",
+      "from": "draw",
+      "to": "validate",
+      "label": "Save mark / session",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "validate-save",
+      "from": "validate",
+      "to": "save",
+      "label": "accepted",
+      "role": "main"
+    },
+    {
+      "id": "save-store",
+      "from": "save",
+      "to": "store",
+      "label": "write",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "id": "save-verify",
+      "from": "save",
+      "to": "verify",
+      "label": "stored + derived",
+      "role": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "One capture bar",
+      "items": [
+        "Hide the shell, wait for the composited hide, capture, show again",
+        "Screens are session state; a saved mark stores no frame id"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Validation is kind-specific",
+      "items": [
+        "Bag slot must agree with the bag grid pitch",
+        "Gem result asks empty / not empty; Tooltip saves the hover offset",
+        "Tuner derives region/bands from three boxes"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Save is one write gate",
+      "items": [
+        "A refusal writes nothing and consumes no revision",
+        "Display environment and measured_at are stamped",
+        "Deleting a screen needs two confirmations and never touches saved marks"
+      ]
+    }
+  ]
+}
