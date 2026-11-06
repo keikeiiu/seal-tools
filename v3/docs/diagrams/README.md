@@ -28,6 +28,13 @@ The same eight tool flows as v2 (`v2/docs/diagrams/flows/`), rebuilt for v3, plu
 | Sequence | [start-stop-sequence.html](start-stop-sequence.html) | Shell → supervisor → tool → board, Stop/cancel, `tool.finished` |
 | Dataflow | [config-dataflow.html](config-dataflow.html) | defaults / setup / machine → merged config → readers → one write gate → file + event |
 
+## UI demos
+
+Interactive HTML prototypes, **not** the Flutter desktop application:
+
+- [Full UI demo](demos/ui-demo.html) — shell, navigation, cards, tool tabs and calibration workspace
+- [All UI demos](demos/index.html) — full shell plus the two calibration interaction prototypes
+
 All pages passed Archify's `validate`, `deliver`, strict `check` and real-browser `browser-check`
 gates for their final candidates. Each candidate pins the repository revision it was checked at.
 
