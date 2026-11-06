@@ -1,14 +1,15 @@
 # PLAN-NATIVE-INPUT — native Interception as the board alternative
 
-**Decision (2026-11-07): AHI / AutoHotkey is excluded.** nGuard does not accept AutoHotkey, so no AHK
-runtime, compiled AHI helper, or AutoHotkey script may be shipped, launched, or used for testing.
-"AHI" in this plan now refers only to the behavioural reference used while building a **native
-Interception** adapter. The only remaining software path is the Interception kernel driver used
-directly from the Rust core; if nGuard rejects that driver too, this plan stops and the Arduino board
-remains the only supported input backend.
+**Decision (2026-11-07): AutoHotkey is excluded; the C# AHI assembly is not.** nGuard does not
+accept AutoHotkey, so no AHK runtime, AHK script, or compiled AHK executable may be shipped, launched,
+or used for testing. AutoHotInterception (AHI) itself ships **two** implementations in its repository:
+the AHK v1/v2 library and a **C# .NET assembly** (`C#/AutoHotInterception`). The C# assembly does not
+need AutoHotkey and is the only AHI form still allowed here. It still requires the Interception driver,
+so nGuard acceptance of the driver remains the Phase 0 gate. If only an AHK/AHI executable was built,
+that artifact is rejected with the rest of AHK.
 
-**Proposal.** This plan evaluates a native **Interception** backend as a replacement for the Arduino
-Pro Micro board for tools that move the cursor, click, hold keys, or type. It does not change how
+**Proposal.** This plan evaluates a native **Interception** backend (or the prebuilt C# AHI assembly as
+a proof of concept) as a replacement for the Arduino Pro Micro board for tools that move the cursor, click, hold keys, or type. It does not change how
 tools decide what to do; it changes only where the effects are executed.
 
 > **Read this as a proposal, not as current behaviour.** The shipped input backend is still the
@@ -54,28 +55,37 @@ Decisive constraints already encoded there:
 
 ## 3. Integration decision
 
-### Rejected: AHI / AutoHotkey helper
+### Rejected: AHI on AutoHotkey
 
-An AHK/AHI helper (`seal-ahi.exe`) would be the quickest prototype, but it is **not an option**:
-nGuard rejects AutoHotkey. No AHK runtime, compiled AHI executable, AHI DLL, or AutoHotkey script may
-be part of the product, the test plan, or the release folder.
+The AHK v1/v2 library and any compiled AHK executable are rejected: nGuard blocks AutoHotkey. No AHK
+runtime, script, or AHI/AHK helper may be part of the product, the test plan, or the release folder.
 
-### Selected: native Interception adapter in Rust
+### Allowed AHI form: the C# assembly
 
-Add a new crate, e.g. `seal-input-interception`:
+`C#/AutoHotInterception` is a .NET Framework 4.6.1 class library with `Manager`, `MouseHandler` and
+`KeyboardHandler`; it calls `interception.dll` directly and exposes `SendKeyEvent`,
+`SendMouseButtonEvent`, `SendMouseMove`, `SendMouseMoveAbsolute` and `MoveCursor`. It does not need
+AutoHotkey. If this assembly is already built, it is the fastest way to prove the Interception path.
 
-- open and own an Interception context from Rust using the driver's native API;
-- implement `Effects` directly, or a narrow `InputDevice` trait that `Effects` delegates to;
-- use the existing `Effects`/runner seam;
-- use AHI's public documentation only as a **behavioural reference** for mouse relative/absolute
-  modes, device-ID conventions and cursor semantics — never as a runtime dependency.
+Constraints of that route:
 
-Pros: no AutoHotkey dependency, one process model, Rust tests around report encoding, same release
-binary. Cons: Interception is a kernel driver with installation/signing/licensing implications; the
-API is C, so unsafe FFI must follow the repository's existing Win32 rules.
+- it is a **library**, not a standalone service; v3's Rust core needs a small .NET helper process
+  (or a C# bridge) to host it and a pipe/IPC contract;
+- it targets **.NET Framework 4.6.1**, so the helper is a separate runtime/deployment concern;
+- it still needs the **Interception driver**, `interception.dll` and admin installation;
+- the helper, not the core, owns the Interception context and must implement the same held-input
+  release/watchdog as any other backend;
+- AHI's MIT license covers the assembly; the Interception driver's license must be reviewed
+  separately before redistribution.
 
-**Recommendation:** native Interception only. There is no AHK fallback and no silent switch to the
-board. If Phase 0 rejects the driver, this plan stops.
+### Selected production direction: native Interception in Rust
+
+For a shipped v3 backend, prefer a native Rust adapter (`seal-input-interception`) over a .NET helper:
+one process model, no .NET Framework dependency, Rust tests around report encoding, and the same
+release binary. The C# AHI assembly is the **fast proof-of-concept path**; it is not a reason to add a
+permanent .NET sidecar unless it proves clearly simpler and passes all safety gates.
+
+Both routes use the same `Effects` seam and the same backend name, `interception`.
 
 ## 4. Safety design (the part the board currently wins)
 
@@ -270,14 +280,16 @@ if it matches the same decisions, safety and nGuard behaviour — not merely if 
 
 ## 9. Open questions for the player
 
-1. Is the **Interception kernel driver itself** acceptable to nGuard, or is any kernel filter treated
+1. What exactly is already built — the C# `AutoHotInterception.dll`, a C# helper, or an AHK/AHI
+   executable? Please give the path/version; an AHK executable is rejected outright.
+2. Is the **Interception kernel driver itself** acceptable to nGuard, or is any kernel filter treated
    as a cheat?
-2. Is installing a third-party kernel driver and running it with admin rights acceptable on the
+3. Is installing a third-party kernel driver and running it with admin rights acceptable on the
    target PC?
-3. Is the account/game risk accepted for testing, and on which account/machine?
-4. Should the backend ever be player-facing, or is this developer-only?
-5. Which device should be injected — the real mouse/keyboard, or a dedicated second device?
-6. Does it need to match the board's physical watchdog, or is "experimental with a recovery step"
+4. Is the account/game risk accepted for testing, and on which account/machine?
+5. Should the backend ever be player-facing, or is this developer-only?
+6. Which device should be injected — the real mouse/keyboard, or a dedicated second device?
+7. Does it need to match the board's physical watchdog, or is "experimental with a recovery step"
    acceptable?
 
 ## 10. References
