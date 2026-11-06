@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seal Tools v3 - diagrams</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f8fb;
+    --panel: #ffffff;
+    --ink: #1b2430;
+    --muted: #64748b;
+    --line: #dbe3ee;
+    --accent: #0f766e;
+    --accent-soft: #e6f4f1;
+    --violet: #6d5bd0;
+    --violet-soft: #eeebff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b1220;
+      --panel: #131c2b;
+      --ink: #e6edf6;
+      --muted: #93a4bb;
+      --line: #243149;
+      --accent: #2dd4bf;
+      --accent-soft: #0f2b2a;
+      --violet: #b9a9ff;
+      --violet-soft: #1c1738;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.55 "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 48px 24px 64px; }
+  header { margin-bottom: 32px; }
+  .eyebrow { margin: 0 0 6px; color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  h1 { margin: 0 0 10px; font-size: 34px; line-height: 1.15; letter-spacing: -0.02em; }
+  h2 { margin: 36px 0 12px; font-size: 20px; letter-spacing: -0.01em; }
+  .lede { margin: 0; max-width: 780px; color: var(--muted); }
+  .lede a, footer a { color: var(--accent); }
+  code { font-family: "Cascadia Mono", Consolas, "Courier New", monospace; font-size: .92em; background: var(--accent-soft); padding: 1px 5px; border-radius: 5px; }
+  .grid { list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+  .grid a {
+    display: flex; flex-direction: column; gap: 6px; min-height: 118px;
+    padding: 18px 20px; border: 1px solid var(--line); border-radius: 14px;
+    background: var(--panel); color: inherit; text-decoration: none;
+    transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+  }
+  .grid a:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 8px 24px rgba(15, 118, 110, .12); }
+  .grid strong { font-size: 17px; }
+  .grid span { color: var(--muted); font-size: 14px; }
+  .grid .tag { margin-top: auto; color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  .grid.views a:hover { border-color: var(--violet); box-shadow: 0 8px 24px rgba(109, 91, 208, .12); }
+  .grid.views .tag { color: var(--violet); }
+  footer { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+  footer p { margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">Seal Tools v3</p>
+    <h1>Diagrams</h1>
+    <p class="lede">
+      Interactive Archify pages generated from the
+      <a href="https://github.com/keikeiiu/seal-tools">seal-tools</a> v3 source at commit
+      <code>e4789da</code>. Each page is self-contained with inline SVG: theme switching, zoom,
+      search, path focus and PNG/JPEG/WebP/SVG/WebM export. The eight tool flows match the v2 set;
+      calibration and the four system views are new for v3.
+    </p>
+  </header>
+
+  <h2>Run flows</h2>
+  <ul class="grid">
+    <li><a href="flows/suite-flow.html">
+      <strong>Suite overview</strong>
+      <span>Flutter shell, protocol, supervisor, tool decision/runner, game and Arduino board.</span>
+      <span class="tag">Start here</span>
+    </a></li>
+    <li><a href="flows/calibration-flow.html">
+      <strong>Calibration</strong>
+      <span>Capture + assign, draw mark/session, validate, save + derive, verify and delete.</span>
+      <span class="tag">Calibrate</span>
+    </a></li>
+    <li><a href="flows/buy-flow.html">
+      <strong>Buy</strong>
+      <span>Start gate, ordered transaction plan, focus/scroll, count, one pass.</span>
+      <span class="tag">Shop</span>
+    </a></li>
+    <li><a href="flows/sell-flow.html">
+      <strong>Sell</strong>
+      <span>Slots argument, selection/cap plan, highest-slot-first, MAX/Enter.</span>
+      <span class="tag">Shop</span>
+    </a></li>
+    <li><a href="flows/tuner-flow.html">
+      <strong>Magic Tuner</strong>
+      <span>Countdown/guard, click/Enter, OCR read, grade/filter decision and stops.</span>
+      <span class="tag">Tuner</span>
+    </a></li>
+    <li><a href="flows/gem-flow.html">
+      <strong>Gem Composer</strong>
+      <span>Select, combine, empty-result read, streak gate, advance, all grades done.</span>
+      <span class="tag">Gem</span>
+    </a></li>
+    <li><a href="flows/quest-flow.html">
+      <strong>Quest Hand-in</strong>
+      <span>Validate, position + cursor guard, replay steps, loop verdict.</span>
+      <span class="tag">Quest</span>
+    </a></li>
+    <li><a href="flows/pet-flow.html">
+      <strong>Pet Feeder</strong>
+      <span>Preflight, row reads, schedule, visit/reload, wait, row drop.</span>
+      <span class="tag">Resident</span>
+    </a></li>
+    <li><a href="flows/spammer-flow.html">
+      <strong>Skill Spammer</strong>
+      <span>Tick, yield gate, combo/single walk, key writes, exits.</span>
+      <span class="tag">Spammer</span>
+    </a></li>
+  </ul>
+
+  <h2>System views</h2>
+  <ul class="grid views">
+    <li><a href="system-architecture.html">
+      <strong>Runtime architecture</strong>
+      <span>Shell ↔ core process, Rust crates, Win32/OCR/board, game and Arduino.</span>
+      <span class="tag">Architecture</span>
+    </a></li>
+    <li><a href="tool-lifecycle.html">
+      <strong>Tool run lifecycle</strong>
+      <span>Idle → starting → running → stopping → finished, with refusal/error exits.</span>
+      <span class="tag">Lifecycle</span>
+    </a></li>
+    <li><a href="start-stop-sequence.html">
+      <strong>Start / stop sequence</strong>
+      <span>Shell → supervisor → tool → board, Stop/cancel, <code>tool.finished</code>.</span>
+      <span class="tag">Sequence</span>
+    </a></li>
+    <li><a href="config-dataflow.html">
+      <strong>Config ownership + writes</strong>
+      <span>Defaults/setup/machine → merged config → readers → one write gate → file + event.</span>
+      <span class="tag">Dataflow</span>
+    </a></li>
+  </ul>
+
+  <footer>
+    <p>Source workflows and regeneration commands:
+      <a href="https://github.com/keikeiiu/seal-tools/tree/main/v3/docs/diagrams">v3/docs/diagrams</a>.</p>
+    <p>v2 diagrams: <a href="../flows/suite-flow.html">v2.16 flow set</a>.</p>
+  </footer>
+</main>
+</body>
+</html>
