@@ -1,0 +1,250 @@
+{
+  "schema_version": 2,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Seal Tools v3 - tool run lifecycle",
+    "quality_profile": "showcase",
+    "output": "v3/docs/diagrams/tool-lifecycle.html",
+    "repository": {
+      "url": "https://github.com/keikeiiu/seal-tools",
+      "provider": "github",
+      "revision": "e4789da43046c161082dcd2aa9c1e2e803bb8b8d"
+    }
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Tool phase"
+    },
+    {
+      "id": "exception",
+      "label": "Refusal / error path"
+    },
+    {
+      "id": "terminal",
+      "label": "Terminal outcomes"
+    }
+  ],
+  "states": [
+    {
+      "id": "idle",
+      "type": "start",
+      "label": "Idle",
+      "sublabel": "no run",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "idle",
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-tools/src/tool.rs",
+          "line": 80,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "starting",
+      "type": "active",
+      "label": "Starting",
+      "sublabel": "start accepted",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "starting",
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/supervisor.rs",
+          "line": 1,
+          "end_line": 50
+        }
+      ]
+    },
+    {
+      "id": "running",
+      "type": "active",
+      "label": "Running",
+      "sublabel": "decision + effects",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "running",
+      "sources": [
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 17,
+          "end_line": 35
+        }
+      ]
+    },
+    {
+      "id": "stopping",
+      "type": "waiting",
+      "label": "Stopping",
+      "sublabel": "cancel + release",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "stopping",
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/supervisor.rs",
+          "line": 1,
+          "end_line": 50
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "success",
+      "label": "Finished",
+      "sublabel": "reason + summary",
+      "lane": "main",
+      "col": 4,
+      "step": "05",
+      "tag": "finished",
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/events.rs",
+          "line": 1,
+          "end_line": 45
+        }
+      ]
+    },
+    {
+      "id": "refused",
+      "type": "failure",
+      "label": "Refused",
+      "sublabel": "no run starts",
+      "lane": "exception",
+      "col": 1,
+      "tag": "refusal",
+      "sources": [
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 119,
+          "end_line": 138
+        }
+      ]
+    },
+    {
+      "id": "error",
+      "type": "failure",
+      "label": "Error",
+      "sublabel": "tool stops",
+      "lane": "exception",
+      "col": 2,
+      "tag": "error",
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/supervisor.rs",
+          "line": 1,
+          "end_line": 50
+        }
+      ]
+    },
+    {
+      "id": "cancelled",
+      "type": "failure",
+      "label": "Cancelled",
+      "sublabel": "Stop or stop key",
+      "lane": "exception",
+      "col": 3,
+      "tag": "cancel",
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/supervisor.rs",
+          "line": 830,
+          "end_line": 880
+        }
+      ]
+    }
+  ],
+  "transitions": [
+    {
+      "from": "idle",
+      "to": "starting",
+      "label": "tool.start",
+      "variant": "emphasis"
+    },
+    {
+      "from": "starting",
+      "to": "running",
+      "label": "run begins"
+    },
+    {
+      "from": "starting",
+      "to": "refused",
+      "label": "refused",
+      "variant": "security"
+    },
+    {
+      "from": "refused",
+      "to": "idle",
+      "label": "stay idle",
+      "variant": "dashed"
+    },
+    {
+      "from": "running",
+      "to": "stopping",
+      "label": "Stop",
+      "variant": "security"
+    },
+    {
+      "from": "running",
+      "to": "error",
+      "label": "tool error",
+      "variant": "security"
+    },
+    {
+      "from": "running",
+      "to": "cancelled",
+      "label": "cancel",
+      "variant": "security"
+    },
+    {
+      "from": "stopping",
+      "to": "done",
+      "label": "released",
+      "variant": "emphasis"
+    },
+    {
+      "from": "error",
+      "to": "done",
+      "label": "finished",
+      "variant": "dashed"
+    },
+    {
+      "from": "cancelled",
+      "to": "done",
+      "label": "finished",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "One owner per run",
+      "items": [
+        "The supervisor serialises starts and stops",
+        "The tool phase is published by the core, never inferred by the shell"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Refusals are not states",
+      "items": [
+        "A refused start leaves the tool idle",
+        "The refusal line is rendered verbatim on the card"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Every ending is reported",
+      "items": [
+        "Stop, error and done all produce tool.finished",
+        "The reason and summary travel together"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,362 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Seal Tools v3 - runtime architecture",
+    "quality_profile": "showcase",
+    "output": "v3/docs/diagrams/system-architecture.html",
+    "repository": {
+      "url": "https://github.com/keikeiiu/seal-tools",
+      "provider": "github",
+      "revision": "e4789da43046c161082dcd2aa9c1e2e803bb8b8d"
+    }
+  },
+  "components": [
+    {
+      "id": "shell",
+      "type": "frontend",
+      "label": "Flutter shell",
+      "sublabel": "cards, settings, calibrate",
+      "pos": [
+        40,
+        290
+      ],
+      "size": [
+        150,
+        70
+      ],
+      "sources": [
+        {
+          "path": "v3/shell/lib/ui/shell_page.dart",
+          "line": 1,
+          "end_line": 45
+        }
+      ]
+    },
+    {
+      "id": "protocol",
+      "type": "frontend",
+      "label": "Protocol client",
+      "sublabel": "JSON lines over stdio",
+      "pos": [
+        230,
+        290
+      ],
+      "size": [
+        150,
+        70
+      ],
+      "sources": [
+        {
+          "path": "v3/shell/lib/app/shell_model.dart",
+          "line": 1,
+          "end_line": 60
+        }
+      ]
+    },
+    {
+      "id": "supervisor",
+      "type": "backend",
+      "label": "Tool supervisor",
+      "sublabel": "one run, one input owner",
+      "pos": [
+        430,
+        290
+      ],
+      "size": [
+        150,
+        70
+      ],
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/supervisor.rs",
+          "line": 1,
+          "end_line": 50
+        }
+      ]
+    },
+    {
+      "id": "domain",
+      "type": "backend",
+      "label": "seal-domain",
+      "sublabel": "decisions + geometry",
+      "pos": [
+        630,
+        160
+      ],
+      "size": [
+        150,
+        70
+      ],
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-domain/src/tools/mod.rs",
+          "line": 1,
+          "end_line": 29
+        }
+      ]
+    },
+    {
+      "id": "tools",
+      "type": "backend",
+      "label": "seal-tools",
+      "sublabel": "runner + effects",
+      "pos": [
+        630,
+        420
+      ],
+      "size": [
+        150,
+        70
+      ],
+      "sources": [
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 17,
+          "end_line": 35
+        }
+      ]
+    },
+    {
+      "id": "config",
+      "type": "database",
+      "label": "Config files",
+      "sublabel": "defaults / setup / machine",
+      "pos": [
+        430,
+        500
+      ],
+      "size": [
+        150,
+        70
+      ],
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-config/src/store.rs",
+          "line": 1,
+          "end_line": 45
+        }
+      ]
+    },
+    {
+      "id": "win",
+      "type": "cloud",
+      "label": "seal-win",
+      "sublabel": "Win32 capture + window",
+      "pos": [
+        830,
+        160
+      ],
+      "size": [
+        150,
+        70
+      ],
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/win.rs",
+          "line": 1,
+          "end_line": 35
+        }
+      ]
+    },
+    {
+      "id": "ocr",
+      "type": "backend",
+      "label": "seal-ocr",
+      "sublabel": "detect / recognise",
+      "pos": [
+        830,
+        300
+      ],
+      "size": [
+        150,
+        70
+      ],
+      "sources": [
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 17,
+          "end_line": 35
+        }
+      ]
+    },
+    {
+      "id": "board",
+      "type": "messagebus",
+      "label": "seal-board",
+      "sublabel": "serial protocol",
+      "pos": [
+        830,
+        440
+      ],
+      "size": [
+        150,
+        70
+      ],
+      "sources": [
+        {
+          "path": "arduino/seal_mouse/seal_mouse.ino",
+          "line": 1,
+          "end_line": 55
+        }
+      ]
+    },
+    {
+      "id": "game",
+      "type": "external",
+      "label": "Game client",
+      "sublabel": "reads + input target",
+      "pos": [
+        1030,
+        160
+      ],
+      "size": [
+        140,
+        70
+      ],
+      "sources": [
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 17,
+          "end_line": 35
+        }
+      ]
+    },
+    {
+      "id": "arduino",
+      "type": "external",
+      "label": "Arduino HID",
+      "sublabel": "keys, clicks, wheel",
+      "pos": [
+        1030,
+        440
+      ],
+      "size": [
+        140,
+        70
+      ],
+      "sources": [
+        {
+          "path": "arduino/seal_mouse/seal_mouse.ino",
+          "line": 1,
+          "end_line": 55
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "seal-core.exe process",
+      "wraps": [
+        "supervisor",
+        "domain",
+        "tools",
+        "config",
+        "win",
+        "ocr",
+        "board"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "shell-protocol",
+      "from": "shell",
+      "to": "protocol"
+    },
+    {
+      "id": "protocol-supervisor",
+      "from": "protocol",
+      "to": "supervisor",
+      "variant": "emphasis"
+    },
+    {
+      "id": "supervisor-domain",
+      "from": "supervisor",
+      "to": "domain",
+      "variant": "emphasis"
+    },
+    {
+      "id": "supervisor-tools",
+      "from": "supervisor",
+      "to": "tools",
+      "label": "run",
+      "variant": "emphasis"
+    },
+    {
+      "id": "supervisor-config",
+      "from": "config",
+      "to": "supervisor",
+      "label": "merged config",
+      "variant": "dashed"
+    },
+    {
+      "id": "domain-win",
+      "from": "domain",
+      "to": "win",
+      "variant": "dashed"
+    },
+    {
+      "id": "domain-ocr",
+      "from": "domain",
+      "to": "ocr",
+      "label": "OCR geometry",
+      "variant": "dashed"
+    },
+    {
+      "id": "win-game",
+      "from": "win",
+      "to": "game",
+      "variant": "dashed"
+    },
+    {
+      "id": "tools-board",
+      "from": "tools",
+      "to": "board",
+      "label": "effects",
+      "variant": "emphasis"
+    },
+    {
+      "id": "board-arduino",
+      "from": "board",
+      "to": "arduino",
+      "label": "serial",
+      "variant": "emphasis"
+    },
+    {
+      "id": "game-arduino",
+      "from": "arduino",
+      "to": "game",
+      "label": "input",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Two processes",
+      "items": [
+        "Flutter shell owns the window and UI",
+        "seal-core.exe owns config, tools, capture and board I/O"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "One decision path",
+      "items": [
+        "seal-domain returns decisions",
+        "seal-tools/runner turns them into effects",
+        "seal-win supplies reads and foreground checks"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "One input owner",
+      "items": [
+        "The supervisor serialises starts and stops",
+        "seal-board is the only path to the Arduino"
+      ]
+    }
+  ]
+}

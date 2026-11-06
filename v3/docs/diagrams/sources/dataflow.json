@@ -1,0 +1,315 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Seal Tools v3 - config ownership and writes",
+    "quality_profile": "showcase",
+    "output": "v3/docs/diagrams/config-dataflow.html",
+    "viewBox": [
+      1080,
+      620
+    ],
+    "repository": {
+      "url": "https://github.com/keikeiiu/seal-tools",
+      "provider": "github",
+      "revision": "e4789da43046c161082dcd2aa9c1e2e803bb8b8d"
+    }
+  },
+  "stages": [
+    {
+      "label": "Shipped + portable + machine"
+    },
+    {
+      "label": "Merge"
+    },
+    {
+      "label": "Readers"
+    },
+    {
+      "label": "One write gate"
+    },
+    {
+      "label": "Files + event"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "defaults",
+      "type": "database",
+      "label": "defaults.yaml",
+      "sublabel": "static game defaults",
+      "stage": 0,
+      "row": 0,
+      "tag": "shipped",
+      "sources": [
+        {
+          "path": "v3/config/defaults.yaml",
+          "line": 1,
+          "end_line": 10
+        }
+      ]
+    },
+    {
+      "id": "setup",
+      "type": "database",
+      "label": "setup/*.yaml",
+      "sublabel": "portable settings",
+      "stage": 0,
+      "row": 1,
+      "tag": "copyable",
+      "sources": [
+        {
+          "path": "v3/docs/spec/CONFIG.md",
+          "line": 28,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "machine",
+      "type": "database",
+      "label": "machine/*.yaml",
+      "sublabel": "measured on this PC",
+      "stage": 0,
+      "row": 2,
+      "tag": "calibrated",
+      "sources": [
+        {
+          "path": "v3/docs/spec/CONFIG.md",
+          "line": 28,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "artifacts",
+      "type": "database",
+      "label": "artifacts/*.png",
+      "sublabel": "crops + icons",
+      "stage": 0,
+      "row": 3,
+      "tag": "binary",
+      "sources": [
+        {
+          "path": "v3/docs/spec/CONFIG.md",
+          "line": 28,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "merge",
+      "type": "backend",
+      "label": "Merged config",
+      "sublabel": "one JSON view",
+      "stage": 1,
+      "row": 1,
+      "tag": "hello",
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-config/src/layout.rs",
+          "line": 1,
+          "end_line": 45
+        }
+      ]
+    },
+    {
+      "id": "shell",
+      "type": "frontend",
+      "label": "Shell mirror",
+      "sublabel": "cards + forms",
+      "stage": 2,
+      "row": 0,
+      "tag": "config.changed",
+      "sources": [
+        {
+          "path": "v3/shell/lib/app/shell_model.dart",
+          "line": 1,
+          "end_line": 60
+        }
+      ]
+    },
+    {
+      "id": "tools",
+      "type": "backend",
+      "label": "Tool readers",
+      "sublabel": "domain decision halves",
+      "stage": 2,
+      "row": 2,
+      "tag": "read only",
+      "sources": [
+        {
+          "path": "v3/docs/spec/TOOL-FLOWS.md",
+          "line": 17,
+          "end_line": 35
+        }
+      ]
+    },
+    {
+      "id": "writer",
+      "type": "security",
+      "label": "Write gate",
+      "sublabel": "validate + route",
+      "stage": 3,
+      "row": 1,
+      "tag": "one revision",
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-config/src/transaction.rs",
+          "line": 1,
+          "end_line": 35
+        }
+      ]
+    },
+    {
+      "id": "files",
+      "type": "database",
+      "label": "Owning file",
+      "sublabel": "field-level merge",
+      "stage": 4,
+      "row": 0,
+      "tag": "atomic write",
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-config/src/layout.rs",
+          "line": 1,
+          "end_line": 45
+        }
+      ]
+    },
+    {
+      "id": "event",
+      "type": "messagebus",
+      "label": "config.changed",
+      "sublabel": "after the response",
+      "stage": 4,
+      "row": 2,
+      "tag": "block + rev",
+      "sources": [
+        {
+          "path": "v3/core/crates/seal-core/src/events.rs",
+          "line": 1,
+          "end_line": 45
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "defaults-merge",
+      "from": "defaults",
+      "to": "merge",
+      "label": "base",
+      "classification": "shipped",
+      "variant": "emphasis"
+    },
+    {
+      "id": "setup-merge",
+      "from": "setup",
+      "to": "merge",
+      "classification": "travels",
+      "variant": "default",
+      "label": "portable",
+      "labelAt": [
+        280,
+        190
+      ]
+    },
+    {
+      "id": "machine-merge",
+      "from": "machine",
+      "to": "merge",
+      "classification": "per-PC",
+      "variant": "default",
+      "label": "measured",
+      "labelAt": [
+        280,
+        330
+      ]
+    },
+    {
+      "id": "artifacts-tools",
+      "from": "artifacts",
+      "to": "tools",
+      "label": "crops + icons",
+      "classification": "reference",
+      "variant": "dashed"
+    },
+    {
+      "id": "merge-shell",
+      "from": "merge",
+      "to": "shell",
+      "label": "hello snapshot",
+      "classification": "read",
+      "variant": "emphasis"
+    },
+    {
+      "id": "merge-tools",
+      "from": "merge",
+      "to": "tools",
+      "label": "config view",
+      "classification": "read",
+      "variant": "emphasis"
+    },
+    {
+      "id": "shell-writer",
+      "from": "shell",
+      "to": "writer",
+      "label": "config.apply",
+      "classification": "write",
+      "variant": "security"
+    },
+    {
+      "id": "tools-writer",
+      "from": "tools",
+      "to": "writer",
+      "label": "calibration.save",
+      "classification": "write",
+      "variant": "security"
+    },
+    {
+      "id": "writer-files",
+      "from": "writer",
+      "to": "files",
+      "label": "route by owner",
+      "classification": "field-level",
+      "variant": "default"
+    },
+    {
+      "id": "writer-event",
+      "from": "writer",
+      "to": "event",
+      "label": "announce",
+      "classification": "after response",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Three config classes",
+      "items": [
+        "Shipped defaults are the static base",
+        "setup/ travels between PCs",
+        "machine/ is measured and regenerable"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "One merge, many readers",
+      "items": [
+        "The core serves one merged JSON view",
+        "Shell and tools never read the files directly"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "One write gate",
+      "items": [
+        "The caller names what changed, never a whole file",
+        "Each field routes to its owning file",
+        "config.changed arrives after the response"
+      ]
+    }
+  ]
+}

@@ -1,10 +1,11 @@
-# v3 flow diagrams
+# v3 diagrams
 
-The same eight run-flow pages as v2 (`v2/docs/diagrams/flows/`), rebuilt for the v3 architecture.
+Archify pages for the v3 architecture. Each page is a self-contained HTML file; open it directly in
+a browser.
 
-They are generated with **Archify 3.0.1** from the facts in
-[`../spec/TOOL-FLOWS.md`](../spec/TOOL-FLOWS.md) and the cited Rust sources, at commit
-`45cd0a9`. Each page is a self-contained HTML file; open it directly in a browser.
+## Run-flow pages
+
+The same eight tool flows as v2 (`v2/docs/diagrams/flows/`), rebuilt for v3, plus a calibration page.
 
 | Diagram | Scope |
 |---|---|
@@ -18,8 +19,17 @@ They are generated with **Archify 3.0.1** from the facts in
 | [spammer-flow.html](flows/spammer-flow.html) | Skill Spammer: tick, yield gate, combo/single walk, key writes, exits |
 | [calibration-flow.html](flows/calibration-flow.html) | Calibrate: capture + assign, draw mark/session, validate, save + derive, verify/delete |
 
-All nine pages passed Archify's `validate`, `deliver`, strict `check` and real-browser
-`browser-check` gates for the final candidate.
+## System views
+
+| Type | Diagram | Scope |
+|---|---|---|
+| Architecture | [system-architecture.html](system-architecture.html) | Shell ↔ core process, Rust crates, Win32/OCR/board, game and Arduino |
+| Lifecycle | [tool-lifecycle.html](tool-lifecycle.html) | `idle → starting → running → stopping → finished`, refusals and exits |
+| Sequence | [start-stop-sequence.html](start-stop-sequence.html) | Shell → supervisor → tool → board, Stop/cancel, `tool.finished` |
+| Dataflow | [config-dataflow.html](config-dataflow.html) | defaults / setup / machine → merged config → readers → one write gate → file + event |
+
+All pages passed Archify's `validate`, `deliver`, strict `check` and real-browser `browser-check`
+gates for their final candidates. Each candidate pins the repository revision it was checked at.
 
 ## Sources
 
@@ -35,6 +45,10 @@ sources/quest.workflow.json
 sources/pet.workflow.json
 sources/spammer.workflow.json
 sources/calibration.workflow.json
+sources/architecture.json
+sources/lifecycle.json
+sources/sequence.json
+sources/dataflow.json
 ```
 
 Regenerate one page with:
@@ -46,4 +60,5 @@ node <archify>/bin/archify.mjs finalize workflow `
   --repo-root C:\Git_repo\seal-tools --quality showcase --json
 ```
 
-The candidate's `meta.output` points at the matching HTML path.
+Use `architecture`, `lifecycle`, `sequence` or `dataflow` in place of `workflow` for the system
+views. The candidate's `meta.output` points at the matching HTML path.
