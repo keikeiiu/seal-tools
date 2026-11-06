@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Calibrate sessions · shared capture demo</title>
+<style>
+  :root {
+    --surface:#111318; --surface-low:#171a20; --surface-high:#1d2027; --surface-higher:#242832;
+    --outline:#3a3f4a; --outline-variant:#2a2e37; --text:#e6e8ee; --muted:#a8adb8; --faint:#777d89;
+    --primary:#5b9dff; --primary-container:#12345f; --success:#7ee2b8; --success-container:#10382b;
+    --warning:#f2cc7b; --warning-container:#3e2f10; --danger:#ffb4ab;
+    --radius-s:6px; --radius-m:10px; --radius-l:14px;
+    --space-xxs:2px; --space-xs:4px; --space-sm:8px; --space-md:12px; --space-lg:16px; --space-xl:24px;
+    --font:"Segoe UI",Roboto,system-ui,sans-serif; --mono:Consolas,"Cascadia Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%}
+  body{background:var(--surface);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.5}
+  button,select,input{font:inherit}
+  .app{display:grid;grid-template-columns:216px 1fr;min-height:100vh}
+  .rail{background:#0d0f13;border-right:1px solid var(--outline-variant);padding:14px 12px;display:flex;flex-direction:column;gap:4px}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 16px}
+  .brand-mark{width:28px;height:28px;border-radius:8px;background:radial-gradient(circle at 30% 25%,#ffd76e,#d58a1f 55%,#7a4710);box-shadow:inset 0 0 0 1px #ffffff33;display:grid;place-items:center;font-size:15px}
+  .brand-name{font-weight:600}.brand-version{color:var(--faint);font-size:11px}
+  .rail-group{color:var(--faint);font-size:10px;font-weight:700;letter-spacing:.12em;padding:14px 10px 5px}
+  .rail-item{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:var(--radius-s);color:var(--muted);font-size:13px;cursor:pointer;border:1px solid transparent;background:none;text-align:left}
+  .rail-item:hover{background:#ffffff08;color:var(--text)}
+  .rail-item.active{background:var(--primary-container);border-color:#2d5b96;color:#dceaff}
+  .rail-item .ico{width:16px;text-align:center;opacity:.9}.rail-spacer{flex:1}.rail-foot{color:var(--faint);font-size:11px;padding:8px 10px}
+  .main{min-width:0;padding:18px 22px 24px;display:flex;flex-direction:column;gap:10px}
+  .topline{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+  h1{margin:0 0 4px;font-size:22px;line-height:1.25;font-weight:600;letter-spacing:-.1px}
+  .prose{color:var(--muted);max-width:720px;font-size:13.5px}
+  .top-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid var(--outline-variant);background:var(--surface-high);color:var(--muted);white-space:nowrap}
+  .chip.success{color:var(--success);background:var(--success-container);border-color:#1b5b45}
+  .chip.warning{color:var(--warning);background:var(--warning-container);border-color:#6d5220}
+  .chip.info{color:#cfe1ff;border-color:#2d5b96;background:#162a44}
+  .btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--outline);background:var(--surface-high);color:var(--text);padding:6px 11px;border-radius:var(--radius-s);font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap}
+  .btn:hover{background:var(--surface-higher)}.btn.primary{background:#2563c9;border-color:#3b82f6;color:#f6f9ff;font-weight:600}.btn.primary:hover{background:#2f70dc}.btn:disabled{opacity:.45;cursor:not-allowed}.btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}.btn.ghost:hover{background:#ffffff08;color:var(--text)}.btn.small{padding:4px 8px;font-size:11.5px}
+  .panel{background:var(--surface-low);border:1px solid var(--outline-variant);border-radius:var(--radius-m)}
+  .tabs{display:flex;gap:5px;flex-wrap:wrap;padding:2px 0}
+  .tab{border:1px solid transparent;background:transparent;color:var(--muted);border-radius:999px;padding:5px 13px;font-size:12px;cursor:pointer;font-weight:600}
+  .tab:hover{background:#ffffff08}.tab.active{background:var(--surface-higher);color:var(--text);border-color:var(--outline)}
+  .capture-bar{display:flex;align-items:center;gap:10px;padding:8px 10px;min-height:50px}
+  .capture-bar .camera{color:var(--muted);font-size:16px}.capture-title{font-size:12.5px;font-weight:600}.capture-sub{color:var(--muted);font-size:11.5px}
+  .capture-actions{margin-left:auto;display:flex;gap:6px;align-items:center}
+  .screens-wrap{padding:8px 10px 9px}.screens-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+  .section-label{font-size:10.5px;font-weight:700;letter-spacing:.1em;color:var(--faint);text-transform:uppercase}.count{color:var(--muted);font-size:11px}
+  .screens{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:thin;scrollbar-color:var(--outline) transparent}
+  .screen-card{width:132px;flex:0 0 auto;position:relative;border:1px solid var(--outline);border-radius:var(--radius-s);background:var(--surface-high);padding:4px;cursor:pointer;transition:border-color .12s ease,box-shadow .12s ease}
+  .screen-card:hover{border-color:#5b6372}.screen-card.selected{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary) inset}
+  .screen-card .thumb{height:60px;border-radius:4px;overflow:hidden;position:relative;background:#0b0d11;border:1px solid #ffffff10}
+  .screen-meta{display:flex;align-items:center;gap:5px;padding:4px 2px 1px}.screen-label{font-size:11px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.screen-tag{margin-left:auto;font-size:9.5px;color:var(--faint);font-family:var(--mono)}
+  .screen-card .session-use{position:absolute;left:7px;bottom:27px;font-size:9px;font-weight:700;color:#04291c;background:var(--success);border-radius:4px;padding:1px 5px;display:none}
+  .screen-card.current .session-use{display:block}
+  .capture-tile{width:132px;flex:0 0 auto;min-height:100px;border:1px dashed #4a5261;border-radius:var(--radius-s);color:var(--muted);background:#14171c;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;font-size:11.5px;cursor:pointer}
+  .capture-tile:hover{border-color:var(--primary);color:#cfe1ff}.capture-tile .plus{font-size:20px;line-height:1;color:var(--primary)}
+  .screens-note{color:var(--faint);font-size:10.5px;margin:2px 2px 0}
+  .workspace{display:grid;grid-template-columns:260px minmax(380px,1fr) 350px;gap:10px;min-height:0;flex:1}
+  .col{min-width:0;display:flex;flex-direction:column;gap:8px}.col-head{display:flex;align-items:center;gap:6px;padding:2px 2px 0}.col-title{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+  .session-panel{padding:10px;display:flex;flex-direction:column;gap:10px;overflow:auto}
+  .session-panel h2{margin:0;font-size:15px;font-weight:600}.session-panel .sub{color:var(--muted);font-size:11.5px}
+  .notice{border:1px solid #2d5b96;background:#162a44;color:#cfe1ff;border-radius:var(--radius-s);padding:7px 9px;font-size:11px;line-height:1.45}
+  .checklist{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}
+  .checklist li{display:flex;align-items:flex-start;gap:7px;color:var(--muted);font-size:11.5px}.check{width:14px;text-align:center;color:var(--success)}.check.off{color:var(--faint)}
+  .divider{height:1px;background:var(--outline-variant);margin:2px 0}
+  .canvas-panel{display:flex;flex-direction:column;min-height:0;flex:1}
+  .canvas-toolbar{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--outline-variant);min-width:0}
+  .canvas-toolbar .grow{flex:1}.canvas-meta{font-size:11px;color:var(--muted);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;max-width:48%}
+  .canvas{flex:1;min-height:320px;margin:10px;position:relative;overflow:hidden;border-radius:var(--radius-s);background:radial-gradient(120% 80% at 50% 0%,#25344a 0%,#0b0e14 65%);border:1px solid #2a2f39;display:flex;align-items:center;justify-content:center}
+  .screen-mock{width:80%;aspect-ratio:16/10;background:#0a0d12;border:1px solid #39404d;border-radius:4px;box-shadow:0 10px 30px #00000066;position:relative;overflow:hidden}
+  .mock-title{height:20px;background:linear-gradient(#3d4656,#262d38);border-bottom:1px solid #4a5361;display:flex;align-items:center;padding:0 6px;gap:4px}.mock-title i{width:5px;height:5px;border-radius:50%;background:#7b8494;display:block}.mock-title span{margin-left:4px;font-size:7.5px;color:#c3c9d4;letter-spacing:.04em}
+  .mock-body{position:absolute;inset:21px 0 0}
+  .bag-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;padding:8px;width:74%}.bag-grid i{aspect-ratio:1;background:#1c222c;border:1px solid #303745;border-radius:2px}.bag-grid i.filled{background:#2e3c50;border-color:#465873}
+  .mock-side{position:absolute;right:7%;top:10%;width:19%;height:76%;background:#151a22;border:1px solid #303745;border-radius:3px;padding:5px;display:flex;flex-direction:column;gap:4px}.mock-side b{display:block;height:7px;border-radius:2px;background:#2a3240}.mock-side b:first-child{background:#3a4658}
+  .list-rows{padding:9px 10px;display:flex;flex-direction:column;gap:4px}.list-rows i{height:9px;background:#1c222c;border:1px solid #2f3745;border-radius:2px;display:block}.list-rows i:nth-child(2n){background:#202733}
+  .pet-panel{position:absolute;left:8%;top:10%;width:60%;height:78%;border-radius:5px;border:1px solid #3c3a2b;background:linear-gradient(160deg,#4e3a25,#2b2117);padding:7px;display:flex;flex-direction:column;gap:5px}.pet-row{height:13%;border-radius:3px;background:#1b1712aa;border:1px solid #6a5436;display:flex;align-items:center;gap:4px;padding:0 4px}.pet-row i{width:9px;height:9px;border-radius:50%;background:#9a7448;display:block}.pet-row b{height:3px;flex:1;border-radius:2px;background:#6a5436;display:block}
+  .gem-panel{position:absolute;inset:14% 10%;border:1px solid #35424f;border-radius:5px;background:linear-gradient(145deg,#15202b,#0c1117);display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px}.gem-slot{border:1px solid #3b5168;border-radius:4px;background:#0e1721;display:grid;place-items:center;color:#6fc3ff;font-size:18px}
+  .tuner-panel{position:absolute;inset:9% 19% 12% 18%;border:1px solid #68552f;border-radius:5px;background:linear-gradient(150deg,#2e2619,#17140f);display:flex;flex-direction:column;gap:5px;padding:7px}
+  .tuner-grade{height:17%;border:1px solid #6d7240;background:#29301c;border-radius:3px;display:flex;align-items:center;padding:0 6px;font-size:9px;color:#d6f0a1}
+  .tuner-attr{flex:1;border:1px solid #3b5168;background:#111a24;border-radius:3px;padding:4px;display:flex;flex-direction:column;gap:4px}.tuner-attr b{display:block;height:5px;border-radius:2px;background:#5a7b9f}.tuner-attr b:nth-child(2){width:78%}.tuner-attr b:nth-child(3){width:88%}
+  .tuner-remaining{height:14%;border:1px solid #7a5c2a;background:#241b10;border-radius:3px;display:flex;align-items:center;padding:0 6px;font-size:9px;color:#ffd58a}
+  .tooltip-panel{position:absolute;left:8%;top:12%;width:72%;height:55%;border:1px solid #3c5c6b;border-radius:5px;background:linear-gradient(150deg,#132530,#0b1419);padding:8px}
+  .tooltip-line{height:7px;border-radius:2px;background:#49728b;margin-bottom:6px}.tooltip-line:nth-child(2){width:78%;background:#36566b}.tooltip-line:nth-child(3){width:62%;background:#2d4657}.tooltip-line:nth-child(4){width:70%;background:#2d4657}
+  .hover-anchor{position:absolute;left:12%;top:76%;width:12px;height:12px;transform:translate(-50%,-50%);border-radius:50%;border:2px solid #ff8bd2;box-shadow:0 0 0 1px #0008}
+  .hover-anchor::after{content:"";position:absolute;left:50%;top:50%;width:40px;height:1px;background:#ff8bd244;transform:translate(-50%,-50%)}
+  .hover-anchor::before{content:"";position:absolute;left:50%;top:50%;width:1px;height:40px;background:#ff8bd244;transform:translate(-50%,-50%)}
+  .mark-box{position:absolute;border:2px solid var(--success);border-radius:2px;box-shadow:0 0 0 1px #00000088}.mark-box::after{content:attr(data-label);position:absolute;left:0;top:-16px;background:var(--success);color:#04291c;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;white-space:nowrap}
+  .mark-box.blue{border-color:#60a5fa}.mark-box.blue::after{background:#60a5fa;color:#071b33}.mark-box.amber{border-color:#f59e0b}.mark-box.amber::after{background:#f59e0b;color:#2a1e00}
+  .mark-box.pending{border-color:var(--warning);border-style:dashed}.mark-box.pending::after{background:var(--warning);color:#2a1e00}
+  .canvas-foot{display:flex;gap:6px;padding:0 10px 8px;align-items:center}.zoom{font-size:11px;color:var(--muted);font-family:var(--mono);margin-left:auto}
+  .editor{padding:10px;display:flex;flex-direction:column;gap:10px;overflow:auto}.editor h2{margin:0;font-size:15px;font-weight:600}.editor .sub{color:var(--muted);font-size:11.5px}
+  .field-label{font-size:10px;font-weight:700;color:var(--faint);letter-spacing:.07em;text-transform:uppercase}
+  .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.field{background:var(--surface-low);border:1px solid var(--outline);border-radius:var(--radius-s);padding:5px 8px}.field span{display:block;color:var(--faint);font-size:9.5px;font-weight:700;letter-spacing:.07em}.field b{font-family:var(--mono);font-size:12.5px;font-weight:400;color:var(--text)}
+  .input{width:100%;background:var(--surface-high);color:var(--text);border:1px solid var(--outline);border-radius:var(--radius-s);padding:6px 8px;font-size:12.5px;font-family:var(--mono)}
+  .editor-foot{display:flex;gap:7px;justify-content:flex-end;margin-top:auto;padding-top:4px}
+  .note{color:var(--faint);font-size:10.5px;line-height:1.45}.statusline{min-height:16px;font-size:11px;color:var(--muted)}.statusline.ok{color:var(--success)}.statusline.warn{color:var(--warning)}.statusline.err{color:var(--danger)}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(8px);background:#263041;color:var(--text);border:1px solid #46536a;padding:8px 12px;border-radius:var(--radius-s);font-size:12px;opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease;box-shadow:0 10px 30px #00000066;max-width:80vw}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}.toast.warning{color:var(--warning);border-color:#6d5220;background:#2a2213}
+  @media(max-width:1180px){.app{grid-template-columns:176px 1fr}.workspace{grid-template-columns:230px minmax(320px,1fr) 310px}}
+  @media(max-width:980px){.app{grid-template-columns:1fr}.rail{display:none}.workspace{grid-template-columns:1fr}.main{padding:14px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><div class="brand-mark">🦭</div><div><div class="brand-name">Seal Tools</div><div class="brand-version">v3 · demo</div></div></div>
+    <div class="rail-group">RUN</div><button class="rail-item"><span class="ico">▦</span>Cards</button>
+    <div class="rail-group">TOOLS</div>
+    <button class="rail-item"><span class="ico">⌁</span>Skill Spammer</button>
+    <button class="rail-item"><span class="ico">◎</span>Magic Tuner</button>
+    <button class="rail-item"><span class="ico">◈</span>Gem Composer</button>
+    <button class="rail-item"><span class="ico">▤</span>Buy</button>
+    <button class="rail-item"><span class="ico">▥</span>Sell</button>
+    <button class="rail-item"><span class="ico">✧</span>Quest Hand-in</button>
+    <button class="rail-item"><span class="ico">🐾</span>Pet Feeder</button>
+    <div class="rail-group">SYSTEM</div>
+    <button class="rail-item"><span class="ico">≡</span>Attributes</button>
+    <button class="rail-item"><span class="ico">⌘</span>Arduino</button>
+    <button class="rail-item"><span class="ico">⌨</span>Hotkeys</button>
+    <button class="rail-item"><span class="ico">⚙</span>Setup</button>
+    <button class="rail-item active"><span class="ico">⊹</span>Calibrate</button>
+    <div class="rail-spacer"></div><div class="rail-foot">rev 47 · demo data</div>
+  </aside>
+
+  <main class="main">
+    <div class="topline">
+      <div>
+        <h1>Calibrate</h1>
+        <div class="prose">Capture once in the shared bar, then reuse that screen in a session. Tuner and Tooltip no longer own a private capture; switching the screen invalidates the measurement and asks for a re-check.</div>
+      </div>
+      <div class="top-actions">
+        <span class="chip info">1920×1080 · scale 1.0</span>
+        <span class="chip success">✓ display matches</span>
+        <button class="btn" onclick="toast('Demo: stored marks are not wired.')">⟳ Refresh stored</button>
+      </div>
+    </div>
+
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-session="tuner">Magic Tuner</button>
+      <button class="tab" data-session="tooltip">Tooltip</button>
+    </div>
+
+    <div class="capture-bar panel">
+      <span class="camera">📷</span>
+      <div>
+        <div class="capture-title" id="captureTitle">Tuner · 1</div>
+        <div class="capture-sub" id="captureSub">Selected screen for this session.</div>
+      </div>
+      <div class="capture-actions">
+        <button class="btn ghost small" onclick="toast('Demo: screen details are not wired.')">Details</button>
+        <button class="btn ghost small" onclick="toast('Demo: stored marks are not wired.')">Stored marks</button>
+        <button class="btn primary" onclick="captureScreen()">📷 Capture screen</button>
+      </div>
+    </div>
+
+    <section class="screens-wrap panel">
+      <div class="screens-head">
+        <span class="section-label">Screens</span>
+        <span class="count" id="screenCount">0 / 12 live</span>
+        <span class="chip" style="margin-left:auto">shared by every session</span>
+      </div>
+      <div class="screens" id="screens"></div>
+      <div class="screens-note">Click a screen to use it in the active session. A screen can be used by both sessions; switching requires a new Check.</div>
+    </section>
+
+    <div class="workspace">
+      <section class="col">
+        <div class="col-head"><span class="col-title">Session</span></div>
+        <div class="panel session-panel" id="sessionPanel"></div>
+      </section>
+
+      <section class="col">
+        <div class="canvas-panel panel">
+          <div class="canvas-toolbar">
+            <button class="btn ghost small" onclick="toast('Demo: fit/zoom is not wired.')">Fit</button>
+            <button class="btn ghost small" onclick="toast('Demo: fit/zoom is not wired.')">1:1</button>
+            <span class="grow"></span>
+            <span class="canvas-meta" id="canvasMeta">no screen</span>
+          </div>
+          <div class="canvas" id="canvas"></div>
+          <div class="canvas-foot"><span class="zoom" id="canvasHelp">Select a session screen</span></div>
+        </div>
+      </section>
+
+      <section class="col">
+        <div class="panel editor" id="editor"></div>
+      </section>
+    </div>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+  const CAPACITY = 12;
+  const state = {
+    session: 'tuner',
+    screens: [],
+    selected: { tuner: 's1', tooltip: 's2' },
+    nextId: 4,
+    nextTemplate: 3,
+    tuner: { checked: false, saved: false, lastError: '' },
+    tooltip: { hover: false, saved: false, status: '' },
+    tooltipFields: { hoverX: 120, hoverY: 240, offsetX: -8, offsetY: -6, width: 320, height: 210 },
+  };
+  const templates = [
+    { label: 'Tuner · 1', kind: 'tuner', tool: 'tuner' },
+    { label: 'Tooltip · 1', kind: 'tooltip', tool: 'tooltip' },
+    { label: 'Shop · bag', kind: 'bag', tool: 'shop' },
+    { label: 'Tuner · 2', kind: 'tuner', tool: 'tuner' },
+    { label: 'Tooltip · 2', kind: 'tooltip', tool: 'tooltip' },
+  ];
+
+  function init() {
+    const requested = new URLSearchParams(location.search).get('session');
+    if (requested === 'tooltip') {
+      state.session = 'tooltip';
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.session === 'tooltip'));
+    }
+    state.screens = [
+      makeScreen('s1', 'Tuner · 1', 'tuner', 'tuner'),
+      makeScreen('s2', 'Tooltip · 1', 'tooltip', 'tooltip'),
+      makeScreen('s3', 'Shop · bag', 'bag', 'shop'),
+    ];
+    state.tooltipFields = { hoverX: 120, hoverY: 240, offsetX: -8, offsetY: -6, width: 320, height: 210 };
+    bindTabs();
+    render();
+  }
+  function makeScreen(id,label,kind,tool){ return {id,label,kind,tool}; }
+  function activeScreen(){ return state.screens.find(s => s.id === state.selected[state.session]); }
+  function currentSession(){ return state.session; }
+  function escapeHtml(value){ return String(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+
+  function bindTabs(){
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        state.session = tab.dataset.session;
+        document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.session === state.session));
+        if (state.session === 'tuner') state.tuner.checked = state.tuner.checked && !!activeScreen() && activeScreen().kind === 'tuner';
+        render();
+      });
+    });
+  }
+
+  function render(){
+    renderScreens();
+    renderSessionPanel();
+    renderCanvas();
+    renderEditor();
+    renderCaptureBar();
+  }
+
+  function renderCaptureBar(){
+    const screen = activeScreen();
+    document.getElementById('captureTitle').textContent = screen ? screen.label : 'No screen selected';
+    document.getElementById('captureSub').textContent = screen
+      ? `Reused by the ${state.session === 'tuner' ? 'Tuner' : 'Tooltip'} session · ${screen.kind} screen.`
+      : 'Capture the game window, then pick it in Screens.';
+    document.getElementById('screenCount').textContent = `${state.screens.length} / ${CAPACITY} live`;
+  }
+
+  function renderScreens(){
+    const host = document.getElementById('screens');
+    host.innerHTML = '';
+    state.screens.forEach(screen => {
+      const selected = state.selected[state.session] === screen.id;
+      const usedByTuner = state.selected.tuner === screen.id;
+      const usedByTooltip = state.selected.tooltip === screen.id;
+      const card = document.createElement('div');
+      card.className = 'screen-card' + (selected ? ' selected' : '') + (selected ? ' current' : '');
+      card.title = `${screen.label} — use in ${state.session === 'tuner' ? 'Magic Tuner' : 'Tooltip'}`;
+      card.innerHTML = `
+        <div class="thumb">${mockFor(screen.kind)}</div>
+        <div class="screen-meta">
+          <span class="screen-label">${escapeHtml(screen.label)}</span>
+          <span class="screen-tag">${usedByTuner && usedByTooltip ? 'T+T' : usedByTuner ? 'T' : usedByTooltip ? 'TT' : ''}</span>
+        </div>
+        <span class="session-use">using</span>`;
+      card.addEventListener('click', () => {
+        state.selected[state.session] = screen.id;
+        if (state.session === 'tuner') {
+          state.tuner.checked = false;
+          state.tuner.lastError = '';
+        } else {
+          state.tooltip.hover = false;
+          state.tooltip.status = 'Screen switched — reuse is visual; Capture hover is required for Test read.';
+        }
+        toast(`${screen.label} selected for ${state.session === 'tuner' ? 'Tuner' : 'Tooltip'}. Check/re-capture required.`);
+        render();
+      });
+      host.appendChild(card);
+    });
+    const tile = document.createElement('button');
+    tile.className = 'capture-tile';
+    tile.innerHTML = '<span class="plus">＋</span><span>Capture screen</span>';
+    tile.addEventListener('click', captureScreen);
+    host.appendChild(tile);
+  }
+
+  function renderSessionPanel(){
+    const host = document.getElementById('sessionPanel');
+    const screen = activeScreen();
+    const isTuner = state.session === 'tuner';
+    const checked = state.tuner.checked;
+    host.innerHTML = `
+      <div>
+        <h2>${isTuner ? 'Magic Tuner' : 'Tooltip offset + shape'}</h2>
+        <div class="sub">${isTuner ? 'One OCR geometry + spring point' : 'One hover offset + panel size'}</div>
+      </div>
+      <div class="notice">No private capture. This session uses the screen selected in the shared Capture bar above.</div>
+      <div>
+        <div class="field-label">Screen in use</div>
+        <div style="font-size:13px;font-weight:600;margin-top:3px">${screen ? escapeHtml(screen.label) : 'None selected'}</div>
+        <div class="note">${screen ? (isTuner ? 'Draw the three boxes on this screen, then Check.' : 'Use the picture to measure the panel; live hover remains separate.') : 'Select a screen in Screens.'}</div>
+      </div>
+      <div class="divider"></div>
+      <div>
+        <div class="field-label">Session state</div>
+        <ul class="checklist" style="margin-top:7px">
+          <li><span class="check ${screen ? '' : 'off'}">${screen ? '✓' : '○'}</span><span>Screen selected</span></li>
+          ${isTuner
+            ? `<li><span class="check ${checked ? '' : 'off'}">${checked ? '✓' : '○'}</span><span>Check passed against this screen</span></li>
+               <li><span class="check ${state.tuner.saved ? '' : 'off'}">${state.tuner.saved ? '✓' : '○'}</span><span>Tuner saved</span></li>`
+            : `<li><span class="check ${state.tooltip.hover ? '' : 'off'}">${state.tooltip.hover ? '✓' : '○'}</span><span>Hover anchor captured</span></li>
+               <li><span class="check ${state.tooltip.saved ? '' : 'off'}">${state.tooltip.saved ? '✓' : '○'}</span><span>Tooltip saved</span></li>`}
+        </ul>
+      </div>
+      <div class="note">${isTuner ? 'Switching screens clears the Check and disables Save until it is run again.' : 'A reused screen can edit the offset fields; Test read always needs Capture hover.'}</div>
+    `;
+  }
+
+  function mockFor(kind){
+    if (kind === 'bag') return `<div class="mock-title"><i></i><i></i><span>INVENTORY</span></div><div class="mock-body"><div class="bag-grid">${Array.from({length:24},(_,i)=>`<i class="${[1,2,3,9,10,11,17,18].includes(i)?'filled':''}"></i>`).join('')}</div><div class="mock-side"><b></b><b></b><b></b><b></b></div></div>`;
+    if (kind === 'list') return `<div class="mock-title"><i></i><i></i><span>SHOP</span></div><div class="mock-body"><div class="list-rows">${Array.from({length:8},()=>'<i></i>').join('')}</div></div>`;
+    if (kind === 'pet') return `<div class="mock-title"><i></i><i></i><span>PET</span></div><div class="mock-body"><div class="pet-panel">${Array.from({length:4},()=>'<div class="pet-row"><i></i><b></b></div>').join('')}</div></div>`;
+    if (kind === 'gem') return `<div class="mock-title"><i></i><i></i><span>GEM COMPOSER</span></div><div class="mock-body"><div class="gem-panel"><div class="gem-slot">N</div><div class="gem-slot">G</div><div class="gem-slot">DG</div><div class="gem-slot">◈</div></div></div>`;
+    if (kind === 'tuner') return `<div class="mock-title"><i></i><i></i><span>MAGIC TUNER</span></div><div class="mock-body" style="background:#1a150d"><div class="tuner-panel"><div class="tuner-grade">GRADE · DG</div><div class="tuner-attr"><b></b><b></b><b></b></div><div class="tuner-remaining">REMAINING · 25000</div></div></div>`;
+    return `<div class="mock-title"><i></i><i></i><span>TOOLTIP</span></div><div class="mock-body"><div class="tooltip-panel"><div class="tooltip-line"></div><div class="tooltip-line"></div><div class="tooltip-line"></div><div class="tooltip-line"></div></div></div>`;
+  }
+
+  function renderCanvas(){
+    const canvas = document.getElementById('canvas');
+    const screen = activeScreen();
+    const isTuner = state.session === 'tuner';
+    const meta = document.getElementById('canvasMeta');
+    const help = document.getElementById('canvasHelp');
+    if (!screen) {
+      canvas.innerHTML = `<div class="note" style="text-align:center;max-width:260px">No screen selected.<br>Capture one in the shared bar, then choose it in Screens.</div>`;
+      meta.textContent = 'no screen';
+      help.textContent = 'Select a screen';
+      return;
+    }
+    let overlay = '';
+    if (isTuner) {
+      if (screen.kind === 'tuner') {
+        overlay = `
+          <div class="mark-box blue" data-label="Attributes" style="left:22%;top:34%;width:44%;height:22%"></div>
+          <div class="mark-box" data-label="Grade" style="left:22%;top:22%;width:20%;height:9%"></div>
+          <div class="mark-box amber" data-label="Remaining" style="left:56%;top:65%;width:22%;height:9%"></div>`;
+      } else {
+        overlay = `<div class="mark-box pending" data-label="Check will refuse this screen" style="left:22%;top:34%;width:44%;height:22%"></div>`;
+      }
+    } else {
+      overlay = `
+        ${screen.kind === 'tooltip' ? '' : '<div class="mark-box pending" data-label="no live hover anchor" style="left:20%;top:58%;width:42%;height:26%"></div>'}
+        ${screen.kind === 'tooltip' ? '<div class="mark-box blue" data-label="panel" style="left:18%;top:52%;width:46%;height:28%"></div>' : ''}
+        <div class="hover-anchor" style="left:${state.tooltipFields.hoverX / 19}%;top:${state.tooltipFields.hoverY / 12}%"></div>`;
+    }
+    canvas.innerHTML = `<div class="screen-mock">${mockFor(screen.kind)}${overlay}</div>`;
+    meta.textContent = `${screen.label} · ${screen.kind} · selected by ${isTuner ? 'Tuner' : 'Tooltip'}`;
+    help.textContent = isTuner
+      ? (state.tuner.checked ? 'Checked against this screen' : 'Draw the boxes, then Check boxes')
+      : (screen.kind === 'tooltip' ? 'Reused hover screen · anchor visible' : 'Reused screen — visual offset only');
+  }
+
+  function renderEditor(){
+    const editor = document.getElementById('editor');
+    const screen = activeScreen();
+    const isTuner = state.session === 'tuner';
+    if (isTuner) {
+      const canCheck = !!screen;
+      const checked = state.tuner.checked;
+      editor.innerHTML = `
+        <div><h2>Magic Tuner</h2><div class="sub">${screen ? escapeHtml(screen.label) : 'No screen selected'} · three-box session</div></div>
+        <div class="field-label">Mark (client-relative px)</div>
+        <div class="field-grid">
+          <div class="field"><span>GRADE</span><b>139, 0</b></div>
+          <div class="field"><span>ATTR</span><b>0, 43</b></div>
+          <div class="field"><span>REMAINING</span><b>155, 188</b></div>
+          <div class="field"><span>ROW HEIGHT</span><b>19</b></div>
+        </div>
+        <div class="statusline ${checked ? 'ok' : (state.tuner.lastError ? 'err' : '')}" id="tunerStatus">${checked ? 'Checked · region 280×232 · row pitch 19 · grade DG · remaining 25000.' : (state.tuner.lastError || (screen ? 'Screen selected. Check boxes to verify this exact image.' : 'Select a screen first.'))}</div>
+        <div class="note">Check reads the selected screen. Switching screens clears this result.</div>
+        <div class="editor-foot">
+          <button class="btn" id="checkBtn" ${canCheck ? '' : 'disabled'}>Check boxes</button>
+          <button class="btn primary" id="saveTuner" ${checked && screen ? '' : 'disabled'}>Save tuner</button>
+        </div>`;
+      document.getElementById('checkBtn')?.addEventListener('click', checkTuner);
+      document.getElementById('saveTuner')?.addEventListener('click', saveTuner);
+    } else {
+      const f = state.tooltipFields;
+      const canSave = !!screen && Number(f.width) >= 20 && Number(f.height) >= 20;
+      editor.innerHTML = `
+        <div><h2>Tooltip offset + shape</h2><div class="sub">${screen ? escapeHtml(screen.label) : 'No screen selected'} · reused screen</div></div>
+        <div class="field-label">Hover point</div>
+        <div class="field-grid">
+          <div class="field"><span>HOVER X</span><input class="input" id="hoverX" value="${f.hoverX}"></div>
+          <div class="field"><span>HOVER Y</span><input class="input" id="hoverY" value="${f.hoverY}"></div>
+        </div>
+        <div class="field-label" style="margin-top:3px">Panel box &amp; offset</div>
+        <div class="field-grid">
+          <div class="field"><span>OFFSET X</span><input class="input" id="offsetX" value="${f.offsetX}"></div>
+          <div class="field"><span>OFFSET Y</span><input class="input" id="offsetY" value="${f.offsetY}"></div>
+          <div class="field"><span>WIDTH</span><input class="input" id="width" value="${f.width}"></div>
+          <div class="field"><span>HEIGHT</span><input class="input" id="height" value="${f.height}"></div>
+        </div>
+        <div class="statusline ${state.tooltip.saved ? 'ok' : state.tooltip.hover ? '' : 'warn'}" id="tooltipStatus">${state.tooltip.saved ? 'Saved tooltip · rev 47' : (state.tooltip.status || (state.tooltip.hover ? 'Hover anchor captured.' : 'Reused screen: visual offset editing only. Capture hover for the live anchor/Test read.'))}</div>
+        <div class="note">Save tooltip writes offset/size only; Test read requires Capture hover so the core can place the cursor again.</div>
+        <div class="editor-foot" style="flex-wrap:wrap">
+          <button class="btn" id="hoverBtn">Capture hover</button>
+          <button class="btn" id="testBtn" ${state.tooltip.hover ? '' : 'disabled'}>Test read</button>
+          <button class="btn primary" id="saveTooltip" ${canSave ? '' : 'disabled'}>Save tooltip</button>
+        </div>`;
+      document.querySelectorAll('#editor input').forEach(input => input.addEventListener('change', syncTooltipFields));
+      document.getElementById('hoverBtn')?.addEventListener('click', captureHover);
+      document.getElementById('testBtn')?.addEventListener('click', () => toast('Demo: Test read uses Capture hover; the anchor is live.'));
+      document.getElementById('saveTooltip')?.addEventListener('click', saveTooltip);
+    }
+  }
+
+  function syncTooltipFields(){
+    ['hoverX','hoverY','offsetX','offsetY','width','height'].forEach(key => {
+      state.tooltipFields[key] = Number(document.getElementById(key)?.value || 0);
+    });
+    renderCanvas();
+  }
+
+  function checkTuner(){
+    const screen = activeScreen();
+    if (!screen) return;
+    if (screen.kind !== 'tuner') {
+      state.tuner.checked = false;
+      state.tuner.lastError = 'This screen is not a Tuner panel — select a Tuner screen.';
+      render();
+      return;
+    }
+    state.tuner.checked = true;
+    state.tuner.lastError = '';
+    toast('Check passed against ' + screen.label + '.');
+    render();
+  }
+  function saveTuner(){
+    if (!state.tuner.checked) return;
+    state.tuner.saved = true;
+    toast('Saved Tuner against ' + activeScreen().label + ' (rev 47).');
+    render();
+  }
+  function captureHover(){
+    let tooltipScreens = state.screens.filter(s => s.kind === 'tooltip');
+    if (!tooltipScreens.length) {
+      const screen = addScreen('Tooltip · 1', 'tooltip', 'tooltip');
+      state.selected.tooltip = screen.id;
+    } else {
+      state.selected.tooltip = tooltipScreens[0].id;
+    }
+    state.tooltip.hover = true;
+    state.tooltip.status = 'Hover captured; cursor anchor placed at (120, 240).';
+    toast('Hover captured on the Tooltip screen.');
+    render();
+  }
+  function saveTooltip(){
+    state.tooltip.saved = true;
+    toast('Saved tooltip offset/size (rev 47).');
+    render();
+  }
+  function captureScreen(){
+    const template = templates[state.nextTemplate % templates.length];
+    const screen = addScreen(template.label, template.kind, template.tool);
+    state.selected[state.session] = screen.id;
+    if (state.session === 'tuner') { state.tuner.checked = false; state.tuner.saved = false; state.tuner.lastError = ''; }
+    else { state.tooltip.hover = false; state.tooltip.saved = false; state.tooltip.status = 'New screen captured; reuse it visually or Capture hover for the anchor.'; }
+    toast(`Captured ${screen.label}; selected for this session.`);
+    render();
+  }
+  function addScreen(label,kind,tool){
+    const screen = makeScreen('s' + state.nextId++, label, kind, tool);
+    state.screens.push(screen);
+    if (state.screens.length > CAPACITY) {
+      const evicted = state.screens.shift();
+      Object.keys(state.selected).forEach(key => { if (state.selected[key] === evicted.id) state.selected[key] = null; });
+    }
+    return screen;
+  }
+  let toastTimer = null;
+  function toast(message, warning=false){
+    const el = document.getElementById('toast');
+    el.textContent = message;
+    el.className = 'toast show' + (warning ? ' warning' : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.className = 'toast' + (warning ? ' warning' : ''); }, 2600);
+  }
+  init();
+</script>
+</body>
+</html>
