@@ -52,6 +52,11 @@ hotkeys:
   quit: 122
   advance_grade: 71
   pause: 20
+buy_sell:
+  # The shop list's visible row count is a property of the GAME, not of this PC and not of the
+  # player's calibration. It ships here so a fresh install with no config/machine/ yet still has
+  # a usable Buy/Sell; the core falls back to the same ShopGeometry::DEFAULT_ROWS if it is absent.
+  shop_rows: 10
 tuner:
   grade_order:
   - N

@@ -177,7 +177,13 @@ pub const FILES: &[FileDef] = &[
         class: Class::Setup,
         domain: Domain::BuySell,
         schema_version: Some(SCHEMA_VERSION),
-        owns: &["buy_sell.presets", "buy_sell.sell_cap"],
+        owns: &[
+            "buy_sell.presets",
+            "buy_sell.sell_cap",
+            // Game property, not a measurement: it ships as a default in defaults.yaml and must
+            // never land in machine/. The owner is setup so a config write can route it.
+            "buy_sell.shop_rows",
+        ],
     },
     // ── machine: measured on this PC, never copied ───────────────────────────────────────────
     FileDef {
@@ -216,7 +222,6 @@ pub const FILES: &[FileDef] = &[
         owns: &[
             "buy_sell.bag_grid",
             "buy_sell.bag_slot",
-            "buy_sell.shop_rows",
             "buy_sell.shop_region",
             "buy_sell.scroll_point",
             "buy_sell.max_button",
