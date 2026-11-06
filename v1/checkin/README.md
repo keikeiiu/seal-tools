@@ -10,7 +10,8 @@ Each account logs in once (you solve the reCAPTCHA by hand), the session is save
 2. Navigates to the event check-in page and confirms the session is still valid
 3. Claims the next unclaimed day through `get.php` (each account progresses independently)
 4. Reads the reward result from the response and reports it
-5. If a session has expired → opens a visible browser, fills credentials, waits for you to solve the reCAPTCHA, saves the fresh session
+5. Spends any remaining 補簽 (makeup) chances on missed days
+6. If a session has expired → opens a visible browser, fills credentials, waits for you to solve the reCAPTCHA, saves the fresh session
 
 ## Requirements
 
@@ -127,7 +128,7 @@ Register-ScheduledTask -TaskName 'SealTools CheckIn' -Action $action -Trigger $t
 | **reCAPTCHA** | Polls the hidden `login_recaptcha` / `.g-recaptcha-response` field until you solve it, then auto-submits |
 | **Day buttons** | Each unclaimed day is `<a href="javascript:get(N)">` (N = 1–28). A claimed day loses that link — the server replaces it with a `collar_1` 已領取 marker — so the remaining `get(N)` hrefs are the claimable days |
 | **Claim** | `POST get.php {index: N}`; the PHP answers a JS array literal (`RetVal`, `item_name`) parsed with `literal_eval`. `-10` = already claimed today, `-11` = claim in order, `-12` = queue (retried) |
-| **Makeup** | The 20261104 event also exposes 補簽 through `POST get.php {is_makeup: 1}`; the daily flow does not use it |
+| **Makeup** | The event also exposes 補簽 through `POST get.php {is_makeup: 1}`. After today's claim the run spends every remaining chance (capped at 10 calls) and reports what it filled; `-20`/`-21`/`-22` mean no chances / nothing missed / claim today first |
 | **Session** | Saved via `context.storage_state(path=...)`; loaded via `browser.new_context(storage_state=...)` |
 
 ## Notes

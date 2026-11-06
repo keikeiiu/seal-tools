@@ -8,7 +8,7 @@ Login (manual reCAPTCHA) + daily 簽到 check-in for multiple accounts.
   （此期 select 的 value 同舊期相反：2 = 拉麥爾/卡蕾兒/阿勒斯, 1 = 哈比兔/勇者咕咕）
 - 每天可領一天；get.php 以 {index: N} 領取（必須依序，見 RetVal -11）
 - 已領的日子不再有 get(N) button（換成 collar_1 標記），剩下嘅 link 就係未領
-- 活動有補簽 (get.php is_makeup=1)，但每日簽到只需領當天，不會用到
+- 活動有補簽 (get.php is_makeup=1)：今日領取後會用盡剩餘次數補漏簽（-20/-21/-22）
 
 - Each account's session saved separately in sessions/<username>.json
 - Session reused until expired; re-login (manual captcha) only when needed
@@ -175,6 +175,14 @@ RET_MSG = {
 }
 
 
+# get.php is_makeup=1 RetVal meanings (see gachapon.js)
+MAKEUP_MSG = {
+    "-20": "目前沒有補簽次數",
+    "-21": "沒有可補的漏簽天數",
+    "-22": "請先領取今天的獎勵再補簽",
+}
+
+
 def do_checkin(context, page, checkin_url):
     """Claim the next unclaimed day; the server allows one per calendar day."""
     page.goto(checkin_url, wait_until="domcontentloaded")
@@ -219,6 +227,36 @@ def do_checkin(context, page, checkin_url):
             return (bool(claimed), "；".join(claimed) + "；排隊逾時")
 
     return True, "；".join(claimed)
+
+
+def do_makeup(context, checkin_url):
+    """Spend every 補簽 (makeup) chance the event grants, after today's claim.
+
+    Each call fills one missed day and answers with the remaining count. The
+    server refuses with -20 (no chances), -21 (nothing to make up) or -22 (today
+    must be claimed first). Capped at 10 calls so a bad response cannot spin.
+    """
+    base = base_url(checkin_url)
+    filled = []
+    for _ in range(10):
+        data = post_json(context, base + "get.php", {"is_makeup": 1})
+        ret = str(data.get("RetVal", ""))
+        item = str(data.get("item_name", "") or "")
+        if ret == "Y":
+            filled.append(item or "補簽成功")
+            print(f"  ✓ 補簽：{item}")
+            if str(data.get("makeup_chances", "0")).strip() in ("", "0"):
+                break
+            time.sleep(0.6)
+            continue
+        if ret == "-22":
+            print(f"  ⚠ 補簽：{MAKEUP_MSG[ret]}")
+        elif ret in ("-20", "-21"):
+            print(f"  … 補簽：{MAKEUP_MSG[ret]}")
+        else:
+            print(f"  ⛔ 補簽：未知回應 {data}")
+        break
+    return filled
 
 
 def process_account(p, acc, login_url, checkin_url, server_value):
@@ -269,6 +307,12 @@ def process_account(p, acc, login_url, checkin_url, server_value):
 
     # ── Daily check-in ──
     ok, msg = do_checkin(context, page, checkin_url)
+
+    # ── 補簽 (makeup) for missed days, only once today's claim is in ──
+    if ok:
+        filled = do_makeup(context, checkin_url)
+        if filled:
+            msg = f"{msg}；補簽 {'、'.join(filled)}"
 
     context.close()
     return ok, msg
