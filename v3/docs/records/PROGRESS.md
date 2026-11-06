@@ -19,6 +19,27 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-07 (50) — the shop row count becomes a static game default
+
+A fresh unzipped v3 install has no `config/machine/` yet, and Buy therefore failed with
+`Shop rows aren't calibrated — the configured row count is 0.` The count is a property of the GAME
+(the shop list always shows 10 rows), not a measurement of the PC, so it should never have needed
+calibration or a machine file.
+
+- **Shipped default:** `v3/config/defaults.yaml` now carries `buy_sell.shop_rows: 10`, so a clean
+  package has the value before any config is written.
+- **Ownership:** `buy_sell.shop_rows` moved from `machine/buy_sell.yaml` to `setup/buy_sell.yaml`
+  in the registry. It is a game constant, not a measured field; the setup owner exists so a config
+  write can route it, but nothing in the UI asks the player to edit it.
+- **Core fallback:** `ShopSettings` resolves a missing `shop_rows` to
+  `ShopGeometry::DEFAULT_ROWS` (10). An explicitly configured `0` still reaches the domain's
+  "configured row count is 0" refusal, which is useful for a hand-edited config.
+- **Docs:** CONFIG's machine rule now states that `machine/` holds only calibrated values; a game
+  constant belongs in shipped defaults, a portable player setting in `setup/`.
+
+Verification: Rust fmt/clippy/rustdoc clean; full workspace tests passed. No shell or protocol
+change; the fresh-package flow is the fix.
+
 ## 2026-11-05 (49) — the Tuner's private capture button is gone
 
 With the shared Capture bar owning capture on the session tabs, the duplicate **Capture screen** button

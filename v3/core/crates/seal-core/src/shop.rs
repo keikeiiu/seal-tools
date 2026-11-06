@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 
 use seal_domain::config::BuyPreset;
 use seal_domain::decision::{Decision, StopReason};
-use seal_domain::tools::shop::{ClickButton, ShopPlan, ShopSettings, ShopStep};
+use seal_domain::tools::shop::{ClickButton, ShopGeometry, ShopPlan, ShopSettings, ShopStep};
 use seal_tools::runner::{Tool, ToolStatus};
 use seal_tools::tool::{ToolDetail, ToolId};
 use serde_json::Value;
@@ -57,7 +57,11 @@ pub fn settings(config: &Value) -> ShopSettings {
     ShopSettings {
         bag_grid: ints("bag_grid"),
         bag_slot: ints("bag_slot"),
-        shop_rows: integer("shop_rows").unwrap_or(0),
+        // A fresh install has no machine/buy_sell.yaml yet, and the visible row count is a
+        // property of the GAME, not of the player's calibration. Missing therefore means the
+        // domain's default (10); an explicit 0 still reaches the domain's refusal, which is useful
+        // for a hand-edited/bad config. The shell's picker already used this same fallback.
+        shop_rows: integer("shop_rows").unwrap_or(ShopGeometry::DEFAULT_ROWS),
         shop_region: ints("shop_region"),
         scroll_point: ints("scroll_point"),
         max_button: ints("max_button"),
@@ -342,6 +346,30 @@ mod tests {
             settings.presets.get("potion").map(|preset| preset.row),
             Some(1)
         );
+    }
+
+    #[test]
+    fn a_missing_shop_row_count_uses_the_game_default() {
+        // A fresh install has no machine/buy_sell.yaml; the list still has this many rows, and Buy
+        // must not answer "the configured row count is 0" before the first calibration save.
+        let mut config = config();
+        config["buy_sell"]
+            .as_object_mut()
+            .expect("the block is an object")
+            .remove("shop_rows");
+
+        let settings = settings(&config);
+
+        assert_eq!(settings.shop_rows, ShopGeometry::DEFAULT_ROWS);
+        assert_eq!(settings.shop_rows, 10);
+    }
+
+    #[test]
+    fn an_explicit_zero_shop_row_count_still_reaches_the_refusal() {
+        let mut config = config();
+        config["buy_sell"]["shop_rows"] = serde_json::json!(0);
+
+        assert_eq!(settings(&config).shop_rows, 0);
     }
 
     #[test]
