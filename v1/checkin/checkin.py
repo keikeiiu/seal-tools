@@ -3,10 +3,12 @@ Seal Online 每日簽到 Automation
 ================================
 Login (manual reCAPTCHA) + daily 簽到 check-in for multiple accounts.
 
-2026/09/30 「初戀投心」event:
+2026/11/04 「火雞的考驗」event:
 - 首次進入活動頁需先選伺服器 (select.php)，選擇後無法更改
+  （此期 select 的 value 同舊期相反：2 = 拉麥爾/卡蕾兒/阿勒斯, 1 = 哈比兔/勇者咕咕）
 - 每天可領一天；get.php 以 {index: N} 領取（必須依序，見 RetVal -11）
-- 此活動沒有補簽機制（舊活動的 makeup() 已不存在）
+- 已領的日子不再有 get(N) button（換成 collar_1 標記），剩下嘅 link 就係未領
+- 活動有補簽 (get.php is_makeup=1)，但每日簽到只需領當天，不會用到
 
 - Each account's session saved separately in sessions/<username>.json
 - Session reused until expired; re-login (manual captcha) only when needed
@@ -17,6 +19,7 @@ import ast
 import json
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 import yaml
 from playwright.sync_api import sync_playwright
 
@@ -38,8 +41,14 @@ def session_path(username):
 
 
 def base_url(checkin_url):
-    """Event directory, used to build get.php / select.php URLs."""
-    return checkin_url if checkin_url.endswith("/") else checkin_url + "/"
+    """Event directory, used to build get.php / select.php URLs.
+
+    checkin_url may be the directory or its index.php (the browser shows both),
+    so drop a trailing page name before joining the endpoints.
+    """
+    u = urlsplit(checkin_url)
+    path = u.path if u.path.endswith("/") else u.path.rsplit("/", 1)[0] + "/"
+    return f"{u.scheme}://{u.netloc}{path}"
 
 
 def post_json(context, url, form):
@@ -109,11 +118,12 @@ def do_login(page, username, password, login_url):
     page.wait_for_timeout(3000)
 
 
-def ensure_server_selected(context, page, event_url, field, server_value):
+def ensure_server_selected(context, page, event_url, server_value):
     """First visit to a new event forces a one-time, irreversible server pick.
 
-    Each event has its own select.php. Note the receive page's form names the
-    field `sever` (sic) while the check-in page's is `server` — hence `field`.
+    Each event has its own select.php AND its own value numbering: for 20261104
+    2 = 拉麥爾/卡蕾兒/阿勒斯 and 1 = 哈比兔/勇者咕咕, the reverse of 20260930,
+    so `server` in the config has to change together with the event.
 
     Returns (ok, message_or_None).
     """
@@ -124,11 +134,11 @@ def ensure_server_selected(context, page, event_url, field, server_value):
         return True, None
 
     if server_value in (None, "", "no"):
-        return False, "需要選伺服器，但 config 未設定 server（1=拉麥爾, 2=哈比兔）"
+        return False, "需要選伺服器，但 config 未設定 server（2=拉麥爾/卡蕾兒/阿勒斯, 1=哈比兔/勇者咕咕）"
 
     print(f"  → 首次進入，選擇伺服器 {server_value} ...")
     context.request.post(base_url(event_url) + "select.php",
-                         form={field: str(server_value)}, timeout=30000)
+                         form={"server": str(server_value)}, timeout=30000)
 
     page.goto(event_url, wait_until="domcontentloaded")
     page.wait_for_timeout(2000)
@@ -138,18 +148,19 @@ def ensure_server_selected(context, page, event_url, field, server_value):
 
 
 def get_claimable_days(page):
-    """Day numbers of 第N天 buttons that are not already used/disabled."""
+    """Day numbers still claimable, from the javascript:get(N) day buttons.
+
+    A claimed day stops rendering its button entirely — the server puts a
+    `collar_1` 已領取 marker in its place — so every get(N) link left on the page
+    is a day that can still be claimed.
+    """
     return page.evaluate(
-        """() => [...document.querySelectorAll('.heart-btn')]
-             .map(b => {
-               const m = (b.innerText || '').match(/(\\d+)/);
-               return {
-                 day: m ? parseInt(m[1], 10) : 0,
-                 used: b.classList.contains('used') || b.disabled,
-               };
+        """() => [...document.querySelectorAll('a[href^="javascript:get("]')]
+             .map(a => {
+               const m = (a.getAttribute('href') || '').match(/(\\d+)/);
+               return m ? parseInt(m[1], 10) : 0;
              })
-             .filter(x => x.day && !x.used)
-             .map(x => x.day)"""
+             .filter(day => day > 0)"""
     )
 
 
@@ -165,13 +176,13 @@ RET_MSG = {
 
 
 def do_checkin(context, page, checkin_url):
-    """Claim every not-yet-used day, in order, until the server refuses."""
+    """Claim the next unclaimed day; the server allows one per calendar day."""
     page.goto(checkin_url, wait_until="domcontentloaded")
     page.wait_for_timeout(2500)
 
     days = get_claimable_days(page)
     if not days:
-        return False, "沒有可領取的日期（今天已領完或活動未開始）"
+        return True, "沒有可領取的日期（已領完或活動未開始）"
 
     base = base_url(checkin_url)
     claimed = []
@@ -192,6 +203,14 @@ def do_checkin(context, page, checkin_url):
                 print(f"  … 第 {day} 天排隊中（{item}），{wait}s 後重試")
                 time.sleep(wait)
                 continue
+            if ret == "-10":
+                # One day per calendar day. A second run (or the scheduled task
+                # catching up after a missed 00:05) must not be a failure.
+                if claimed:
+                    print("  ✓ 今天已領過，收工")
+                    return True, "；".join(claimed) + "；今天已領過"
+                print("  ✓ 今天已領過，不用再領")
+                return True, RET_MSG["-10"]
 
             print(f"  ⛔ 第 {day} 天：{RET_MSG.get(ret, f'未知回應 {data}')}")
             return (bool(claimed), "；".join(claimed) or RET_MSG.get(ret, ret))
@@ -202,130 +221,7 @@ def do_checkin(context, page, checkin_url):
     return True, "；".join(claimed)
 
 
-# get.php (20260930_receive) RetVal meanings (see that page's gachapon.js)
-RECV_TIERS = [("1", "集會包"), ("2", "義氣包"), ("3", "大哥包")]
-RECV_MSG = {
-    "-1": "請先登入（session 過期）",
-    "-2": "請選擇領取項目",
-    "-4": "活動期間才可領取",
-    "-10": "資格不符",
-    "-11": "已領取過了",
-    "-13": "請先選擇伺服器",
-    "-14": "請稍後再領取",
-}
-
-
-def do_receive(context, page, receive_url):
-    """Claim the 【集會包】/【義氣包】/【大哥包】 tier this account qualifies for.
-
-    All three tiers share one endpoint; the server answers 資格不符 (-10) for the
-    tiers the account isn't eligible for, so trying all three is safe.
-    """
-    page.goto(receive_url, wait_until="domcontentloaded")
-    page.wait_for_timeout(2500)
-
-    base = base_url(receive_url)
-    results = []
-    got_any = False
-    for tier, name in RECV_TIERS:
-        for attempt in range(4):
-            data = post_json(context, base + "get.php", {"sel_button": tier})
-            ret = str(data.get("RetVal", ""))
-            item = str(data.get("item_name", "") or "")
-
-            if ret == "Y":
-                print(f"  ✓ {name}：領取成功 {item}")
-                results.append(f"{name} {item}")
-                got_any = True
-                break
-            if ret == "-12":
-                wait = 3 * (attempt + 1)
-                print(f"  … {name} 排隊中（{item}），{wait}s 後重試")
-                time.sleep(wait)
-                continue
-
-            note = RECV_MSG.get(ret, f"未知回應 {data}")
-            if ret == "-11":  # 已領取過 — a previous run already got it
-                print(f"  ✓ {name}：{note}")
-                results.append(f"{name} {note}")
-                got_any = True
-            elif ret not in ("-10",):  # 資格不符 is expected for the other two tiers
-                print(f"  ⛔ {name}：{note}")
-                results.append(f"{name} {note}")
-            break
-
-    return got_any, results
-
-
-# 3rd_job (哈比番長狂歡祭) error codes, from that page's inline script
-PACK_WAVES = [(1, "第一波"), (2, "第二波")]
-PACK_MSG = {
-    "E001": "連線至錯誤的路徑",
-    "E002": "請先登入",
-    "E003": "不在活動期間",
-    "E004": "帳號或密碼錯誤",
-    "E005": "已領取過了",
-    "E006": "轟趴包剩餘不足一日，請明天再領",
-    "E008": "非活動期間或配發對象",
-}
-
-
-def do_happypack(page, happypack_url, api_tmpl):
-    """Claim 【戀曲轟趴包-15天】 for whichever wave is currently open.
-
-    The endpoint returns E001 unless the call is made from the page itself, so
-    the page is loaded first and the fetch runs in that context.
-    """
-    page.goto(happypack_url, wait_until="domcontentloaded")
-    page.wait_for_timeout(2500)
-
-    results = []
-    got_any = False
-    for wave, name in PACK_WAVES:
-        api = api_tmpl.format(wave=wave)
-        try:
-            data = page.evaluate(
-                """async (url) => {
-                     const r = await fetch(url, {
-                       method: 'POST',
-                       headers: {'X-Requested-With': 'XMLHttpRequest'},
-                       body: ''
-                     });
-                     const t = await r.text();
-                     try { return JSON.parse(t); }
-                     catch (e) { return {_raw: t.slice(0, 200)}; }
-                   }""",
-                api,
-            )
-        except Exception as e:
-            print(f"  ⛔ 轟趴包{name}：請求失敗 {e}")
-            results.append(f"轟趴包{name} 請求失敗")
-            continue
-
-        entry = (data.get("results") or [{}])[0] if isinstance(data, dict) else {}
-        rtype = str(entry.get("RetType", ""))
-        code = str(entry.get("ErrCode", ""))
-
-        if rtype == "Y":
-            print(f"  ✓ 轟趴包{name}：領取完成")
-            results.append(f"轟趴包{name} 領取完成")
-            got_any = True
-        elif code == "E005":  # 已領取過了 — a previous run got it
-            print(f"  ✓ 轟趴包{name}：{PACK_MSG[code]}")
-            results.append(f"轟趴包{name} {PACK_MSG[code]}")
-            got_any = True
-        elif code == "E003":  # wave not open yet — expected for 第二波 before 10/14
-            print(f"  … 轟趴包{name}：{PACK_MSG[code]}")
-        else:
-            note = PACK_MSG.get(code, f"未知回應 {data}")
-            print(f"  ⛔ 轟趴包{name}：{note}")
-            results.append(f"轟趴包{name} {note}")
-
-    return got_any, results
-
-
-def process_account(p, acc, login_url, checkin_url, server_value,
-                    receive_url=None, happypack=None):
+def process_account(p, acc, login_url, checkin_url, server_value):
     """Process one account: server select (first time) + daily check-in."""
     username = acc["username"]
     password = acc["password"]
@@ -364,7 +260,7 @@ def process_account(p, acc, login_url, checkin_url, server_value,
         print(f"[{username}] session 已儲存")
 
     # ── Server selection (one-time, irreversible) ──
-    ok, sel_msg = ensure_server_selected(context, page, checkin_url, "server", server_value)
+    ok, sel_msg = ensure_server_selected(context, page, checkin_url, server_value)
     if sel_msg:
         print(f"[{username}] {sel_msg}")
     if not ok:
@@ -373,24 +269,6 @@ def process_account(p, acc, login_url, checkin_url, server_value,
 
     # ── Daily check-in ──
     ok, msg = do_checkin(context, page, checkin_url)
-
-    # ── One-time 【集會包】/【義氣包】/【大哥包】 claim ──
-    if receive_url:
-        rok, recv_msg = ensure_server_selected(context, page, receive_url, "sever", server_value)
-        if recv_msg:
-            print(f"[{username}] 領取頁 {recv_msg}")
-        if rok:
-            got, parts = do_receive(context, page, receive_url)
-            if parts:
-                msg = f"{msg}；{'；'.join(parts)}"
-            ok = ok or got
-
-    # ── One-time 【戀曲轟趴包-15天】 claim (per wave) ──
-    if happypack:
-        got, parts = do_happypack(page, happypack["url"], happypack["api"])
-        if parts:
-            msg = f"{msg}；{'；'.join(parts)}"
-        ok = ok or got
 
     context.close()
     return ok, msg
@@ -404,13 +282,8 @@ def main():
         return
 
     login_url = cfg.get("login_url", "https://security.sponline.com.tw/login/login.php")
-    checkin_url = cfg.get("checkin_url", "https://security.sponline.com.tw/event/20260930/")
-    receive_url = cfg.get("receive_url")
+    checkin_url = cfg.get("checkin_url", "https://security.sponline.com.tw/event/20261104_1/index.php")
     server_value = cfg.get("server")
-
-    happypack = None
-    if cfg.get("happypack_url") and cfg.get("happypack_api"):
-        happypack = {"url": cfg["happypack_url"], "api": cfg["happypack_api"]}
 
     print(f"共 {len(accounts)} 個帳號\n")
 
@@ -420,8 +293,7 @@ def main():
             username = acc.get("username", "?")
             print(f"\n=== {username} ===")
             try:
-                ok, msg = process_account(p, acc, login_url, checkin_url, server_value,
-                                          receive_url, happypack)
+                ok, msg = process_account(p, acc, login_url, checkin_url, server_value)
             except Exception as e:
                 ok, msg = False, f"錯誤: {e}"
             results.append((username, ok, msg))

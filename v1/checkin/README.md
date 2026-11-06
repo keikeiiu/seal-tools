@@ -1,6 +1,6 @@
 # Seal Online 每日簽到 Automation
 
-Automates the daily **簽到 (check-in)** on the Seal Online 七夕簽到簿 event page for multiple accounts.
+Automates the daily **簽到 (check-in)** on the current Seal Online monthly check-in event page for multiple accounts.
 
 Each account logs in once (you solve the reCAPTCHA by hand), the session is saved, and reused every day until it expires — so daily runs are fully headless with no manual captcha.
 
@@ -8,8 +8,8 @@ Each account logs in once (you solve the reCAPTCHA by hand), the session is save
 
 1. Loads each account's saved login session (Playwright `storage_state`)
 2. Navigates to the event check-in page and confirms the session is still valid
-3. Clicks the earliest unclaimed day button (each account progresses independently)
-4. Reads the reward result from the on-page dialog and reports it
+3. Claims the next unclaimed day through `get.php` (each account progresses independently)
+4. Reads the reward result from the response and reports it
 5. If a session has expired → opens a visible browser, fills credentials, waits for you to solve the reCAPTCHA, saves the fresh session
 
 ## Requirements
@@ -39,7 +39,12 @@ checkin/
 ```yaml
 # Login page + event check-in page
 login_url: "https://security.sponline.com.tw/login/login.php"
-checkin_url: "https://security.sponline.com.tw/event/20260806/"
+checkin_url: "https://security.sponline.com.tw/event/20261104_1/index.php"
+
+# One-time pick of the 領獎伺服器 (irreversible). The value numbering is
+# per-event — 20261104 has 2 = 拉麥爾/卡蕾兒/阿勒斯, 1 = 哈比兔/勇者咕咕;
+# the 20260930 event had them the other way round.
+server: "2"
 
 accounts:
   - username: "your_account_1"
@@ -49,7 +54,7 @@ accounts:
   # ... one entry per account
 ```
 
-> **Note:** the event `checkin_url` changes with each new activity (each event runs ~28 days). Update it in the config when a new event starts — the script does not auto-detect it.
+> **Note:** the event `checkin_url` and the `server` numbering change with each new activity (each event runs ~28 days). Update both when a new event starts — the script does not auto-detect them. Read the new event's `select.php` for its option values before the first run; the pick is one-time and irreversible.
 
 ## Usage
 
@@ -63,6 +68,7 @@ python checkin.py
 - The script opens a **visible browser**, fills the username/password, and pauses.
 - **You must solve the reCAPTCHA in that browser window** (up to 2 minutes).
 - Once solved, the script submits, saves the session to `sessions/<username>.json`, and checks in.
+- The first event-page visit also picks the 領獎伺服器 from the config's `server` value — one-time and irreversible.
 
 ### Subsequent runs
 
@@ -72,16 +78,15 @@ python checkin.py
 ### Example output
 
 ```
-=== account4 ===
-[account4] 使用已存 session
-  → 簽到第 16 天...
-  [結果] 恭喜獲得
-[活動]寵物便當盒-1天*1
+=== keisign4 ===
+[keisign4] 使用已存 session
+  → 首次進入，選擇伺服器 2 ...
+  ✓ 領取第 1 天：[活動]進階擺攤-1天*1
+  ✓ 今天已領過，收工
 
 === 結果 ===
-  ✓ account4: 第 16 天簽到完成
-  ✓ account3: 第 18 天簽到完成
-  ...
+  ✓ keisign4: 第 1 天 → [活動]進階擺攤-1天*1；今天已領過
+  ... one block per account ...
 
 成功 7/7。session 已存，下次免重新登入（直到過期）。
 ```
@@ -120,8 +125,9 @@ Register-ScheduledTask -TaskName 'SealTools CheckIn' -Action $action -Trigger $t
 |-------|--------|
 | **Login form** | `#userID` (帳號), `#userPW` (密碼), submitted via `$('form').submit()` |
 | **reCAPTCHA** | Polls the hidden `login_recaptcha` / `.g-recaptcha-response` field until you solve it, then auto-submits |
-| **Day buttons** | Each unclaimed day is `<a href="javascript:get(N)">` (N = 1–28); the script clicks the smallest N still present |
-| **Result dialog** | jQuery modal `#dialog-message` (auto-closes) — polled for text like `恭喜獲得` / `你今天已經領過囉` |
+| **Day buttons** | Each unclaimed day is `<a href="javascript:get(N)">` (N = 1–28). A claimed day loses that link — the server replaces it with a `collar_1` 已領取 marker — so the remaining `get(N)` hrefs are the claimable days |
+| **Claim** | `POST get.php {index: N}`; the PHP answers a JS array literal (`RetVal`, `item_name`) parsed with `literal_eval`. `-10` = already claimed today, `-11` = claim in order, `-12` = queue (retried) |
+| **Makeup** | The 20261104 event also exposes 補簽 through `POST get.php {is_makeup: 1}`; the daily flow does not use it |
 | **Session** | Saved via `context.storage_state(path=...)`; loaded via `browser.new_context(storage_state=...)` |
 
 ## Notes
@@ -130,3 +136,4 @@ Register-ScheduledTask -TaskName 'SealTools CheckIn' -Action $action -Trigger $t
 - **Passwords** are stored in plaintext in `checkin_config.yaml` — keep this file private too.
 - Sessions expire server-side after some period; when that happens the script falls back to the manual-captcha login flow automatically.
 - Each account's check-in progress is independent — a later-created account lags behind on day number.
+- A run that finds today already claimed reports success (`-10`). The scheduled task may legitimately run twice in one day (e.g. `StartWhenAvailable` catching up), and that must not look like a failure.
