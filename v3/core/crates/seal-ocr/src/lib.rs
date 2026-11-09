@@ -40,3 +40,4 @@ pub mod imageops;
 pub mod model;
 pub mod modes;
 pub mod pipeline;
+pub mod profile;

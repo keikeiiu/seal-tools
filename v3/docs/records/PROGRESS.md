@@ -19,6 +19,27 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-10 (55) — PP-OCRv6 small trial loads its own dictionary
+
+The v6 study found the official ONNX exports and measured the dictionary split: tiny has 6,904
+entries and misses Traditional characters, while small has 18,708 and covers the TW probes. The
+trial implementation now has a real path without changing the app default.
+
+- **Official ONNX, no local conversion:** small det (9.9 MB) + rec (21.2 MB) and their
+  `inference.yml` are used; the yml's `PostProcess.character_dict` is written to
+  `PP-OCRv6_small_rec_dict.txt`. The ONNX graph has no `character` metadata, so the sidecar is
+  mandatory.
+- **Loader:** `OcrModelVersion` / `DetectorProfile` and `OcrPipeline::load_version` (`v4` default,
+  `v6-small` trial); `RecModel::load_with_dictionary` + `parse_dictionary_text` preserve literal
+  spaces and U+3000 instead of trimming them. v6 detector thresholds are 0.2 / 0.45 / 1.4.
+- **Trial switches:** `ocr_eval --model-version v6-small`, and `SEAL_OCR_MODEL_VERSION=v6-small`
+  for the app path; invalid values fail loudly.
+- **Measured once:** tuner-panel fixture v4 exact 0/1, CER 0.2105, 679 ms; v6 small exact 0/1, CER
+  0.2895, 806 ms. This is not a verdict; the live corpus and A/B gate are still required.
+
+Verification: `cargo fmt`; `cargo check -p seal-ocr -p seal-core --all-targets`; `seal-ocr` unit/
+integration and the core OCR suites passed. Shell/protocol untouched.
+
 ## 2026-11-09 (54) — Setup sees the quick dock's header changes
 
 The quick dock header's Keep open toggle called `model.setDockBehavior`, but the kept-alive Setup tab

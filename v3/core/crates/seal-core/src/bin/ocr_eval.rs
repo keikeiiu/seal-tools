@@ -32,6 +32,7 @@ use std::time::Instant;
 
 use seal_domain::config::AttributesConfig;
 use seal_ocr::pipeline::OcrPipeline;
+use seal_ocr::profile::OcrModelVersion;
 use serde_json::{Value, json};
 
 fn main() {
@@ -54,8 +55,13 @@ fn run() -> Result<(), String> {
         ));
     }
     let attributes = AttributesConfig::default();
-    let mut pipeline = OcrPipeline::load_for_root(&args.root, &attributes, args.row_height)
-        .map_err(|error| format!("OCR models could not load: {error}"))?;
+    let mut pipeline = OcrPipeline::load_for_root_version(
+        &args.root,
+        &attributes,
+        args.row_height,
+        args.model_version,
+    )
+    .map_err(|error| format!("OCR models could not load: {error}"))?;
 
     let mut results = Vec::with_capacity(cases.len());
     let mut exact = 0_usize;
@@ -174,6 +180,7 @@ struct Arguments {
     corpus: PathBuf,
     row_height: u32,
     baseline: Option<PathBuf>,
+    model_version: OcrModelVersion,
 }
 
 impl Arguments {
@@ -182,12 +189,18 @@ impl Arguments {
         let mut corpus = None;
         let mut row_height = 19_u32;
         let mut baseline = None;
+        let mut model_version = OcrModelVersion::V4;
         while let Some(arg) = args.next() {
             let mut value = || args.next().ok_or_else(|| format!("{arg} needs a value"));
             match arg.as_str() {
                 "--root" => root = Some(PathBuf::from(value()?)),
                 "--corpus" => corpus = Some(PathBuf::from(value()?)),
                 "--baseline" => baseline = Some(PathBuf::from(value()?)),
+                "--model-version" => {
+                    let raw = value()?;
+                    model_version = OcrModelVersion::parse(&raw)
+                        .ok_or_else(|| format!("--model-version: unknown version {raw:?}"))?;
+                }
                 "--row-height" => {
                     row_height = value()?
                         .parse()
@@ -203,6 +216,7 @@ impl Arguments {
             }),
             row_height,
             baseline,
+            model_version,
         })
     }
 }

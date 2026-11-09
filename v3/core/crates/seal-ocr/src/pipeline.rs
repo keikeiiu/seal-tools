@@ -37,6 +37,7 @@ use crate::imageops::{
     Rgb, det_input, perspective_crop, rec_input, resize_linear, upscale_rgba_cubic,
 };
 use crate::model::{Decoded, OcrError, RecModel};
+use crate::profile::{DetectorProfile, OcrModelVersion};
 
 /// The detector's input side, as the C# library configures it.
 const DET_LIMIT_SIDE: f64 = 736.0;
@@ -48,9 +49,9 @@ const VERTICAL_PAD_MAX_HEIGHT: usize = 30;
 const VERTICAL_PAD_MIN_HEIGHT: usize = 30;
 const VERTICAL_PAD_MAX_ASPECT: f64 = 8.0;
 const DET_PAD_MULTIPLE: usize = 32;
-const DET_THRESH: f32 = 0.3;
+/// The v4 default used by the public [`accepted_box`] test convenience; the pipeline itself reads
+/// the per-version [`DetectorProfile`].
 const BOX_THRESH: f64 = 0.6;
-const UNCLIP_RATIO: f64 = 1.5;
 const REC_HEIGHT: usize = 48;
 /// The reference `max_candidates` (PP-OCRv4 default set): at most this many contours are scored per
 /// map. The 2×2 dilation leaves one contour per text blob; anything beyond a thousand candidates is a
@@ -103,6 +104,7 @@ pub struct OcrPipeline {
     rec: RecModel,
     cleaner: TextCleaner,
     row_height: u32,
+    detector: DetectorProfile,
 }
 
 /// The model files the pipeline loads. A candidate directory is usable only when BOTH are present: a
@@ -114,8 +116,9 @@ pub const REQUIRED_MODELS: [&str; 2] = ["ch_PP-OCRv4_det_infer.onnx", "ch_PP-OCR
 /// fine, but a directory without it is a working install, not `ocr_unavailable` (OCR-F10).
 pub const OPTIONAL_MODELS: [&str; 1] = ["ch_ppocr_mobile_v2.0_cls_infer.onnx"];
 
-fn missing_models(dir: &Path) -> Vec<&'static str> {
-    REQUIRED_MODELS
+fn missing_models(dir: &Path, version: OcrModelVersion) -> Vec<&'static str> {
+    version
+        .required_models()
         .iter()
         .copied()
         .filter(|name| !dir.join(name).is_file())
@@ -144,6 +147,22 @@ pub fn resolve_models_dir(
     root: Option<&Path>,
     exe_dir: Option<&Path>,
 ) -> Result<PathBuf, PipelineError> {
+    resolve_models_dir_for(env, root, exe_dir, OcrModelVersion::V4)
+}
+
+/// [`resolve_models_dir`] for one model generation. The v4 wrapper above keeps the shipped resolver
+/// unchanged; the v6 trial passes [`OcrModelVersion::V6Small`] and therefore requires the v6 files.
+///
+/// # Errors
+///
+/// Returns a [`PipelineError`] when the env var is set but unusable or when no candidate directory
+/// holds every model file for `version`; the message names every directory tried and why.
+pub fn resolve_models_dir_for(
+    env: Option<&Path>,
+    root: Option<&Path>,
+    exe_dir: Option<&Path>,
+    version: OcrModelVersion,
+) -> Result<PathBuf, PipelineError> {
     if let Some(dir) = env {
         if !dir.is_dir() {
             return Err(PipelineError {
@@ -151,7 +170,7 @@ pub fn resolve_models_dir(
                 message: format!("SEAL_OCR_MODELS is not a directory: {}", dir.display()),
             });
         }
-        let missing = missing_models(dir);
+        let missing = missing_models(dir, version);
         if !missing.is_empty() {
             return Err(PipelineError {
                 reason: "models_dir_missing",
@@ -182,7 +201,7 @@ pub fn resolve_models_dir(
             attempted.push(format!("{} (no such directory)", directory.display()));
             continue;
         }
-        let missing = missing_models(directory);
+        let missing = missing_models(directory, version);
         if missing.is_empty() {
             return Ok(directory.clone());
         }
@@ -200,8 +219,9 @@ pub fn resolve_models_dir(
     Err(PipelineError {
         reason: "models_env_unset",
         message: format!(
-            "SEAL_OCR_MODELS is not set and no models directory was found. Tried: {tried}. Place the \
-             two .onnx files (det + rec) in <root>/models or set SEAL_OCR_MODELS."
+            "SEAL_OCR_MODELS is not set and no models directory was found for {}. Tried: {tried}. \
+             Place the required model files in <root>/models or set SEAL_OCR_MODELS.",
+            version.as_str()
         ),
     })
 }
@@ -218,10 +238,33 @@ impl OcrPipeline {
         attributes: &AttributesConfig,
         row_height: u32,
     ) -> Result<Self, PipelineError> {
-        let det = DetModel::load(&models_dir.join("ch_PP-OCRv4_det_infer.onnx"), 1)
-            .map_err(|error| load_error("det", &error))?;
-        let rec = RecModel::load(&models_dir.join("ch_PP-OCRv4_rec_infer.onnx"), 1)
-            .map_err(|error| load_error("rec", &error))?;
+        Self::load_version(models_dir, attributes, row_height, OcrModelVersion::V4)
+    }
+
+    /// Loads one explicit model generation. The v6 trial calls this with
+    /// [`OcrModelVersion::V6Small`] and a directory holding the v6 ONNX files plus
+    /// `PP-OCRv6_small_rec_dict.txt`; the shipped [`Self::load`] stays v4.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`PipelineError`] when a required model/dictionary file is missing or invalid, a
+    /// session fails to load, or the dictionary's `text_fixes` are refused.
+    pub fn load_version(
+        models_dir: &Path,
+        attributes: &AttributesConfig,
+        row_height: u32,
+        version: OcrModelVersion,
+    ) -> Result<Self, PipelineError> {
+        let det_path = models_dir.join(version.det_file());
+        let rec_path = models_dir.join(version.rec_file());
+        let det = DetModel::load(&det_path, 1).map_err(|error| load_error("det", &error))?;
+        let rec = match version.dictionary_file() {
+            Some(dictionary_file) => {
+                RecModel::load_with_dictionary(&rec_path, &models_dir.join(dictionary_file), 1)
+            }
+            None => RecModel::load(&rec_path, 1),
+        }
+        .map_err(|error| load_error("rec", &error))?;
         let cleaner = TextCleaner::new(&attributes.text_fixes).map_err(|error| PipelineError {
             reason: "text_fixes_invalid",
             message: error.message(),
@@ -231,6 +274,7 @@ impl OcrPipeline {
             rec,
             cleaner,
             row_height: row_height.max(8),
+            detector: version.detector(),
         })
     }
 
@@ -246,12 +290,43 @@ impl OcrPipeline {
         attributes: &AttributesConfig,
         row_height: u32,
     ) -> Result<Self, PipelineError> {
+        let version = match std::env::var("SEAL_OCR_MODEL_VERSION") {
+            Ok(raw) => OcrModelVersion::parse(&raw).ok_or_else(|| PipelineError {
+                reason: "ocr_model_version_invalid",
+                message: format!(
+                    "SEAL_OCR_MODEL_VERSION is {raw:?}; expected \"v4\" or \"v6-small\""
+                ),
+            })?,
+            Err(std::env::VarError::NotPresent) => OcrModelVersion::V4,
+            Err(std::env::VarError::NotUnicode(_)) => {
+                return Err(PipelineError {
+                    reason: "ocr_model_version_invalid",
+                    message: "SEAL_OCR_MODEL_VERSION is not valid Unicode".to_owned(),
+                });
+            }
+        };
+        Self::load_for_root_version(root, attributes, row_height, version)
+    }
+
+    /// [`Self::load_for_root`] for one model generation. Used by the v6 trial/`ocr_eval`; the
+    /// production caller keeps [`Self::load_for_root`] until the corpus gate passes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the resolver's error when no models directory holds every file for `version`,
+    /// otherwise [`Self::load_version`]'s.
+    pub fn load_for_root_version(
+        root: &Path,
+        attributes: &AttributesConfig,
+        row_height: u32,
+        version: OcrModelVersion,
+    ) -> Result<Self, PipelineError> {
         let env = std::env::var_os("SEAL_OCR_MODELS").map(PathBuf::from);
         let exe_dir = std::env::current_exe()
             .ok()
             .and_then(|exe| exe.parent().map(Path::to_path_buf));
-        let dir = resolve_models_dir(env.as_deref(), Some(root), exe_dir.as_deref())?;
-        Self::load(&dir, attributes, row_height)
+        let dir = resolve_models_dir_for(env.as_deref(), Some(root), exe_dir.as_deref(), version)?;
+        Self::load_version(&dir, attributes, row_height, version)
     }
 
     #[must_use]
@@ -345,16 +420,19 @@ impl OcrPipeline {
             return Ok(Vec::new());
         }
         let score_map = ScoreMap::new(map_w, map_h, probs[..map_w * map_h].to_vec());
-        let mask = dilate(&threshold(&score_map, DET_THRESH));
+        let mask = dilate(&threshold(&score_map, self.detector.threshold));
 
         let mut items = Vec::new();
         for contour in find_contours(&mask).into_iter().take(MAX_CANDIDATES) {
             // The crop comes from the UNCLIPPED box, not the shrunk DB kernel: the min rect alone
             // cuts ascenders/descenders (OCR-F1). `contour_crop_quad` also owns the min-size,
             // box-score and unclip filters, in the reference order.
-            let Some(quad) =
-                contour_crop_quad(&score_map, &contour.points, BOX_THRESH, UNCLIP_RATIO)
-            else {
+            let Some(quad) = contour_crop_quad(
+                &score_map,
+                &contour.points,
+                self.detector.box_threshold,
+                self.detector.unclip_ratio,
+            ) else {
                 continue;
             };
             let mapped = Quad(quad.0.map(|point| Pt {

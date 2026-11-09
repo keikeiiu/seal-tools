@@ -120,6 +120,19 @@ Not a runtime dependency. It is used only to download/export the ONNX models. Th
 config names differ from v4/v5; record the exact export command and model hashes in the corpus
 README, but do not port Python API code into Rust.
 
+## Trial status (2026-11-10)
+
+The trial path is now implemented, not a proposal only:
+
+- Official PaddlePaddle HF ONNX exports are used; local conversion is unnecessary.
+- `OcrModelVersion`/`DetectorProfile` and `OcrPipeline::load_version` exist; v4 stays the default.
+- `RecModel::load_with_dictionary` + `parse_dictionary_text` load the v6 sidecar without trimming
+  spaces/U+3000.
+- `SEAL_OCR_MODEL_VERSION=v6-small` selects v6 for the app path; `ocr_eval --model-version v6-small`
+  selects it for corpus runs. An invalid value fails loudly.
+- One tuner-panel fixture run: v4 exact 0/1, CER 0.2105, 679 ms; v6 exact 0/1, CER 0.2895, 806 ms.
+  Too little data for a verdict — the live corpus and A/B gate remain required.
+
 ## 3. Tasks
 
 ### Task 0 — export and pin the candidate models

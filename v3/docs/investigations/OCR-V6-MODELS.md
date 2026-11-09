@@ -62,7 +62,40 @@ current `seal-ocr` `RecModel` reads the dictionary from ONNX metadata, not from 
 must carry the dictionary in metadata, or the adapter must add an external dictionary file. This is a
 real integration change, not a model swap.
 
-## 4. What this study does not prove
+## 4. Local v6 trial (2026-11-10)
+
+The official PaddlePaddle Hugging Face ONNX exports were downloaded instead of converting locally:
+
+| file | bytes | SHA-256 |
+|---|---:|---|
+| `PP-OCRv6_small_det_onnx/inference.onnx` | 9,880,512 | `d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e` |
+| `PP-OCRv6_small_rec_onnx/inference.onnx` | 21,159,378 | `5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634` |
+| `PP-OCRv6_small_rec_onnx/inference.yml` | 150,579 | `ab078671bb49f06228eadccd34f1bb501e157f7a047095ffb943ba81512c77d1` |
+| generated `PP-OCRv6_small_rec_dict.txt` | 74,947 | `b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d` |
+
+The ONNX graph does **not** embed `character` metadata, so the dictionary sidecar is required. The
+trial added:
+
+- `seal_ocr::profile::OcrModelVersion` (`v4`, `v6-small`) and `DetectorProfile` (v6 DB thresholds
+  0.2 / 0.45 / 1.4 vs v4's 0.3 / 0.6 / 1.5);
+- `RecModel::load_with_dictionary` / `parse_dictionary_text`, which preserves a literal space and
+  U+3000 instead of trimming them;
+- `OcrPipeline::load_version` / `load_for_root_version`; `ocr_eval --model-version v6-small`;
+  `SEAL_OCR_MODEL_VERSION=v6-small` for the app path.
+
+`ocr_eval` against the existing single tuner-panel case:
+
+| Model | exact | CER | latency |
+|---|---:|---:|---:|
+| v4 | 0/1 | 0.2105 | 679 ms |
+| v6 small | 0/1 | 0.2895 | 806 ms |
+
+This is **not** a verdict: one fixture is far below the corpus target, and the expected text has
+spacing/line-boundary quirks. The useful signal is that v6 loaded and ran end-to-end, read Traditional
+`關閉` where v4 produced `關闭`, and split some lines differently. The real comparison needs the
+labelled live corpus from the plan.
+
+## 5. What this study does not prove
 
 - That the Paddle inference graph exports cleanly to ONNX.
 - That ONNX Runtime + DirectML support every operator in the v6 graph.
@@ -72,7 +105,7 @@ real integration change, not a model swap.
 
 Those are Task 0 and the corpus gate in the plan.
 
-## 5. Consequence for the plan
+## 6. Consequence for the plan
 
 - **Target: v6 small.**
 - **Tiny: reference only**, disqualified for the TW client by the dictionary gap.
@@ -80,7 +113,7 @@ Those are Task 0 and the corpus gate in the plan.
 - The ONNX export must preserve or supply the 18,708-entry dictionary; missing it is a hard failure,
   never a silent v4 fallback.
 
-## 6. Reproduce
+## 7. Reproduce
 
 ```powershell
 # in a scratch directory

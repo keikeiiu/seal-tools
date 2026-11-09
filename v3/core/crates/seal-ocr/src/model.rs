@@ -30,7 +30,7 @@ use ort::value::{Tensor, ValueType};
 pub enum OcrError {
     /// The runtime refused something (`ort`'s own text, kept for the log).
     Ort(String),
-    /// The model has no `character` metadata — the dictionary is not where this crate expects it.
+    /// The recogniser has no usable character dictionary (no embedded metadata and no external file).
     MissingDictionary,
     /// The model files could not be read.
     Io(std::io::Error),
@@ -41,7 +41,7 @@ impl fmt::Display for OcrError {
         match self {
             Self::Ort(message) => write!(formatter, "onnx runtime: {message}"),
             Self::MissingDictionary => formatter.write_str(
-                "the model has no `character` metadata — the dictionary must come from the model",
+                "the recogniser has no character dictionary (neither ONNX metadata nor the sidecar file)",
             ),
             Self::Io(error) => write!(formatter, "{error}"),
         }
@@ -243,6 +243,40 @@ impl RecModel {
                 .map(str::to_owned)
                 .collect::<Vec<String>>()
         };
+        Self::with_dictionary(shared, dictionary)
+    }
+
+    /// Opens a recogniser whose export does not embed the character dictionary and reads the sidecar
+    /// text file instead. PP-OCRv6's official ONNX export ships `inference.yml` with the dictionary;
+    /// the v6 profile writes that list to this one-character-per-line file beside the model.
+    ///
+    /// The file is read as UTF-8 and split on newlines **without trimming whitespace**: the v6
+    /// dictionary contains a literal ideographic space (U+3000), and `.trim()` would delete it and
+    /// shift every later class index.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OcrError::Io`] when the model or dictionary file is not readable,
+    /// [`OcrError::MissingDictionary`] when the dictionary file is empty, and [`OcrError::Ort`] when
+    /// the runtime rejects the session.
+    pub fn load_with_dictionary(
+        path: &Path,
+        dictionary_path: &Path,
+        threads: usize,
+    ) -> Result<Self, OcrError> {
+        let shared = shared_session(path, threads)?;
+        let text = std::fs::read_to_string(dictionary_path)?;
+        let dictionary = parse_dictionary_text(&text);
+        if dictionary.is_empty() {
+            return Err(OcrError::MissingDictionary);
+        }
+        Self::with_dictionary(shared, dictionary)
+    }
+
+    fn with_dictionary(
+        shared: Arc<SharedSession>,
+        dictionary: Vec<String>,
+    ) -> Result<Self, OcrError> {
         let class_list = class_list(&dictionary);
         let input_name = shared
             .io
@@ -348,6 +382,22 @@ impl RecModel {
             &self.dictionary,
         )
     }
+}
+
+/// Parse a one-character-per-line dictionary file without trimming whitespace. Newlines are the
+/// separators; a trailing newline is ignored, but a line that is a literal space or U+3000 is a real
+/// class and is kept. The v6 dictionary contains U+3000, so `.trim()` here would shift every later
+/// index and turn every following character into the wrong class.
+#[must_use]
+pub fn parse_dictionary_text(text: &str) -> Vec<String> {
+    let mut dictionary: Vec<String> = text
+        .split('\n')
+        .map(|line| line.strip_suffix('\r').unwrap_or(line).to_owned())
+        .collect();
+    while dictionary.last().is_some_and(String::is_empty) {
+        dictionary.pop();
+    }
+    dictionary
 }
 
 /// `"blank"` + the dictionary + `" "`: the class list the C# library builds around the model's
@@ -566,4 +616,23 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         let _ = write!(hex, "{word:08x}");
     }
     hex
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn external_dictionary_preserves_a_space_and_ideographic_space() {
+        let dictionary = parse_dictionary_text("A\n \n\u{3000}\nZ\n");
+        assert_eq!(dictionary, vec!["A", " ", "\u{3000}", "Z"]);
+        assert_eq!(class_list(&dictionary).len(), 6, "blank + 4 + space");
+    }
+
+    #[test]
+    fn external_dictionary_handles_crlf_and_an_empty_file() {
+        assert_eq!(parse_dictionary_text("A\r\nB\r\n"), vec!["A", "B"]);
+        assert_eq!(parse_dictionary_text(""), Vec::<String>::new());
+        assert_eq!(parse_dictionary_text("\n\n"), Vec::<String>::new());
+    }
 }
