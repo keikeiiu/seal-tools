@@ -2047,6 +2047,10 @@ class ShellModel extends ChangeNotifier {
     _miniActive = false;
     _miniTool = null;
     _miniReturnToDock = false;
+    // Match enterDock: Keep open must also come back expanded from the finished run bar.
+    if (_dockBehavior == DockBehavior.alwaysOpen) {
+      _dockCollapsed = false;
+    }
     _dockActive = true;
     _dockWorkArea ??= _miniWorkArea;
     notifyListeners();

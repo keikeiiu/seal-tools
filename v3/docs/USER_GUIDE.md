@@ -167,7 +167,8 @@ opens that tool's options; clicking the rest of the tab just expands it. Hoverin
 Auto-collapse, so it never steals the icon click. The **mini run bar** is the 360 × 96 window shown only
 while a foreground tool is running: its red **Stop** stops that tool (the resident Pet Feeder keeps
 running), the top-right full-window icon expands the shell, and after the run finishes it also offers the
-**Quick dock** button and a filled **Full window** button.
+**Quick dock** button and a filled **Full window** button. **Quick dock** follows the Setup idle
+behaviour: Keep open returns expanded, Auto-collapse may restore the resting form.
 
 ### 2.3 Hold Space
 

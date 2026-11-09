@@ -139,7 +139,8 @@ edge** 可把面板縮成小型分頁（rail／pill／island），點一下即�
 點工具圖示會展開快速面板並打開該工具的選項；點分頁其他位置只會展開。滑鼠移上去只會暫停
 Auto-collapse，不會搶走圖示點擊。**迷你執行列**是前景工具執行時才出現的
 360 × 96 視窗：紅色 **Stop** 只停止該工具（常駐的 Pet Feeder 會繼續），右上角的完整視窗圖示可展開外殼；
-執行結束後還會出現 **Quick dock** 按鈕與填色的 **Full window** 按鈕。
+執行結束後還會出現 **Quick dock** 按鈕與填色的 **Full window** 按鈕；**Quick dock** 會遵守 Setup
+的閒置設定：Keep open 會展開回到面板，Auto-collapse 可能回到收合型態。
 
 ### 2.3 Hold Space
 

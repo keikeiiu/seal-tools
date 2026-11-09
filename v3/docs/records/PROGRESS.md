@@ -19,6 +19,20 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-09 (53) — the mini bar returns to the same dock state as Setup
+
+The finished run bar's **Quick dock** button called `openDockFromMini`, which restored the persisted
+`collapsed` flag directly. Setup's **Keep open** only forced expansion in `enterDock`, so the same player
+could open the dock expanded from Setup/top bar and collapsed from the mini bar.
+
+`openDockFromMini` now applies the same Keep-open rule as `enterDock`: it clears the collapsed flag before
+measuring the window. Auto-collapse still restores a collapsed preference. A model test covers returning
+from a run after manually collapsing the dock. The top-bar Mini action remains a separate manual action —
+Setup's "Collapse to the run bar when a run starts" controls automatic entry, not that button.
+
+Verification: model tests **50/50**, full shell gate **390/390**, analyze `--fatal-infos` clean, format
+clean, Windows debug build green.
+
 ## 2026-11-09 (52) — the quick dock scales its UI with its window
 
 The Compact / Standard / Large presets scaled the dock window only. A Large dock had a 1.25× frame with

@@ -1363,6 +1363,34 @@ void main() {
       expect(host.miniChromeCalls.last, isFalse);
     });
 
+    test('Keep open also expands when returning from the run bar', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect();
+      await harness.model.enterDock();
+      await settle();
+      await harness.model.setDockCollapsed(true);
+      await settle();
+      expect(harness.model.dockCollapsed, isTrue);
+
+      harness.emitState(tool: ToolId.tuner, message: 'running');
+      await settle();
+      harness.emitState(
+        tool: ToolId.tuner,
+        phase: ToolPhase.idle,
+        message: 'DONE',
+      );
+      harness.emitToolFinished(tool: ToolId.tuner);
+      await settle();
+
+      await harness.model.openDockFromMini();
+      await settle();
+      expect(harness.model.dockCollapsed, isFalse);
+      expect(harness.model.dockMode, isTrue);
+      expect(host.minSizeCalls.last, (300, 480));
+    });
+
     test('the finished run bar can hand the window back to the dock', () async {
       final host = FakeHost();
       final harness = AppHarness(host: host);

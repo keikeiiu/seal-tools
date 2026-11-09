@@ -147,7 +147,9 @@ the full shell restores its saved placement and pin.
   launcher again.
 - **Entry/exit** — the top-bar `app-bar-dock` action (or Setup's "Open quick dock") collapses the shell
   into the dock. The full shell stays mounted offstage (the same keyed subtree as mini mode), so tab
-  drafts survive. "Open full window" in the dock restores the exact full rect.
+  drafts survive. "Open full window" in the dock restores the exact full rect. The finished run bar's
+  **Quick dock** action uses the same Keep-open rule as `enterDock`, so it returns expanded under Keep
+  open and only uses the resting form when that preference was explicitly collapsed.
 - **Five placements, three sizes** — `DockPlacement` gives **right rail**, **left rail**, **bottom
   right**, **bottom left** and **top centre**, at 300×480 (rails), 340×460 (bays) and 380×500 (island).
   `DockSize` scales the chosen shape: **Compact** (0.9×), **Standard** (1.0×) and **Large** (1.25×),
@@ -434,7 +436,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 389/389; `dart format` clean. Every
+Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 390/390; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,
