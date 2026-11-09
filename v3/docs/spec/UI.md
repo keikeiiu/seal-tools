@@ -143,15 +143,16 @@ the full shell restores its saved placement and pin.
 - **Entry/exit** — the top-bar `app-bar-dock` action (or Setup's "Open quick dock") collapses the shell
   into the dock. The full shell stays mounted offstage (the same keyed subtree as mini mode), so tab
   drafts survive. "Open full window" in the dock restores the exact full rect.
-- **Five placements, same content** — `DockPlacement` gives **right rail**, **left rail**, **bottom
+- **Five placements, three sizes** — `DockPlacement` gives **right rail**, **left rail**, **bottom
   right**, **bottom left** and **top centre**, at 300×480 (rails), 340×460 (bays) and 380×500 (island).
-  The choice can be made in Setup → Quick dock or from the dock header's placement menu; the dock can
-  also be dragged (pan through `setWindowRect`) and snaps to its nearest edge. **Placement, collapsed
-  state, idle behaviour, tile order and pinned Sell selections are persisted** in the portable
-  `settings.ui.quick_dock` block (`{placement, collapsed, behavior, tiles, pins}`) through the normal
-  validate → apply path; the core's portable projection carries the fields (seal-config
-  `ensure_portable_ui`). A dragged offset inside a placement is session-only — the preset is what
-  survives a restart.
+  `DockSize` scales the chosen shape: **Compact** (0.9×), **Standard** (1.0×) and **Large** (1.25×),
+  including the collapsed tab/pill/island. The choice can be made in Setup → Quick dock or from the
+  dock header's placement menu; the dock can also be dragged (pan through `setWindowRect`) and snaps
+  to its nearest edge. **Placement, size, collapsed state, idle behaviour, tile order and pinned Sell
+  selections are persisted** in the portable `settings.ui.quick_dock` block
+  (`{placement, size, collapsed, behavior, tiles, pins}`) through the normal validate → apply path;
+  the core's portable projection carries the fields (seal-config `ensure_portable_ui`). A dragged
+  offset inside a placement is session-only — the preset is what survives a restart.
 - **Content** — the quick tiles (Skill Spammer, Buy, Sell, Quest Hand-in, Gem Composer, Magic Tuner,
   Hold Space by default), then one setup-only row (Pet Feeder) that opens the full window **on its
   Pet tab**; footer "Open full window". Each quick tile has a **dedicated Start button** and, where it

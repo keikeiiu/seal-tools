@@ -685,6 +685,7 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
         "theme": "light",
         "quick_dock": {
             "placement": "bottom_right",
+            "size": "large",
             "collapsed": true,
             "behavior": "always_open",
             "tiles": ["spammer", "buy", "pin:Junk row"],
@@ -699,6 +700,10 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
     assert_eq!(
         applied["sections"]["settings"]["ui"]["quick_dock"]["placement"], "bottom_right",
         "apply echoes the effective quick-dock preference"
+    );
+    assert_eq!(
+        applied["sections"]["settings"]["ui"]["quick_dock"]["size"],
+        "large"
     );
     assert_eq!(
         applied["sections"]["settings"]["ui"]["quick_dock"]["collapsed"],
@@ -733,6 +738,7 @@ fn quick_dock_preference_is_accepted_written_and_preserved() {
         local["settings"]["ui"]["quick_dock"]["placement"], "bottom_right",
         "the field is written into the portable settings overlay"
     );
+    assert_eq!(local["settings"]["ui"]["quick_dock"]["size"], "large");
     assert_eq!(local["settings"]["ui"]["quick_dock"]["collapsed"], true);
     assert_eq!(
         local["settings"]["ui"]["quick_dock"]["behavior"],

@@ -33,6 +33,36 @@ enum DockPlacement {
     DockPlacement.bottomRight || DockPlacement.bottomLeft => (220, 44),
     DockPlacement.topCentre => (200, 36),
   };
+
+  /// The dock's window size at [size]. The presets scale the same form factor rather than changing
+  /// its shape, so a bigger dock stays a rail/bay/island and keeps the same content.
+  (int, int) sizeFor(DockSize size) {
+    final (width, height) = this.size;
+    return (size.scale(width), size.scale(height));
+  }
+
+  /// The resting-form size at [size].
+  (int, int) collapsedSizeFor(DockSize size) {
+    final (width, height) = collapsedSize;
+    return (size.scale(width), size.scale(height));
+  }
+}
+
+/// How large the quick dock is. Compact and Large scale the chosen placement's window, so the player
+/// can get a roomier launcher without changing its rail/bay/island shape.
+enum DockSize {
+  compact('compact', 'Compact', 0.9),
+  standard('standard', 'Standard', 1.0),
+  large('large', 'Large', 1.25);
+
+  const DockSize(this.wire, this.label, this.factor);
+
+  final String wire;
+  final String label;
+  final double factor;
+
+  /// A logical-pixel dimension scaled by this preset, rounded to a whole pixel.
+  int scale(int value) => (value * factor).round();
 }
 
 /// How the dock behaves while it sits idle. The player can pick either; the choice is persisted with

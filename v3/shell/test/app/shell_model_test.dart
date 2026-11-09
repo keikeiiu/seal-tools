@@ -1111,6 +1111,65 @@ void main() {
       expect(dock['collapsed'], false);
     });
 
+    test('dock size presets resize the open dock and persist', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect();
+      harness.answerConfigCommands();
+      await harness.model.enterDock();
+      await settle();
+      expect(harness.model.dockSize, DockSize.standard);
+
+      await harness.model.setDockSize(DockSize.large);
+      await settle();
+      expect(harness.model.dockSize, DockSize.large);
+      expect(host.minSizeCalls.last, (375, 600));
+      expect(host.appliedRects.last, _rect(1529, 220, 375, 600));
+
+      final saved =
+          harness.lastSentWithCmd('config.apply')!['args']
+              as Map<String, dynamic>;
+      final settings =
+          (saved['sections'] as Map<String, dynamic>)['settings']
+              as Map<String, dynamic>;
+      final dock =
+          ((settings['ui'] as Map<String, dynamic>)['quick_dock']
+              as Map<String, dynamic>);
+      expect(dock['size'], 'large');
+
+      await harness.model.setDockCollapsed(true);
+      await settle();
+      expect(host.minSizeCalls.last, (58, 188));
+      expect(host.appliedRects.last, _rect(1846, 426, 58, 188));
+    });
+
+    test('a saved dock size is restored and applied at connect', () async {
+      final host = FakeHost();
+      final harness = AppHarness(host: host);
+      addTearDown(harness.dispose);
+      await harness.connect(
+        config: {
+          'window': {'title': 'TW_LIVE'},
+          'settings': {
+            'ui': {
+              'quick_dock': {
+                'placement': 'bottom_right',
+                'size': 'large',
+                'collapsed': false,
+              },
+            },
+          },
+        },
+      );
+      expect(harness.model.dockSize, DockSize.large);
+
+      await harness.model.enterDock();
+      await settle();
+      expect(host.minSizeCalls.last, (425, 575));
+      expect(host.appliedRects.last, _rect(1479, 449, 425, 575));
+    });
+
     test('a saved dock preference is restored at connect', () async {
       final host = FakeHost();
       final harness = AppHarness(host: host);
@@ -1126,6 +1185,7 @@ void main() {
         },
       );
       expect(harness.model.dockPlacement, DockPlacement.bottomRight);
+      expect(harness.model.dockSize, DockSize.standard);
       expect(harness.model.dockCollapsed, isTrue);
 
       await harness.model.enterDock();

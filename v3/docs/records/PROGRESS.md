@@ -19,6 +19,21 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-09 (51) — the quick dock gets Compact / Standard / Large
+
+The quick dock had five placements but only one size per shape. The player asked for a few bigger
+options from Setup, so the size is now a persisted preset rather than a fixed constant.
+
+- `DockSize` in `dock_placement.dart` scales the chosen placement: Compact 0.9×, Standard 1.0× and
+  Large 1.25×, including the collapsed tab/pill/island.
+- Setup → Quick dock writes `settings.ui.quick_dock.size`; the model restores it on connect and
+  resizes an open dock immediately through the same min-size/rect path as placement changes.
+- The core's portable `ui.quick_dock` shape gains the `size` default so the projection carries the
+  field instead of dropping it as an unknown leaf.
+
+Verification: `cargo fmt`; `seal-config` 24/24 and `seal-core --test config` 24/24; `flutter analyze
+--fatal-infos` clean; full shell tests 383/383; debug Windows build succeeded.
+
 ## 2026-11-07 (50) — the shop row count becomes a static game default
 
 A fresh unzipped v3 install has no `config/machine/` yet, and Buy therefore failed with

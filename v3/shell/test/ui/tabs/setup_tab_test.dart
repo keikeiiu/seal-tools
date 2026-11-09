@@ -340,6 +340,29 @@ void main() {
     expect(dock['behavior'], 'always_open');
   });
 
+  testWidgets('Quick dock size chip saves the choice', (tester) async {
+    final harness = await _pumpSetup(tester);
+    harness.answerConfigCommands();
+
+    final large = find.byKey(const ValueKey('setup-dock-size-large'));
+    await tester.ensureVisible(large);
+    await tester.pump();
+    await tester.tap(large);
+    await _flush(tester);
+
+    expect(harness.model.dockSize, DockSize.large);
+    final apply = harness.lastSentWithCmd('config.apply');
+    expect(apply, isNotNull);
+    final sections =
+        (apply!['args'] as Map<String, dynamic>)['sections']
+            as Map<String, dynamic>;
+    final dock =
+        ((sections['settings'] as Map<String, dynamic>)['ui']
+                as Map<String, dynamic>)['quick_dock']
+            as Map<String, dynamic>;
+    expect(dock['size'], 'large');
+  });
+
   testWidgets('Run window switches save the portable preference', (
     tester,
   ) async {

@@ -289,8 +289,8 @@ class _SetupTabState extends State<SetupTab>
                 'A compact launcher between runs: seven quick starts, each with its own Start '
                 'button and a separate ⋮ options control, plus a setup-only row for the Pet Feeder. '
                 'The dock header can edit/reorder the tiles and pin named Sell selections. Choose '
-                'where it sits here or from the dock header; the placement, collapsed state, tile '
-                'order and pins are saved with the config and survive restarts.',
+                'where it sits here or from the dock header; the placement, size, collapsed state, '
+                'tile order and pins are saved with the config and survive restarts.',
               ),
               const SizedBox(height: ShellSpace.sm),
               Wrap(
@@ -304,6 +304,25 @@ class _SetupTabState extends State<SetupTab>
                       selected: model.dockPlacement == placement,
                       onSelected: (_) =>
                           unawaited(model.setDockPlacement(placement)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: ShellSpace.sm),
+              const ShellProse(
+                'Dock size scales the selected form factor; Compact and Large keep the same '
+                'rail/bay/island shape.',
+              ),
+              const SizedBox(height: ShellSpace.xs),
+              Wrap(
+                spacing: ShellSpace.sm,
+                runSpacing: ShellSpace.sm,
+                children: [
+                  for (final size in DockSize.values)
+                    ChoiceChip(
+                      key: ValueKey('setup-dock-size-${size.wire}'),
+                      label: Text(size.label),
+                      selected: model.dockSize == size,
+                      onSelected: (_) => unawaited(model.setDockSize(size)),
                     ),
                 ],
               ),

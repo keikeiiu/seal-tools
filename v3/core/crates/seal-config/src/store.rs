@@ -1100,6 +1100,7 @@ fn ensure_portable_ui(base: &mut Value) {
             "placement".to_owned(),
             Value::String("right_rail".to_owned()),
         );
+        shape.insert("size".to_owned(), Value::String("standard".to_owned()));
         shape.insert("collapsed".to_owned(), Value::Bool(false));
         shape.insert(
             "behavior".to_owned(),

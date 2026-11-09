@@ -247,6 +247,7 @@ class ShellModel extends ChangeNotifier {
   bool _dockCollapsed = false;
   DockBehavior _dockBehavior = DockBehavior.autoCollapse;
   DockPlacement _dockPlacement = DockPlacement.rightRail;
+  DockSize _dockSize = DockSize.standard;
   WindowRect? _dockRestoreRect;
   WindowRect? _dockWorkArea;
   WindowRect? _dockRectValue;
@@ -1604,11 +1605,25 @@ class ShellModel extends ChangeNotifier {
   /// The player's chosen form factor / side (persisted with the layout below).
   DockPlacement get dockPlacement => _dockPlacement;
 
+  /// The player's chosen quick-dock size preset (Compact / Standard / Large).
+  DockSize get dockSize => _dockSize;
+
   /// True while the dock is the small resting form (edge tab / pill / island).
   bool get dockCollapsed => _dockCollapsed;
 
   /// Whether the idle dock auto-collapses after a pause or stays open until the player collapses it.
   DockBehavior get dockBehavior => _dockBehavior;
+
+  /// Choose the size preset. Resizes an open dock immediately and is remembered for the next launch.
+  Future<void> setDockSize(DockSize size) async {
+    if (size == _dockSize) {
+      return;
+    }
+    _dockSize = size;
+    notifyListeners();
+    await _resizeDockGeometry();
+    await _saveDockPreference();
+  }
 
   /// Choose the idle behaviour; "Keep open" also expands a collapsed dock immediately and is
   /// remembered for the next launch.
@@ -1809,6 +1824,11 @@ class ShellModel extends ChangeNotifier {
       (placement) => placement.wire == wire,
       orElse: () => DockPlacement.rightRail,
     );
+    final sizeWire = asString(dock['size']);
+    _dockSize = DockSize.values.firstWhere(
+      (size) => size.wire == sizeWire,
+      orElse: () => DockSize.standard,
+    );
     _dockCollapsed = asBool(dock['collapsed']) ?? false;
     final behaviorWire = asString(dock['behavior']);
     _dockBehavior = DockBehavior.values.firstWhere(
@@ -1830,6 +1850,7 @@ class ShellModel extends ChangeNotifier {
         'ui': {
           'quick_dock': {
             'placement': _dockPlacement.wire,
+            'size': _dockSize.wire,
             'collapsed': _dockCollapsed,
             'behavior': _dockBehavior.wire,
             'tiles': _dockTiles,
@@ -1849,8 +1870,9 @@ class ShellModel extends ChangeNotifier {
   /// The dock's current rect, for tests/diagnostics.
   WindowRect? get dockRect => _dockRectValue;
 
-  (int, int) get _dockWindowSize =>
-      _dockCollapsed ? _dockPlacement.collapsedSize : _dockPlacement.size;
+  (int, int) get _dockWindowSize => _dockCollapsed
+      ? _dockPlacement.collapsedSizeFor(_dockSize)
+      : _dockPlacement.sizeFor(_dockSize);
 
   /// Open the idle launcher: remember the full placement, lower the minimum size to the dock,
   /// switch to borderless non-activating chrome and place it at [dockPlacement].
@@ -1976,7 +1998,7 @@ class ShellModel extends ChangeNotifier {
       return;
     }
     final work = _dockWorkArea;
-    final (width, height) = _dockPlacement.size;
+    final (width, height) = _dockWindowSize;
     final rect = _clampDock(target.left, target.top, width, height, work);
     if (rect == _dockRectValue) {
       return;
