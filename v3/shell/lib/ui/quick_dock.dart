@@ -77,7 +77,8 @@ class _QuickDockState extends State<QuickDock> {
   static const _autoCollapseAfter = Duration(seconds: 8);
   Timer? _autoCollapse;
 
-  // Hover state: hovering pauses the auto-collapse, and hovering the collapsed tab opens it.
+  // Hover state: hovering pauses the auto-collapse. It deliberately does not expand the collapsed
+  // tab, because that would replace the tab before its shortcut icons can receive a click.
   bool _hovering = false;
 
   // Resizing or moving the dock is interaction: restart the idle countdown instead of letting a
@@ -140,9 +141,6 @@ class _QuickDockState extends State<QuickDock> {
   void _onHoverEnter(PointerEnterEvent event) {
     _hovering = true;
     _cancelAutoCollapse();
-    if (model.dockCollapsed) {
-      unawaited(model.setDockCollapsed(false, persist: false));
-    }
   }
 
   void _onHoverExit(PointerExitEvent event) {
@@ -309,8 +307,8 @@ class _QuickDockState extends State<QuickDock> {
   }
 
   /// The dock's resting form: a vertical tab on the rails, a status pill for the bays and a slim
-  /// island at the top. Hovering it opens the full launcher and leaves it open; its three tool icons
-  /// are shortcuts to that tool's options.
+  /// island at the top. Clicking it opens the launcher; its three tool icons are shortcuts to that
+  /// tool's options. Hovering only pauses auto-collapse so it cannot steal those clicks.
   Widget _collapsed(ThemeData theme) {
     final rail = model.dockPlacement.isRail;
     final running = _runningCount();
@@ -336,9 +334,7 @@ class _QuickDockState extends State<QuickDock> {
       ),
     );
     return Tooltip(
-      message: rail
-          ? 'Quick dock — hover or click to open'
-          : 'Quick dock — click to open',
+      message: 'Quick dock — click to open',
       child: InkWell(
         key: const ValueKey('dock-collapsed'),
         onTap: () => unawaited(model.setDockCollapsed(false)),

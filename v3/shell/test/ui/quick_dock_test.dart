@@ -404,7 +404,7 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
   });
 
-  testWidgets('hovering the tiny tab opens and keeps the dock open', (
+  testWidgets('hover pauses auto-collapse without stealing icon clicks', (
     tester,
   ) async {
     final harness = await _pumpDock(tester);
@@ -419,44 +419,19 @@ void main() {
       tester.getCenter(find.byKey(const ValueKey('dock-collapsed'))),
     );
     await tester.pump();
-    expect(harness.model.dockCollapsed, isFalse);
-
-    await mouse.removePointer();
-    await tester.pump();
     expect(
       harness.model.dockCollapsed,
-      isFalse,
-      reason: 'hovering is an open action, not a temporary preview',
+      isTrue,
+      reason:
+          'hovering must not replace the tab before its icons can be clicked',
     );
-    await tester.pumpWidget(const SizedBox());
-    await tester.pump(const Duration(seconds: 2));
-  });
 
-  testWidgets('a click ends hover expansion so the dock stays open', (
-    tester,
-  ) async {
-    final harness = await _pumpDock(tester);
-    await tester.tap(find.byKey(const ValueKey('dock-keep-open')));
-    await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('dock-collapse')));
-    await tester.pump();
-    expect(harness.model.dockCollapsed, isTrue);
-
-    final mouse = await tester.createGesture(kind: ui.PointerDeviceKind.mouse);
-    await mouse.addPointer(location: const Offset(8, 8));
-    await tester.pump();
-    await mouse.moveTo(
-      tester.getCenter(find.byKey(const ValueKey('dock-collapsed'))),
-    );
-    await tester.pump();
-    expect(harness.model.dockCollapsed, isFalse);
-
-    // Clicking the expanded launcher is explicit: leaving with the pointer must not undo it.
-    await tester.tap(find.byKey(const ValueKey('quick-dock')));
-    await tester.pump();
     await mouse.removePointer();
     await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('dock-collapsed-spammer')));
+    await tester.pump();
     expect(harness.model.dockCollapsed, isFalse);
+    expect(find.byKey(const ValueKey('dock-menu-title')), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 2));

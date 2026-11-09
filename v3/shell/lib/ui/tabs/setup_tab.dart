@@ -331,7 +331,8 @@ class _SetupTabState extends State<SetupTab>
               const ShellProse(
                 'Idle behaviour: Keep open (the default) leaves the full dock up until you collapse '
                 'it; Auto-collapse shrinks it after eight idle seconds. The dock header has a '
-                'one-click Keep open toggle; hovering the tiny tab expands it in either mode.',
+                'one-click Keep open toggle. Click the tiny resting tab to open it again; hovering only '
+                'pauses auto-collapse.',
               ),
               const SizedBox(height: ShellSpace.xs),
               Wrap(

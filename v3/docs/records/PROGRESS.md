@@ -33,10 +33,10 @@ the Standard 13 px title, 12 px Start label and 28 px button, so the controls fl
 - **Size menu in the dock header:** the placement menu now lists Compact / Standard / Large (matching the
   spec, which already said size was reachable there), and a resize restarts the idle countdown instead of
   letting a timer armed for the old geometry collapse the new one.
-- **Hover now latches open:** hovering the collapsed quick dock opens the launcher and keeps it open after
-  the pointer leaves; a pointer click no longer needs to fight a transient-preview collapse. The header's
-  one-click Keep open toggle and resize/placement timer reset remain; Auto-collapse is the only automatic
-  path back to the resting form.
+- **Hover no longer expands the collapsed tab:** hover only pauses Auto-collapse. This keeps the tab's
+  three shortcut icons clickable; clicking an icon expands the launcher and opens that tool's options,
+  while clicking the rest of the tab only expands it. The header's one-click Keep open toggle and
+  resize/placement timer reset remain.
 - **Keep open is the new default:** the shell fallback and the core's portable `ui.quick_dock` projection
   now default to `always_open`. Auto-collapse remains selectable in Setup or the dock menu. This stops a
   fresh install from shrinking after eight seconds while keeping the explicit option.
@@ -45,8 +45,8 @@ the Standard 13 px title, 12 px Start label and 28 px button, so the controls fl
   distinguishes that resting form from the mini run bar (Stop / full-window while running; Quick dock /
   Full window after the run).
 
-Verification: quick-dock tests **27/27** (large/compact metrics, size menu, keep-open, resize timer,
-hover/click), model tests **49/49**, full shell gate **390/390**, analyze `--fatal-infos` clean, format
+Verification: quick-dock tests **26/26** (large/compact metrics, size menu, keep-open, resize timer,
+hover/click), model tests **49/49**, full shell gate **389/389**, analyze `--fatal-infos` clean, format
 clean, Windows debug build green; `seal-config` 24/24 and `cargo fmt --check` green. Design study:
 `.scratch/ui-audit/quick-dock-sizes.html` + `.md`; spec and both guides updated.
 

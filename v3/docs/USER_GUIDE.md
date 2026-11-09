@@ -145,13 +145,14 @@ button becomes **Stop**.
 
 The header's **Edit** (pencil) action reorders tiles with the up/down arrows, removes any tile and adds
 back removed tools. Use **Collapse to edge** in the header to shrink the launcher to a small rail tab,
-pill or island; click the tab or **hover it with the mouse** to expand it again. The dock's idle
+pill or island; click the tab to expand it again. Hovering does not expand it (so the tab's shortcut
+icons stay clickable); it only pauses Auto-collapse. The dock's idle
 behaviour is selectable in **Setup → Quick dock** or the dock header's placement menu: **Keep open**
 is the default and leaves the full launcher up until you collapse it yourself, while **Auto-collapse**
 shrinks it after eight idle seconds. The header also has a one-click **Keep open** toggle (timer/lock
 icon), so changing the mode does not require the menu. Hovering pauses the auto-collapse and any click
-resets its timer; resizing or moving the dock restarts the countdown. Hovering the collapsed tab opens
-the dock and leaves it open — only Auto-collapse or an explicit collapse shrinks it again. Starting a tool turns the
+resets its timer; resizing or moving the dock restarts the countdown. Only Auto-collapse or an explicit
+collapse shrinks an open launcher again. Starting a tool turns the
 same window into the mini run bar; when the run finishes, the bar's dock button returns to the
 launcher. Choose **right rail, left rail, bottom right, bottom left or top centre** in Setup or from the
 dock's placement menu, and drag the dock to fine-tune it. The same menu offers **Compact**, **Standard**
@@ -162,7 +163,8 @@ placement is session-only.
 
 The small resting form of the quick dock is **not** the mini run bar. It shows three shortcuts —
 Skill Spammer, Buy and Sell — plus an unfold button. Clicking a tool icon expands the quick dock and
-opens that tool's options; clicking the rest of the tab just expands it, and hovering expands it too. The **mini run bar** is the 360 × 96 window shown only
+opens that tool's options; clicking the rest of the tab just expands it. Hovering only pauses
+Auto-collapse, so it never steals the icon click. The **mini run bar** is the 360 × 96 window shown only
 while a foreground tool is running: its red **Stop** stops that tool (the resident Pet Feeder keeps
 running), the top-right full-window icon expands the shell, and after the run finishes it also offers the
 **Quick dock** button and a filled **Full window** button.
