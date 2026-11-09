@@ -148,10 +148,15 @@ back removed tools. Use **Collapse to edge** in the header to shrink the launche
 pill or island; click the tab or **hover it with the mouse** to expand it again. The dock's idle
 behaviour is selectable in **Setup → Quick dock** or the dock header's placement menu: **Auto-collapse**
 shrinks it after eight idle seconds, while **Keep open** leaves the full launcher up until you collapse
-it yourself. Hovering pauses the auto-collapse and any click resets its timer. Starting a tool turns the
+it yourself. The header also has a one-click **Keep open** toggle (timer/lock icon), so stopping the
+timer does not require the menu. Hovering pauses the auto-collapse and any click resets its timer;
+resizing or moving the dock restarts the countdown, and clicking after a hover-expand keeps the dock
+open when the pointer leaves. Starting a tool turns the
 same window into the mini run bar; when the run finishes, the bar's dock button returns to the
 launcher. Choose **right rail, left rail, bottom right, bottom left or top centre** in Setup or from the
-dock's placement menu, and drag the dock to fine-tune it. Placement, collapsed state, idle behaviour,
+dock's placement menu, and drag the dock to fine-tune it. The same menu offers **Compact**, **Standard**
+and **Large** sizes: the window and its controls scale together (Large has larger labels and a bigger
+Start button), and Compact keeps its labels readable. Placement, size, collapsed state, idle behaviour,
 tile order and pinned Sell selections are remembered across restarts; a dragged offset inside that
 placement is session-only.
 

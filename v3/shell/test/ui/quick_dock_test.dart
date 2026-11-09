@@ -1,4 +1,4 @@
-/// The quick dock v1: the idle launcher (seven quick starts, secondary menus per tool, five
+﻿/// The quick dock v1: the idle launcher (seven quick starts, secondary menus per tool, five
 /// placements) and its transitions to/from the existing run bar.
 library;
 
@@ -50,7 +50,10 @@ Map<String, dynamic> _dockConfig() => {
 };
 
 /// Pumps the dock widget alone, with the model already in dock mode.
-Future<AppHarness> _pumpDock(WidgetTester tester) async {
+Future<AppHarness> _pumpDock(
+  WidgetTester tester, {
+  DockSize size = DockSize.standard,
+}) async {
   tester.view.physicalSize = const ui.Size(460, 620);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -84,7 +87,12 @@ Future<AppHarness> _pumpDock(WidgetTester tester) async {
         fake.emitJson(okResponse(id, {'rev': 8, 'sections': sections}));
     }
   };
+  if (size != DockSize.standard) {
+    await harness.model.setDockSize(size);
+    await tester.pump();
+  }
   await harness.model.enterDock();
+  final (dockWidth, dockHeight) = DockPlacement.rightRail.sizeFor(size);
   await tester.pumpWidget(
     MaterialApp(
       theme: buildShellTheme(),
@@ -92,8 +100,8 @@ Future<AppHarness> _pumpDock(WidgetTester tester) async {
         backgroundColor: const Color(0xFF111318),
         body: Center(
           child: SizedBox(
-            width: 300,
-            height: 480,
+            width: dockWidth.toDouble(),
+            height: dockHeight.toDouble(),
             child: QuickDock(model: harness.model),
           ),
         ),
@@ -152,7 +160,7 @@ void main() {
     expect(
       (options.icon as Icon).icon,
       Icons.more_vert,
-      reason: 'a ⋮ reads as options; the old chevron read as navigation',
+      reason: 'a ??reads as options; the old chevron read as navigation',
     );
 
     // Hold Space is just a Start/Stop action now: no separate "Toggle" label, no options menu.
@@ -178,7 +186,7 @@ void main() {
     (tester) async {
       final harness = await _pumpDock(tester);
 
-      // Their ⋮ options edit the saved run config; the tiles still start directly.
+      // Their ??options edit the saved run config; the tiles still start directly.
       expect(find.byKey(const ValueKey('dock-menu-gem')), findsOneWidget);
       expect(find.byKey(const ValueKey('dock-menu-tuner')), findsOneWidget);
       expect(find.byKey(const ValueKey('dock-long-pet')), findsOneWidget);
@@ -254,6 +262,98 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
   });
 
+  testWidgets('Large scales the type and the fixed action column', (
+    tester,
+  ) async {
+    await _pumpDock(tester, size: DockSize.large);
+
+    final start = find.byKey(const ValueKey('dock-start-spammer'));
+    expect(tester.getSize(start), const ui.Size(76, 34));
+    final title = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('dock-tile-spammer')),
+        matching: find.text('Skill Spammer'),
+      ),
+    );
+    expect(title.style?.fontSize, 15);
+
+    final menu = find.byKey(const ValueKey('dock-menu-spammer'));
+    expect(tester.getSize(menu).height, 34);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('Compact keeps the labels readable above the smaller window', (
+    tester,
+  ) async {
+    await _pumpDock(tester, size: DockSize.compact);
+
+    final start = find.byKey(const ValueKey('dock-start-spammer'));
+    expect(tester.getSize(start), const ui.Size(58, 26));
+    final title = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('dock-tile-spammer')),
+        matching: find.text('Skill Spammer'),
+      ),
+    );
+    expect(title.style?.fontSize, 12.5);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('the header menu offers the three dock sizes', (tester) async {
+    final harness = await _pumpDock(tester);
+    await tester.tap(find.byKey(const ValueKey('dock-placement')));
+    await tester.pumpAndSettle();
+    expect(find.text('Compact size'), findsOneWidget);
+    expect(find.text('Standard size'), findsOneWidget);
+    expect(find.text('Large size'), findsOneWidget);
+
+    await tester.tap(find.text('Large size'));
+    await tester.pumpAndSettle();
+    expect(harness.model.dockSize, DockSize.large);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('the header Keep open toggle stops the idle collapse', (
+    tester,
+  ) async {
+    final harness = await _pumpDock(tester);
+    await tester.tap(find.byKey(const ValueKey('dock-keep-open')));
+    await tester.pump();
+    expect(harness.model.dockBehavior, DockBehavior.alwaysOpen);
+
+    await tester.pump(const Duration(seconds: 9));
+    await tester.pump();
+    expect(harness.model.dockCollapsed, isFalse);
+    expect(find.byKey(const ValueKey('dock-start-spammer')), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('changing the dock size restarts the idle countdown', (
+    tester,
+  ) async {
+    final harness = await _pumpDock(tester);
+    await tester.pump(const Duration(seconds: 4));
+    await harness.model.setDockSize(DockSize.large);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 5));
+    expect(
+      harness.model.dockCollapsed,
+      isFalse,
+      reason: 'the pre-resize timer must not collapse the new geometry',
+    );
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
   testWidgets('the dock auto-collapses after eight idle seconds', (
     tester,
   ) async {
@@ -309,6 +409,36 @@ void main() {
     expect(harness.model.dockCollapsed, isFalse);
 
     await mouse.removePointer();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('a click ends hover expansion so the dock stays open', (
+    tester,
+  ) async {
+    final harness = await _pumpDock(tester);
+    await tester.tap(find.byKey(const ValueKey('dock-keep-open')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('dock-collapse')));
+    await tester.pump();
+    expect(harness.model.dockCollapsed, isTrue);
+
+    final mouse = await tester.createGesture(kind: ui.PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(8, 8));
+    await tester.pump();
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('dock-collapsed'))),
+    );
+    await tester.pump();
+    expect(harness.model.dockCollapsed, isFalse);
+
+    // Clicking the expanded launcher is explicit: leaving with the pointer must not undo it.
+    await tester.tap(find.byKey(const ValueKey('quick-dock')));
+    await tester.pump();
+    await mouse.removePointer();
+    await tester.pump();
+    expect(harness.model.dockCollapsed, isFalse);
+
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 2));
   });

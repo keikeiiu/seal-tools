@@ -25,6 +25,7 @@ import '../app/app.dart';
 import '../app/dock_placement.dart';
 import '../protocol/protocol.dart' hide Size;
 import 'components/status_chip.dart';
+import 'dock_metrics.dart';
 import 'theme.dart';
 import 'tool_labels.dart';
 
@@ -80,10 +81,17 @@ class _QuickDockState extends State<QuickDock> {
   bool _hovering = false;
   bool _hoverExpanded = false;
 
+  // Resizing or moving the dock is interaction: restart the idle countdown instead of letting a
+  // timer armed for the old geometry collapse the new one a moment later.
+  late DockSize _lastDockSize;
+  late DockPlacement _lastDockPlacement;
+
   @override
   void initState() {
     super.initState();
     _pinName = TextEditingController();
+    _lastDockSize = widget.model.dockSize;
+    _lastDockPlacement = widget.model.dockPlacement;
     widget.model.addListener(_onDockModelChanged);
     widget.model.tools.addListener(_onSubmodelRefresh);
     widget.model.config.addListener(_onSubmodelRefresh);
@@ -110,6 +118,14 @@ class _QuickDockState extends State<QuickDock> {
   void _onDockModelChanged() {
     if (!mounted) {
       return;
+    }
+    final resized =
+        widget.model.dockSize != _lastDockSize ||
+        widget.model.dockPlacement != _lastDockPlacement;
+    _lastDockSize = widget.model.dockSize;
+    _lastDockPlacement = widget.model.dockPlacement;
+    if (resized) {
+      _cancelAutoCollapse();
     }
     if (widget.model.dockCollapsed ||
         _menu != null ||
@@ -181,6 +197,8 @@ class _QuickDockState extends State<QuickDock> {
 
   ShellModel get model => widget.model;
 
+  DockMetrics get _m => DockMetrics.forSize(model.dockSize);
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -201,7 +219,12 @@ class _QuickDockState extends State<QuickDock> {
                 key: const ValueKey('quick-dock'),
                 color: theme.colorScheme.surfaceContainerHigh,
                 child: Listener(
-                  onPointerDown: (_) => _resetAutoCollapse(),
+                  onPointerDown: (_) {
+                    // A click is explicit: it ends the transient hover expansion, so moving the
+                    // pointer away no longer collapses a dock the player just chose to open.
+                    _hoverExpanded = false;
+                    _resetAutoCollapse();
+                  },
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
                     onPanStart: _onDragStart,
@@ -261,14 +284,14 @@ class _QuickDockState extends State<QuickDock> {
         Padding(
           padding: const EdgeInsets.all(1),
           child: SizedBox(
-            width: 26,
-            height: 26,
+            width: _m.collapsedToolBox,
+            height: _m.collapsedToolBox,
             child: Stack(
               children: [
                 Center(
                   child: Icon(
                     toolIcon(tool),
-                    size: 15,
+                    size: _m.collapsedIconSize,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
@@ -277,8 +300,8 @@ class _QuickDockState extends State<QuickDock> {
                     right: 1,
                     top: 1,
                     child: Container(
-                      width: 6,
-                      height: 6,
+                      width: _m.dotSize,
+                      height: _m.dotSize,
                       decoration: BoxDecoration(
                         color: theme.colorScheme.primary,
                         shape: BoxShape.circle,
@@ -295,19 +318,27 @@ class _QuickDockState extends State<QuickDock> {
       tooltip: 'Expand quick dock',
       visualDensity: VisualDensity.compact,
       style: IconButton.styleFrom(
-        minimumSize: const Size(26, 26),
+        fixedSize: Size.square(_m.collapsedControl),
+        minimumSize: Size.square(_m.collapsedControl),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         padding: EdgeInsets.zero,
       ),
-      onPressed: () => unawaited(model.setDockCollapsed(false)),
+      onPressed: () {
+        _hoverExpanded = false;
+        unawaited(model.setDockCollapsed(false));
+      },
       icon: Icon(
         Icons.unfold_more,
-        size: 16,
+        size: _m.collapsedExpandIcon,
         color: theme.colorScheme.onSurfaceVariant,
       ),
     );
     return InkWell(
       key: const ValueKey('dock-collapsed'),
-      onTap: () => unawaited(model.setDockCollapsed(false)),
+      onTap: () {
+        _hoverExpanded = false;
+        unawaited(model.setDockCollapsed(false));
+      },
       child: Center(
         child: rail
             ? Column(
@@ -315,7 +346,7 @@ class _QuickDockState extends State<QuickDock> {
                 children: [
                   Icon(
                     Icons.drag_indicator,
-                    size: 14,
+                    size: _m.dragIconSize,
                     color: theme.colorScheme.onSurfaceVariant.withValues(
                       alpha: 0.6,
                     ),
@@ -332,10 +363,10 @@ class _QuickDockState extends State<QuickDock> {
                   ...tools,
                   if (running > 0)
                     Padding(
-                      padding: const EdgeInsets.only(left: ShellSpace.xs),
+                      padding: EdgeInsets.only(left: _m.tileGap),
                       child: Container(
-                        width: 6,
-                        height: 6,
+                        width: _m.dotSize,
+                        height: _m.dotSize,
                         decoration: BoxDecoration(
                           color: theme.colorScheme.primary,
                           shape: BoxShape.circle,
@@ -363,26 +394,50 @@ class _QuickDockState extends State<QuickDock> {
     }
   }
 
+  Widget _headButton(
+    ThemeData theme, {
+    required Key key,
+    required String tooltip,
+    required IconData icon,
+    VoidCallback? onPressed,
+    Color? color,
+  }) {
+    return IconButton(
+      key: key,
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      style: IconButton.styleFrom(
+        fixedSize: Size.square(_m.headerControl),
+        minimumSize: Size.square(_m.headerControl),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: EdgeInsets.zero,
+      ),
+      onPressed: onPressed,
+      icon: Icon(
+        icon,
+        size: _m.headerIconSize,
+        color: color ?? theme.colorScheme.onSurfaceVariant,
+      ),
+    );
+  }
+
   Widget _header(ThemeData theme) {
     final running = _runningCount();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        ShellSpace.xs,
-        ShellSpace.sm,
-        ShellSpace.xxs,
-        ShellSpace.xs,
+      padding: EdgeInsets.fromLTRB(
+        _m.tilePadX,
+        _m.headerPadTop,
+        _m.tilePadX,
+        _m.headerPadBottom,
       ),
       child: Row(
         children: [
           if (_menu != null)
-            IconButton(
+            _headButton(
+              theme,
               key: const ValueKey('dock-back'),
               tooltip: 'Back',
-              visualDensity: VisualDensity.compact,
-              style: IconButton.styleFrom(
-                minimumSize: const Size(26, 26),
-                padding: EdgeInsets.zero,
-              ),
+              icon: Icons.arrow_back,
               onPressed: () {
                 setState(() {
                   _menu = null;
@@ -390,148 +445,175 @@ class _QuickDockState extends State<QuickDock> {
                 });
                 _resetAutoCollapse();
               },
-              icon: Icon(
-                Icons.arrow_back,
-                size: 16,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
             )
           else
-            Text(
-              _editing ? 'Edit dock' : 'Quick start',
-              style: theme.textTheme.labelSmall?.copyWith(
-                letterSpacing: 0.08,
-                color: theme.colorScheme.onSurfaceVariant,
+            Expanded(
+              child: Text(
+                _editing ? 'Edit dock' : 'Quick start',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontSize: _m.headerLabelSize,
+                  letterSpacing: 0.08,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
-          const Spacer(),
+          if (_menu != null) const Spacer(),
           if (_menu == null && running > 0)
             Padding(
-              padding: const EdgeInsets.only(right: ShellSpace.xs),
+              padding: EdgeInsets.only(right: _m.tileGap),
               child: StatusChip(
                 kind: StatusKind.success,
                 label: '$running running',
               ),
             ),
-          IconButton(
+          _headButton(
+            theme,
             key: const ValueKey('dock-edit'),
             tooltip: _editing ? 'Done editing' : 'Edit quick actions',
-            visualDensity: VisualDensity.compact,
-            style: IconButton.styleFrom(
-              minimumSize: const Size(26, 26),
-              padding: EdgeInsets.zero,
-            ),
+            icon: _editing ? Icons.check : Icons.edit_outlined,
+            color: _editing ? theme.colorScheme.primary : null,
             onPressed: _toggleEditing,
-            icon: Icon(
-              _editing ? Icons.check : Icons.edit_outlined,
-              size: 15,
-              color: _editing
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.onSurfaceVariant,
+          ),
+          SizedBox(
+            width: _m.headerControl,
+            height: _m.headerControl,
+            child: PopupMenuButton<Object>(
+              key: const ValueKey('dock-placement'),
+              tooltip: 'Dock placement, size and behaviour',
+              padding: EdgeInsets.zero,
+              iconSize: _m.headerIconSize,
+              child: Icon(
+                Icons.dashboard_customize_outlined,
+                size: _m.headerIconSize,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              onSelected: (choice) {
+                if (choice is DockPlacement) {
+                  unawaited(model.setDockPlacement(choice));
+                } else if (choice is DockBehavior) {
+                  unawaited(model.setDockBehavior(choice));
+                } else if (choice is DockSize) {
+                  unawaited(model.setDockSize(choice));
+                }
+              },
+              itemBuilder: (context) => [
+                for (final placement in DockPlacement.values)
+                  PopupMenuItem<Object>(
+                    key: ValueKey('dock-placement-${placement.wire}'),
+                    value: placement,
+                    child: Row(
+                      children: [
+                        Icon(
+                          _placementIcon(placement),
+                          size: 16,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: ShellSpace.sm),
+                        Text(placement.label),
+                        if (placement == model.dockPlacement) ...[
+                          const Spacer(),
+                          Icon(
+                            Icons.check,
+                            size: 16,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                const PopupMenuDivider(),
+                for (final size in DockSize.values)
+                  PopupMenuItem<Object>(
+                    key: ValueKey('dock-size-${size.wire}'),
+                    value: size,
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.aspect_ratio,
+                          size: 16,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: ShellSpace.sm),
+                        Text('${size.label} size'),
+                        if (size == model.dockSize) ...[
+                          const Spacer(),
+                          Icon(
+                            Icons.check,
+                            size: 16,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                const PopupMenuDivider(),
+                for (final behavior in DockBehavior.values)
+                  PopupMenuItem<Object>(
+                    key: ValueKey('dock-behavior-${behavior.wire}'),
+                    value: behavior,
+                    child: Row(
+                      children: [
+                        Icon(
+                          behavior == DockBehavior.autoCollapse
+                              ? Icons.timer_outlined
+                              : Icons.lock_open_outlined,
+                          size: 16,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: ShellSpace.sm),
+                        Text(behavior.label),
+                        if (behavior == model.dockBehavior) ...[
+                          const Spacer(),
+                          Icon(
+                            Icons.check,
+                            size: 16,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
-          PopupMenuButton<Object>(
-            key: const ValueKey('dock-placement'),
-            tooltip: 'Dock placement and behaviour',
-            padding: EdgeInsets.zero,
-            icon: Icon(
-              Icons.dashboard_customize_outlined,
-              size: 16,
-              color: theme.colorScheme.onSurfaceVariant,
+          _headButton(
+            theme,
+            key: const ValueKey('dock-keep-open'),
+            tooltip: model.dockBehavior == DockBehavior.alwaysOpen
+                ? 'Use auto-collapse'
+                : 'Keep dock open',
+            icon: model.dockBehavior == DockBehavior.alwaysOpen
+                ? Icons.lock_outline
+                : Icons.timer_outlined,
+            color: model.dockBehavior == DockBehavior.alwaysOpen
+                ? theme.colorScheme.primary
+                : null,
+            onPressed: () => unawaited(
+              model.setDockBehavior(
+                model.dockBehavior == DockBehavior.alwaysOpen
+                    ? DockBehavior.autoCollapse
+                    : DockBehavior.alwaysOpen,
+              ),
             ),
-            onSelected: (choice) {
-              if (choice is DockPlacement) {
-                unawaited(model.setDockPlacement(choice));
-              } else if (choice is DockBehavior) {
-                unawaited(model.setDockBehavior(choice));
-              }
-            },
-            itemBuilder: (context) => [
-              for (final placement in DockPlacement.values)
-                PopupMenuItem<Object>(
-                  key: ValueKey('dock-placement-${placement.wire}'),
-                  value: placement,
-                  child: Row(
-                    children: [
-                      Icon(
-                        _placementIcon(placement),
-                        size: 16,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: ShellSpace.sm),
-                      Text(placement.label),
-                      if (placement == model.dockPlacement) ...[
-                        const Spacer(),
-                        Icon(
-                          Icons.check,
-                          size: 16,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              const PopupMenuDivider(),
-              for (final behavior in DockBehavior.values)
-                PopupMenuItem<Object>(
-                  key: ValueKey('dock-behavior-${behavior.wire}'),
-                  value: behavior,
-                  child: Row(
-                    children: [
-                      Icon(
-                        behavior == DockBehavior.autoCollapse
-                            ? Icons.timer_outlined
-                            : Icons.lock_open_outlined,
-                        size: 16,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: ShellSpace.sm),
-                      Text(behavior.label),
-                      if (behavior == model.dockBehavior) ...[
-                        const Spacer(),
-                        Icon(
-                          Icons.check,
-                          size: 16,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-            ],
           ),
-          IconButton(
+          _headButton(
+            theme,
             key: const ValueKey('dock-collapse'),
             tooltip: 'Collapse to edge',
-            visualDensity: VisualDensity.compact,
-            style: IconButton.styleFrom(
-              minimumSize: const Size(26, 26),
-              padding: EdgeInsets.zero,
-            ),
+            icon: Icons.unfold_less,
             onPressed: () {
               setState(() => _menu = null);
               unawaited(model.setDockCollapsed(true));
             },
-            icon: Icon(
-              Icons.unfold_less,
-              size: 15,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
           ),
-          IconButton(
+          _headButton(
+            theme,
             key: const ValueKey('dock-full'),
             tooltip: 'Full window',
-            visualDensity: VisualDensity.compact,
-            style: IconButton.styleFrom(
-              minimumSize: const Size(26, 26),
-              padding: EdgeInsets.zero,
-            ),
+            icon: Icons.open_in_full,
             onPressed: () => unawaited(model.showFullWindowFromDock()),
-            icon: Icon(
-              Icons.open_in_full,
-              size: 15,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
           ),
         ],
       ),
@@ -548,13 +630,13 @@ class _QuickDockState extends State<QuickDock> {
         style: OutlinedButton.styleFrom(
           foregroundColor: theme.colorScheme.onSurfaceVariant,
           side: BorderSide(color: theme.colorScheme.outlineVariant),
-          padding: const EdgeInsets.symmetric(horizontal: ShellSpace.sm),
-          textStyle: theme.textTheme.labelLarge?.copyWith(fontSize: 12),
+          padding: EdgeInsets.symmetric(horizontal: _m.tilePadX),
+          textStyle: _m.footerStyle(theme),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(ShellRadius.s),
+            borderRadius: BorderRadius.circular(_m.radius),
           ),
         ),
-        icon: const Icon(Icons.open_in_full, size: 14),
+        icon: Icon(Icons.open_in_full, size: _m.footerIconSize),
         label: const Text('Open full window'),
       );
     } else {
@@ -566,28 +648,32 @@ class _QuickDockState extends State<QuickDock> {
         style: FilledButton.styleFrom(
           backgroundColor: theme.colorScheme.primaryContainer,
           foregroundColor: theme.colorScheme.onPrimaryContainer,
-          textStyle: theme.textTheme.labelLarge?.copyWith(fontSize: 12),
+          textStyle: _m.footerStyle(theme),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(ShellRadius.s),
+            borderRadius: BorderRadius.circular(_m.radius),
           ),
         ),
         child: _savingPreset
-            ? const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2),
+            ? SizedBox(
+                width: _m.footerIconSize,
+                height: _m.footerIconSize,
+                child: const CircularProgressIndicator(strokeWidth: 2),
               )
             : const Text('Start'),
       );
     }
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        ShellSpace.sm,
-        0,
-        ShellSpace.sm,
-        ShellSpace.sm,
+      padding: EdgeInsets.fromLTRB(
+        _m.tilePadX,
+        _m.footerPadTop,
+        _m.tilePadX,
+        _m.footerPadBottom,
       ),
-      child: SizedBox(width: double.infinity, height: 32, child: action),
+      child: SizedBox(
+        width: double.infinity,
+        height: _m.footerButtonHeight,
+        child: action,
+      ),
     );
   }
 
@@ -614,10 +700,10 @@ class _QuickDockState extends State<QuickDock> {
             ),
           ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(
-            ShellSpace.xs,
-            ShellSpace.sm,
-            ShellSpace.xs,
+          padding: EdgeInsets.fromLTRB(
+            _m.tilePadX,
+            _m.footerPadTop + 2,
+            _m.tilePadX,
             ShellSpace.xxs,
           ),
           child: Row(
@@ -627,21 +713,10 @@ class _QuickDockState extends State<QuickDock> {
                   'LONG-RUNNING',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    fontSize: 9.5,
-                    letterSpacing: 0.06,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                  style: _m.sectionStyle(theme),
                 ),
               ),
-              Text(
-                'SET UP IN FULL WINDOW',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  fontSize: 9.5,
-                  letterSpacing: 0.06,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
+              Text('SET UP IN FULL WINDOW', style: _m.sectionStyle(theme)),
             ],
           ),
         ),
@@ -698,87 +773,93 @@ class _QuickDockState extends State<QuickDock> {
     final canAct = enabled && !busy;
     return Padding(
       key: ValueKey('dock-tile-$id'),
-      padding: const EdgeInsets.symmetric(
-        horizontal: ShellSpace.xs,
-        vertical: ShellSpace.xxs,
+      padding: EdgeInsets.symmetric(
+        horizontal: _m.tilePadX,
+        vertical: _m.tilePadY,
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: running
-                  ? theme.colorScheme.primaryContainer
-                  : theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(ShellRadius.s),
-            ),
-            child: Icon(
-              toolIcon(tool),
-              size: 16,
-              color: running
-                  ? theme.colorScheme.onPrimaryContainer
-                  : theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(width: ShellSpace.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(fontSize: 13),
-                ),
-                Text(
-                  summary,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    fontSize: 10.5,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: ShellSpace.xs),
-          if (running) ...[
-            StatusChip(kind: phaseKind, label: phaseLabel),
-            const SizedBox(width: ShellSpace.xs),
-          ],
-          _tileAction(
-            theme,
-            tool,
-            running: running,
-            enabled: canAct,
-            keyId: pin?.tileId,
-            onStart: pin == null ? null : () => _startPin(pin),
-          ),
-          if (hasMenu)
-            IconButton(
-              key: ValueKey('dock-menu-$id'),
-              tooltip: '${toolDisplayName(tool)} options',
-              visualDensity: VisualDensity.compact,
-              style: IconButton.styleFrom(
-                minimumSize: const Size(28, 30),
-                padding: EdgeInsets.zero,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: _m.tileHeight - 2 * _m.tilePadY),
+        child: Row(
+          children: [
+            Container(
+              width: _m.iconTile,
+              height: _m.iconTile,
+              decoration: BoxDecoration(
+                color: running
+                    ? theme.colorScheme.primaryContainer
+                    : theme.colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(_m.radius),
               ),
-              onPressed: enabled && !busy
-                  ? () {
-                      setState(() {
-                        _menu = tool;
-                        _presetError = null;
-                      });
-                      _cancelAutoCollapse();
-                    }
-                  : null,
-              icon: const Icon(Icons.more_vert, size: 17),
+              child: Icon(
+                toolIcon(tool),
+                size: _m.iconSize,
+                color: running
+                    ? theme.colorScheme.onPrimaryContainer
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
             ),
-        ],
+            SizedBox(width: _m.tileGap),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _m.titleStyle(theme),
+                  ),
+                  Text(
+                    summary,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _m.summaryStyle(theme),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(width: _m.tileGap),
+            if (running) ...[
+              StatusChip(kind: phaseKind, label: phaseLabel),
+              SizedBox(width: _m.tileGap),
+            ],
+            SizedBox(
+              width: _m.actionWidth,
+              height: _m.actionHeight,
+              child: _tileAction(
+                theme,
+                tool,
+                running: running,
+                enabled: canAct,
+                keyId: pin?.tileId,
+                onStart: pin == null ? null : () => _startPin(pin),
+              ),
+            ),
+            if (hasMenu)
+              IconButton(
+                key: ValueKey('dock-menu-$id'),
+                tooltip: '${toolDisplayName(tool)} options',
+                visualDensity: VisualDensity.compact,
+                style: IconButton.styleFrom(
+                  fixedSize: Size(_m.optionsSize, _m.actionHeight),
+                  minimumSize: Size(_m.optionsSize, _m.actionHeight),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  padding: EdgeInsets.zero,
+                ),
+                onPressed: enabled && !busy
+                    ? () {
+                        setState(() {
+                          _menu = tool;
+                          _presetError = null;
+                        });
+                        _cancelAutoCollapse();
+                      }
+                    : null,
+                icon: Icon(Icons.more_vert, size: _m.iconSize + 1),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -814,14 +895,7 @@ class _QuickDockState extends State<QuickDock> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'QUICK ACTIONS',
-          style: theme.textTheme.labelSmall?.copyWith(
-            fontSize: 9.5,
-            letterSpacing: 0.06,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
+        Text('QUICK ACTIONS', style: _m.sectionStyle(theme)),
         const SizedBox(height: ShellSpace.xxs),
         for (var index = 0; index < ids.length; index++)
           _editRow(theme, ids[index], index, ids.length),
@@ -835,14 +909,7 @@ class _QuickDockState extends State<QuickDock> {
           ),
         if (missing.isNotEmpty) ...[
           const SizedBox(height: ShellSpace.sm),
-          Text(
-            'ADD BACK',
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontSize: 9.5,
-              letterSpacing: 0.06,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
+          Text('ADD BACK', style: _m.sectionStyle(theme)),
           const SizedBox(height: ShellSpace.xxs),
           Wrap(
             spacing: ShellSpace.xs,
@@ -888,10 +955,10 @@ class _QuickDockState extends State<QuickDock> {
         children: [
           Icon(
             toolIcon(tool),
-            size: 15,
+            size: _m.longIconSize,
             color: theme.colorScheme.onSurfaceVariant,
           ),
-          const SizedBox(width: ShellSpace.xs),
+          SizedBox(width: _m.tileGap),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -902,7 +969,7 @@ class _QuickDockState extends State<QuickDock> {
                   Text(
                     detail,
                     style: theme.textTheme.labelSmall?.copyWith(
-                      fontSize: 9.5,
+                      fontSize: _m.summarySize,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
@@ -967,38 +1034,32 @@ class _QuickDockState extends State<QuickDock> {
     final foreground = running
         ? theme.colorScheme.onErrorContainer
         : theme.colorScheme.onPrimaryContainer;
-    return SizedBox(
-      height: 28,
-      child: FilledButton(
-        key: ValueKey('dock-start-${keyId ?? tool.wire}'),
-        onPressed: !enabled
-            ? null
-            : () {
-                if (running) {
-                  unawaited(model.stopTool(tool));
-                } else if (onStart != null) {
-                  onStart();
-                } else {
-                  _activate(tool);
-                }
-              },
-        style: FilledButton.styleFrom(
-          backgroundColor: background,
-          foregroundColor: foreground,
-          disabledBackgroundColor: theme.colorScheme.surfaceContainerHighest,
-          disabledForegroundColor: theme.colorScheme.onSurfaceVariant,
-          minimumSize: const Size(44, 28),
-          padding: const EdgeInsets.symmetric(horizontal: ShellSpace.sm),
-          textStyle: theme.textTheme.labelSmall?.copyWith(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(ShellRadius.s),
-          ),
+    return FilledButton(
+      key: ValueKey('dock-start-${keyId ?? tool.wire}'),
+      onPressed: !enabled
+          ? null
+          : () {
+              if (running) {
+                unawaited(model.stopTool(tool));
+              } else if (onStart != null) {
+                onStart();
+              } else {
+                _activate(tool);
+              }
+            },
+      style: FilledButton.styleFrom(
+        backgroundColor: background,
+        foregroundColor: foreground,
+        disabledBackgroundColor: theme.colorScheme.surfaceContainerHighest,
+        disabledForegroundColor: theme.colorScheme.onSurfaceVariant,
+        minimumSize: Size(_m.actionWidth, _m.actionHeight),
+        padding: EdgeInsets.symmetric(horizontal: _m.tilePadX),
+        textStyle: _m.actionStyle(theme),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(_m.radius),
         ),
-        child: Text(running ? 'Stop' : 'Start'),
       ),
+      child: Text(running ? 'Stop' : 'Start'),
     );
   }
 
@@ -1013,40 +1074,38 @@ class _QuickDockState extends State<QuickDock> {
         unawaited(model.showFullWindowFromDock());
       },
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: ShellSpace.xs,
-          vertical: ShellSpace.xxs + ShellSpace.xxs,
+        padding: EdgeInsets.symmetric(
+          horizontal: _m.tilePadX,
+          vertical: _m.tilePadY * 2,
         ),
         child: Row(
           children: [
             Icon(
               toolIcon(tool),
-              size: 14,
+              size: _m.longIconSize,
               color: theme.colorScheme.onSurfaceVariant,
             ),
-            const SizedBox(width: ShellSpace.sm),
+            SizedBox(width: _m.tileGap),
             Expanded(
               child: Text(
                 toolDisplayName(tool),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontSize: 12,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+                style: _m.longTitleStyle(theme),
               ),
             ),
             Text(
               _longState(tool, phase),
-              style: theme.textTheme.labelSmall?.copyWith(
-                fontSize: 10,
-                color: running
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.onSurfaceVariant,
-              ),
+              style: _m
+                  .longStateStyle(theme)
+                  .copyWith(
+                    color: running
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
             ),
-            const SizedBox(width: ShellSpace.xs),
+            SizedBox(width: _m.tileGap),
             Icon(
               Icons.open_in_new,
-              size: 13,
+              size: _m.longIconSize,
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ],
@@ -1070,7 +1129,11 @@ class _QuickDockState extends State<QuickDock> {
           ),
           child: Row(
             children: [
-              Icon(toolIcon(tool), size: 16, color: theme.colorScheme.primary),
+              Icon(
+                toolIcon(tool),
+                size: _m.iconSize,
+                color: theme.colorScheme.primary,
+              ),
               const SizedBox(width: ShellSpace.xs),
               Expanded(
                 child: Text(
@@ -1078,7 +1141,9 @@ class _QuickDockState extends State<QuickDock> {
                   key: const ValueKey('dock-menu-title'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(fontSize: 13.5),
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontSize: _m.menuTitleSize,
+                  ),
                 ),
               ),
               const SizedBox(width: ShellSpace.xs),
@@ -1087,7 +1152,7 @@ class _QuickDockState extends State<QuickDock> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.labelSmall?.copyWith(
-                  fontSize: 10,
+                  fontSize: _m.menuCaptionSize,
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),

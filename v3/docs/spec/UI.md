@@ -138,16 +138,22 @@ the full shell restores its saved placement and pin.
   the tab with the mouse** returns to the full launcher.
 - **Idle behaviour selectable** — Setup → Quick dock and the dock header's placement menu both offer
   **Auto-collapse** (collapse after eight idle seconds) and **Keep open** (stay expanded until the
-  player collapses it). The choice is persisted. Auto-collapse is paused while the pointer is over
-  the dock and resets on any interaction; a collapsed tab hover-expands temporarily in either mode.
+  player collapses it). The header also carries a one-click `dock-keep-open` toggle so stopping the
+  timer never requires opening the menu. The choice is persisted. Auto-collapse is paused while the
+  pointer is over the dock and resets on any interaction; resizing or moving the dock restarts the
+  idle countdown, and a collapsed-tab hover expands temporarily in either mode. A pointer click ends
+  that transient hover expansion, so leaving the window does not undo a dock the player just opened.
 - **Entry/exit** — the top-bar `app-bar-dock` action (or Setup's "Open quick dock") collapses the shell
   into the dock. The full shell stays mounted offstage (the same keyed subtree as mini mode), so tab
   drafts survive. "Open full window" in the dock restores the exact full rect.
 - **Five placements, three sizes** — `DockPlacement` gives **right rail**, **left rail**, **bottom
   right**, **bottom left** and **top centre**, at 300×480 (rails), 340×460 (bays) and 380×500 (island).
   `DockSize` scales the chosen shape: **Compact** (0.9×), **Standard** (1.0×) and **Large** (1.25×),
-  including the collapsed tab/pill/island. The choice can be made in Setup → Quick dock or from the
-  dock header's placement menu; the dock can also be dragged (pan through `setWindowRect`) and snaps
+  including the collapsed tab/pill/island. A matching `DockMetrics` table scales the content too — title
+  12.5/13/15 px, summary 10/10.5/11.5 px, row 40/44/54 px and the fixed Start
+  column 58×26/64×28/76×34 px — so a larger window gets larger labels and action targets rather than
+  empty space. The choice can be made in Setup → Quick dock or from the dock header's placement menu
+  (which now lists the three sizes); the dock can also be dragged (pan through `setWindowRect`) and snaps
   to its nearest edge. **Placement, size, collapsed state, idle behaviour, tile order and pinned Sell
   selections are persisted** in the portable `settings.ui.quick_dock` block
   (`{placement, size, collapsed, behavior, tiles, pins}`) through the normal validate → apply path;
@@ -426,7 +432,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 375/375; `dart format` clean. Every
+Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 389/389; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,

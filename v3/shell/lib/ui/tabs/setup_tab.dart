@@ -309,8 +309,9 @@ class _SetupTabState extends State<SetupTab>
               ),
               const SizedBox(height: ShellSpace.sm),
               const ShellProse(
-                'Dock size scales the selected form factor; Compact and Large keep the same '
-                'rail/bay/island shape.',
+                'Dock size scales the selected form factor and its controls together: Compact '
+                'keeps labels readable, Large grows the Start buttons and row rhythm, and all '
+                'three keep the same rail/bay/island shape.',
               ),
               const SizedBox(height: ShellSpace.xs),
               Wrap(
@@ -329,7 +330,8 @@ class _SetupTabState extends State<SetupTab>
               const SizedBox(height: ShellSpace.sm),
               const ShellProse(
                 'Idle behaviour: auto-collapse after eight seconds, or keep the full dock open '
-                'until you collapse it. Hovering the tiny tab expands it in either mode.',
+                'until you collapse it. The dock header has a one-click Keep open toggle; hovering '
+                'the tiny tab expands it in either mode.',
               ),
               const SizedBox(height: ShellSpace.xs),
               Wrap(

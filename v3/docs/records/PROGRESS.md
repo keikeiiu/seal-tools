@@ -19,6 +19,28 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-09 (52) — the quick dock scales its UI with its window
+
+The Compact / Standard / Large presets scaled the dock window only. A Large dock had a 1.25× frame with
+the Standard 13 px title, 12 px Start label and 28 px button, so the controls floated in the extra space.
+
+- **`DockMetrics`** (`ui/dock_metrics.dart`) is now the one table per preset. Tiles use its row height,
+  icon/action sizes and type; the header, footer, long-running row and collapsed tab use the same table.
+  Large: 54 px row, 15 px title, 11.5 px summary, 76 × 34 Start at 13.5 px; Compact keeps its labels at
+  12.5 / 11.5 even in the smaller window.
+- **Fixed action column:** Start/Stop is wrapped in the same action width and height for every row, with
+  a fixed options button, so labels and button edges line up.
+- **Size menu in the dock header:** the placement menu now lists Compact / Standard / Large (matching the
+  spec, which already said size was reachable there), and a resize restarts the idle countdown instead of
+  letting a timer armed for the old geometry collapse the new one.
+- **Auto-collapse escape hatch + latch fix:** the header has a one-click Keep open toggle; changing size
+  or placement resets the timer; a pointer click ends the transient hover expansion so leaving a dock the
+  player just clicked does not collapse it again.
+
+Verification: quick-dock tests **26/26** (large/compact metrics, size menu, keep-open, resize timer,
+hover/click), full shell gate **389/389**, analyze `--fatal-infos` clean, format clean, Windows debug
+build green. Design study: `.scratch/ui-audit/quick-dock-sizes.html` + `.md`; spec and both guides updated.
+
 ## 2026-11-09 (51) — the quick dock gets Compact / Standard / Large
 
 The quick dock had five placements but only one size per shape. The player asked for a few bigger
