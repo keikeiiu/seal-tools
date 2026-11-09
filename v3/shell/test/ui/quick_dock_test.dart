@@ -404,7 +404,9 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
   });
 
-  testWidgets('hovering the tiny tab expands the dock', (tester) async {
+  testWidgets('hovering the tiny tab opens and keeps the dock open', (
+    tester,
+  ) async {
     final harness = await _pumpDock(tester);
     await tester.tap(find.byKey(const ValueKey('dock-collapse')));
     await tester.pump();
@@ -420,6 +422,12 @@ void main() {
     expect(harness.model.dockCollapsed, isFalse);
 
     await mouse.removePointer();
+    await tester.pump();
+    expect(
+      harness.model.dockCollapsed,
+      isFalse,
+      reason: 'hovering is an open action, not a temporary preview',
+    );
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 2));
   });

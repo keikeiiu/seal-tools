@@ -33,9 +33,10 @@ the Standard 13 px title, 12 px Start label and 28 px button, so the controls fl
 - **Size menu in the dock header:** the placement menu now lists Compact / Standard / Large (matching the
   spec, which already said size was reachable there), and a resize restarts the idle countdown instead of
   letting a timer armed for the old geometry collapse the new one.
-- **Auto-collapse escape hatch + latch fix:** the header has a one-click Keep open toggle; changing size
-  or placement resets the timer; a pointer click ends the transient hover expansion so leaving a dock the
-  player just clicked does not collapse it again.
+- **Hover now latches open:** hovering the collapsed quick dock opens the launcher and keeps it open after
+  the pointer leaves; a pointer click no longer needs to fight a transient-preview collapse. The header's
+  one-click Keep open toggle and resize/placement timer reset remain; Auto-collapse is the only automatic
+  path back to the resting form.
 - **Keep open is the new default:** the shell fallback and the core's portable `ui.quick_dock` projection
   now default to `always_open`. Auto-collapse remains selectable in Setup or the dock menu. This stops a
   fresh install from shrinking after eight seconds while keeping the explicit option.

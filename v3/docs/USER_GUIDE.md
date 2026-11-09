@@ -149,9 +149,9 @@ pill or island; click the tab or **hover it with the mouse** to expand it again.
 behaviour is selectable in **Setup → Quick dock** or the dock header's placement menu: **Keep open**
 is the default and leaves the full launcher up until you collapse it yourself, while **Auto-collapse**
 shrinks it after eight idle seconds. The header also has a one-click **Keep open** toggle (timer/lock
-icon), so changing the mode does not require the menu. Hovering pauses the auto-collapse and any click resets its timer;
-resizing or moving the dock restarts the countdown, and clicking after a hover-expand keeps the dock
-open when the pointer leaves. Starting a tool turns the
+icon), so changing the mode does not require the menu. Hovering pauses the auto-collapse and any click
+resets its timer; resizing or moving the dock restarts the countdown. Hovering the collapsed tab opens
+the dock and leaves it open — only Auto-collapse or an explicit collapse shrinks it again. Starting a tool turns the
 same window into the mini run bar; when the run finishes, the bar's dock button returns to the
 launcher. Choose **right rail, left rail, bottom right, bottom left or top centre** in Setup or from the
 dock's placement menu, and drag the dock to fine-tune it. The same menu offers **Compact**, **Standard**

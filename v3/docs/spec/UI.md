@@ -142,9 +142,8 @@ the full shell restores its saved placement and pin.
   player collapses it, the default for new configs). The header also carries a one-click
   `dock-keep-open` toggle so stopping the timer never requires opening the menu. The choice is persisted.
   Auto-collapse is paused while the pointer is over the dock and resets on any interaction; resizing or
-  moving the dock restarts the idle countdown, and a collapsed-tab hover expands temporarily in either
-  mode. A pointer click ends that transient hover expansion, so leaving the window does not undo a dock
-  the player just opened.
+  moving the dock restarts the idle countdown. Hovering the collapsed tab opens the launcher and leaves
+  it open; only Auto-collapse or an explicit collapse shrinks it again.
 - **Entry/exit** — the top-bar `app-bar-dock` action (or Setup's "Open quick dock") collapses the shell
   into the dock. The full shell stays mounted offstage (the same keyed subtree as mini mode), so tab
   drafts survive. "Open full window" in the dock restores the exact full rect.

@@ -77,9 +77,8 @@ class _QuickDockState extends State<QuickDock> {
   static const _autoCollapseAfter = Duration(seconds: 8);
   Timer? _autoCollapse;
 
-  // Hover state: hovering pauses the auto-collapse, and hovering the collapsed tab expands it.
+  // Hover state: hovering pauses the auto-collapse, and hovering the collapsed tab opens it.
   bool _hovering = false;
-  bool _hoverExpanded = false;
 
   // Resizing or moving the dock is interaction: restart the idle countdown instead of letting a
   // timer armed for the old geometry collapse the new one a moment later.
@@ -142,20 +141,12 @@ class _QuickDockState extends State<QuickDock> {
     _hovering = true;
     _cancelAutoCollapse();
     if (model.dockCollapsed) {
-      _hoverExpanded = true;
       unawaited(model.setDockCollapsed(false, persist: false));
     }
   }
 
   void _onHoverExit(PointerExitEvent event) {
     _hovering = false;
-    if (_hoverExpanded) {
-      _hoverExpanded = false;
-      if (model.dockBehavior == DockBehavior.alwaysOpen) {
-        unawaited(model.setDockCollapsed(true, persist: false));
-        return;
-      }
-    }
     _resetAutoCollapse();
   }
 
@@ -219,12 +210,7 @@ class _QuickDockState extends State<QuickDock> {
                 key: const ValueKey('quick-dock'),
                 color: theme.colorScheme.surfaceContainerHigh,
                 child: Listener(
-                  onPointerDown: (_) {
-                    // A click is explicit: it ends the transient hover expansion, so moving the
-                    // pointer away no longer collapses a dock the player just chose to open.
-                    _hoverExpanded = false;
-                    _resetAutoCollapse();
-                  },
+                  onPointerDown: (_) => _resetAutoCollapse(),
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
                     onPanStart: _onDragStart,
@@ -318,14 +304,13 @@ class _QuickDockState extends State<QuickDock> {
   /// A collapsed icon is a real shortcut once the player looks for one: expanding the dock and
   /// opening that tool's options is more useful than a dead glance target.
   void _openCollapsedTool(ToolId tool) {
-    _hoverExpanded = false;
     setState(() => _menu = tool);
     unawaited(model.setDockCollapsed(false));
   }
 
   /// The dock's resting form: a vertical tab on the rails, a status pill for the bays and a slim
-  /// island at the top. It keeps three tool icons (and the running dot) glanceable; a click or the
-  /// unfold button returns to the full launcher.
+  /// island at the top. Hovering it opens the full launcher and leaves it open; its three tool icons
+  /// are shortcuts to that tool's options.
   Widget _collapsed(ThemeData theme) {
     final rail = model.dockPlacement.isRail;
     final running = _runningCount();
@@ -343,10 +328,7 @@ class _QuickDockState extends State<QuickDock> {
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         padding: EdgeInsets.zero,
       ),
-      onPressed: () {
-        _hoverExpanded = false;
-        unawaited(model.setDockCollapsed(false));
-      },
+      onPressed: () => unawaited(model.setDockCollapsed(false)),
       icon: Icon(
         Icons.unfold_more,
         size: _m.collapsedExpandIcon,
@@ -359,10 +341,7 @@ class _QuickDockState extends State<QuickDock> {
           : 'Quick dock — click to open',
       child: InkWell(
         key: const ValueKey('dock-collapsed'),
-        onTap: () {
-          _hoverExpanded = false;
-          unawaited(model.setDockCollapsed(false));
-        },
+        onTap: () => unawaited(model.setDockCollapsed(false)),
         child: Center(
           child: rail
               ? Column(
