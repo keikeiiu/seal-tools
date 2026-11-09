@@ -19,6 +19,20 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-09 (54) — Setup sees the quick dock's header changes
+
+The quick dock header's Keep open toggle called `model.setDockBehavior`, but the kept-alive Setup tab
+only listened to the config mirror and its own drafts. A header change could therefore save correctly
+while the Setup chips still showed the old choice when the full window came back.
+
+Setup now listens to `ShellModel` directly (and removes the listener on dispose), so the Quick dock
+chips, Appearance chips and other model-derived rows refresh as soon as the dock header changes. A
+widget test flips the behavior from the model and asserts both ChoiceChips follow. Setup copy also says
+the chips mirror the dock-header toggle.
+
+Verification: Setup tests **10/10**, full shell gate **391/391**, analyze `--fatal-infos` clean, format
+clean, Windows debug build green.
+
 ## 2026-11-09 (53) — the mini bar returns to the same dock state as Setup
 
 The finished run bar's **Quick dock** button called `openDockFromMini`, which restored the persisted

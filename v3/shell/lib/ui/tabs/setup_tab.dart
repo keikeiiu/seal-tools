@@ -85,7 +85,23 @@ class _SetupTabState extends State<SetupTab>
   String? _runWindowError;
 
   @override
+  void initState() {
+    super.initState();
+    // The quick-dock chips mirror ShellModel state, not a ConfigDraft. A Fast tab is kept alive,
+    // so it must listen to the model directly or a header toggle made while the dock was up leaves
+    // this screen showing the old Keep open / Auto-collapse choice.
+    widget.model.addListener(_onModelChanged);
+  }
+
+  void _onModelChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
   void dispose() {
+    widget.model.removeListener(_onModelChanged);
     _group.dispose();
     super.dispose();
   }
@@ -331,8 +347,8 @@ class _SetupTabState extends State<SetupTab>
               const ShellProse(
                 'Idle behaviour: Keep open (the default) leaves the full dock up until you collapse '
                 'it; Auto-collapse shrinks it after eight idle seconds. The dock header has a '
-                'one-click Keep open toggle. Click the tiny resting tab to open it again; hovering only '
-                'pauses auto-collapse.',
+                'one-click Keep open toggle; these chips mirror it. Click the tiny resting tab to '
+                'open it again; hovering only pauses auto-collapse.',
               ),
               const SizedBox(height: ShellSpace.xs),
               Wrap(

@@ -348,6 +348,27 @@ void main() {
     expect(dock['behavior'], 'always_open');
   });
 
+  testWidgets('Quick dock chips follow a header preference change', (
+    tester,
+  ) async {
+    final harness = await _pumpSetup(tester);
+    harness.answerConfigCommands();
+    final auto = find.byKey(
+      const ValueKey('setup-dock-behavior-auto_collapse'),
+    );
+    final keep = find.byKey(const ValueKey('setup-dock-behavior-always_open'));
+    expect(tester.widget<ChoiceChip>(keep).selected, isTrue);
+
+    await harness.model.setDockBehavior(DockBehavior.autoCollapse);
+    await _flush(tester);
+    expect(tester.widget<ChoiceChip>(auto).selected, isTrue);
+    expect(tester.widget<ChoiceChip>(keep).selected, isFalse);
+
+    await harness.model.setDockBehavior(DockBehavior.alwaysOpen);
+    await _flush(tester);
+    expect(tester.widget<ChoiceChip>(keep).selected, isTrue);
+  });
+
   testWidgets('Quick dock size chip saves the choice', (tester) async {
     final harness = await _pumpSetup(tester);
     harness.answerConfigCommands();
