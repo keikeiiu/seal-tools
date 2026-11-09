@@ -134,15 +134,17 @@ the full shell restores its saved placement and pin.
 
 - **Collapsed resting form** — the header's `dock-collapse` action shrinks the dock to its form-factor
   tab: a 46 × 150 vertical rail tab, a 220 × 44 bottom pill or a 200 × 36 top island. It keeps three
-  tool icons and a running dot glanceable; clicking the tab, its `dock-expand` button, or **hovering
-  the tab with the mouse** returns to the full launcher.
+  tool-icon shortcuts (Skill Spammer, Buy and Sell) and a running dot. Clicking an icon expands the
+  launcher and opens that tool's options; clicking the rest of the tab, its `dock-expand` button, or
+  **hovering the tab with the mouse** just returns to the full launcher.
 - **Idle behaviour selectable** — Setup → Quick dock and the dock header's placement menu both offer
   **Auto-collapse** (collapse after eight idle seconds) and **Keep open** (stay expanded until the
   player collapses it, the default for new configs). The header also carries a one-click
-  `dock-keep-open` toggle so stopping the timer never requires opening the menu. The choice is persisted. Auto-collapse is paused while the
-  pointer is over the dock and resets on any interaction; resizing or moving the dock restarts the
-  idle countdown, and a collapsed-tab hover expands temporarily in either mode. A pointer click ends
-  that transient hover expansion, so leaving the window does not undo a dock the player just opened.
+  `dock-keep-open` toggle so stopping the timer never requires opening the menu. The choice is persisted.
+  Auto-collapse is paused while the pointer is over the dock and resets on any interaction; resizing or
+  moving the dock restarts the idle countdown, and a collapsed-tab hover expands temporarily in either
+  mode. A pointer click ends that transient hover expansion, so leaving the window does not undo a dock
+  the player just opened.
 - **Entry/exit** — the top-bar `app-bar-dock` action (or Setup's "Open quick dock") collapses the shell
   into the dock. The full shell stays mounted offstage (the same keyed subtree as mini mode), so tab
   drafts survive. "Open full window" in the dock restores the exact full rect.
@@ -432,7 +434,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 389/389; `dart format` clean. Every
+Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 390/390; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,

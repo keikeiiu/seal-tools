@@ -160,9 +160,9 @@ Start button), and Compact keeps its labels readable. Placement, size, collapsed
 tile order and pinned Sell selections are remembered across restarts; a dragged offset inside that
 placement is session-only.
 
-The small resting form of the quick dock is **not** the mini run bar. It shows three glance icons —
-Skill Spammer, Buy and Sell — plus an unfold button; those icons are not separate buttons, and hovering
-or clicking the whole tab expands the quick dock. The **mini run bar** is the 360 × 96 window shown only
+The small resting form of the quick dock is **not** the mini run bar. It shows three shortcuts —
+Skill Spammer, Buy and Sell — plus an unfold button. Clicking a tool icon expands the quick dock and
+opens that tool's options; clicking the rest of the tab just expands it, and hovering expands it too. The **mini run bar** is the 360 × 96 window shown only
 while a foreground tool is running: its red **Stop** stops that tool (the resident Pet Feeder keeps
 running), the top-right full-window icon expands the shell, and after the run finishes it also offers the
 **Quick dock** button and a filled **Full window** button.

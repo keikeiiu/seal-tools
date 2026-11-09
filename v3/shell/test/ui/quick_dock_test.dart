@@ -1,4 +1,4 @@
-﻿/// The quick dock v1: the idle launcher (seven quick starts, secondary menus per tool, five
+/// The quick dock v1: the idle launcher (seven quick starts, secondary menus per tool, five
 /// placements) and its transitions to/from the existing run bar.
 library;
 
@@ -449,6 +449,27 @@ void main() {
     await mouse.removePointer();
     await tester.pump();
     expect(harness.model.dockCollapsed, isFalse);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('a collapsed tool icon expands straight into its options', (
+    tester,
+  ) async {
+    final harness = await _pumpDock(tester);
+    await tester.tap(find.byKey(const ValueKey('dock-collapse')));
+    await tester.pump();
+    expect(harness.model.dockCollapsed, isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('dock-collapsed-spammer')));
+    await tester.pump();
+    expect(harness.model.dockCollapsed, isFalse);
+    expect(find.byKey(const ValueKey('dock-menu-title')), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('dock-menu-title'))).data,
+      'Skill Spammer',
+    );
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 2));

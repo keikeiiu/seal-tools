@@ -273,16 +273,15 @@ class _QuickDockState extends State<QuickDock> {
 
   // ── collapsed resting form ───────────────────────────────────────────────────────────────────
 
-  /// The dock's resting form: a vertical tab on the rails, a status pill for the bays and a slim
-  /// island at the top. It keeps three tool icons (and the running dot) glanceable; a click or the
-  /// unfold button returns to the full launcher.
-  Widget _collapsed(ThemeData theme) {
-    final rail = model.dockPlacement.isRail;
-    final running = _runningCount();
-    final tools = <Widget>[
-      for (final tool in const [ToolId.spammer, ToolId.buy, ToolId.sell])
-        Padding(
-          padding: const EdgeInsets.all(1),
+  Widget _collapsedTool(ThemeData theme, ToolId tool, {required int running}) {
+    return Padding(
+      padding: const EdgeInsets.all(1),
+      child: Tooltip(
+        message: '${toolDisplayName(tool)} options',
+        child: InkWell(
+          key: ValueKey('dock-collapsed-${tool.wire}'),
+          borderRadius: BorderRadius.circular(ShellRadius.s),
+          onTap: () => _openCollapsedTool(tool),
           child: SizedBox(
             width: _m.collapsedToolBox,
             height: _m.collapsedToolBox,
@@ -312,6 +311,27 @@ class _QuickDockState extends State<QuickDock> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// A collapsed icon is a real shortcut once the player looks for one: expanding the dock and
+  /// opening that tool's options is more useful than a dead glance target.
+  void _openCollapsedTool(ToolId tool) {
+    _hoverExpanded = false;
+    setState(() => _menu = tool);
+    unawaited(model.setDockCollapsed(false));
+  }
+
+  /// The dock's resting form: a vertical tab on the rails, a status pill for the bays and a slim
+  /// island at the top. It keeps three tool icons (and the running dot) glanceable; a click or the
+  /// unfold button returns to the full launcher.
+  Widget _collapsed(ThemeData theme) {
+    final rail = model.dockPlacement.isRail;
+    final running = _runningCount();
+    final tools = <Widget>[
+      for (final tool in const [ToolId.spammer, ToolId.buy, ToolId.sell])
+        _collapsedTool(theme, tool, running: running),
     ];
     final expand = IconButton(
       key: const ValueKey('dock-expand'),
