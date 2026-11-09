@@ -1,8 +1,10 @@
 # PLAN-OCR-V6 — evaluate and ship PP-OCRv6
 
-**Decision.** If OCR is updated, the target is **PP-OCRv6**, not PP-OCRv5. This plan evaluates v6
-**tiny** and **small** against the current PP-OCRv4 pipeline on live, labelled game crops; v6
-**medium** is an accuracy reference only. No model is switched until the corpus gate passes.
+**Decision.** If OCR is updated, the target is **PP-OCRv6 small**, not PP-OCRv5. A measured dictionary
+check already disqualified **tiny** for full Traditional Chinese: its recogniser has 6,904 entries and
+lacks common Traditional characters such as 擊 and 預, while small has 18,708 entries and contains
+them. v6 **medium** remains an accuracy reference only. No model is switched until the corpus gate
+passes.
 
 ## Goal
 
@@ -21,7 +23,7 @@ the `seal-ocr` API and every `seal-core` caller stay the same.
 seal-core tools / dispatch
         ↓  OcrPipeline::scan_rgba / read_line_rgba / modes::apply   (unchanged)
 seal-ocr
-  OcrPipeline → ModelProfile (v4 | v6-tiny | v6-small)
+  OcrPipeline → ModelProfile (v4 | v6-small; v6-tiny reference)
                  ├── det ONNX + detector profile
                  ├── cls ONNX (optional)
                  └── rec ONNX + dictionary source + rec profile
@@ -40,6 +42,8 @@ seal-ocr
 
 - **Traditional Chinese characters** that v4 currently repairs by hand must be read correctly.
 - **Tiny game text** after the existing calibration crop/upscale path must not lose accuracy.
+- **Tiny rec dictionary gap** — 6,904 entries, missing common Traditional characters; it must not be
+  selected for the TW client even if its Latin/Simplified output looks good.
 - **Detector behaviour** on dense attribute rows; v6's detector profile must not merge or split lines.
 - **Latency** on the tool's real crops, not a vendor benchmark.
 - **Model load failure** must be a named `ocr_unavailable`, never a silent fallback to another model.
@@ -122,7 +126,8 @@ README, but do not port Python API code into Rust.
 
 **Files:** `v3/docs/records/OCR-V6-MODELS.md` (new, evidence), no code.
 
-- Download v6 tiny/small det+rec (and cls if used); export to ONNX with the pinned PaddleOCR release.
+- Download v6 small det+rec (and cls if used); export to ONNX with the pinned PaddleOCR release.
+  Tiny rec is kept as a measured reference only (see `../investigations/OCR-V6-MODELS.md`).
 - Record SHA-256, byte sizes, input/output shapes, opset, metadata keys and dictionary source.
 - Verify each graph loads through `ort` and runs one synthetic tensor on this machine/DirectML.
 - Record the license/provenance for the models and the export tool.
@@ -193,7 +198,7 @@ Compare on the same corpus:
 | Candidate | Det | Rec |
 |---|---|---|
 | v4 (current) | `ch_PP-OCRv4_det` | `ch_PP-OCRv4_rec` |
-| v6 tiny | `PP-OCRv6_tiny_det` | `PP-OCRv6_tiny_rec` |
+| v6 tiny | reference only | 6,904-entry dict; missing 擊/預 |
 | v6 small | `PP-OCRv6_small_det` | `PP-OCRv6_small_rec` |
 | v6 medium | reference only | reference only |
 
@@ -244,12 +249,12 @@ If rejected: record the measurements and leave v4 in place.
 | External dictionary differs | loader fallback + hash pinning; fail loudly |
 | Detector post-processing differs | profile values measured on corpus, never guessed |
 | Accuracy improves only on vendor data | corpus gate decides; no ship on benchmark claims |
-| Model size/latency grows too much | tiny/small only; medium reference |
+| Model size/latency grows too much | small only; tiny/medium reference |
 | Licence/provenance unclear | record before staging; stop if not redistributable |
 
 ## 6. Open questions
 
-1. Ship **tiny** or **small** as the default if both pass; medium stays reference-only?
+1. Ship **small** as the default if it passes; tiny stays reference-only because of its dictionary gap?
 2. Is a model-version setting player-facing, or a release-time choice only?
 3. Should the v4 models remain in the zip as a fallback, or is one pinned set enough?
 4. What is the maximum acceptable model-set size/latency for the release?
@@ -260,5 +265,6 @@ If rejected: record the measurements and leave v4 in place.
 - [PP-OCRv6 introduction](https://www.paddleocr.ai/main/version3.x/algorithm/PP-OCRv6/PP-OCRv6.html)
 - [PP-OCRv6 text recognition models](https://www.paddleocr.ai/main/version3.x/module_usage/text_recognition.html)
 - [OCR research record](../records/OCR-RESEARCH.md)
+- [OCR v6 model study](../investigations/OCR-V6-MODELS.md)
 - [OCR evaluation corpus](../../core/fixtures/ocr/README.md)
 - Current API: `v3/core/crates/seal-ocr/src/{pipeline,model,det}.rs`

@@ -7,3 +7,4 @@ they stay true whether or not anything was built from them — which is why they
 | document | the question it answers |
 |---|---|
 | [ANALYSIS-CONFIG-STORE.md](ANALYSIS-CONFIG-STORE.md) | would moving the tools' config to PostgreSQL or another SQL store improve performance or code quality, with on-screen calibration staying in YAML files? |
+| [OCR-V6-MODELS.md](OCR-V6-MODELS.md) | do PP-OCRv6 tiny and small actually cover Traditional Chinese plus English, and what dictionary/class counts must the Rust loader handle? |
