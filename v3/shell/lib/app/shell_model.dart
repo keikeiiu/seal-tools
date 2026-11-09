@@ -245,7 +245,7 @@ class ShellModel extends ChangeNotifier {
   // hand it back. Placement is session/v1 only (a config field is the documented follow-up).
   bool _dockActive = false;
   bool _dockCollapsed = false;
-  DockBehavior _dockBehavior = DockBehavior.autoCollapse;
+  DockBehavior _dockBehavior = DockBehavior.alwaysOpen;
   DockPlacement _dockPlacement = DockPlacement.rightRail;
   DockSize _dockSize = DockSize.standard;
   WindowRect? _dockRestoreRect;
@@ -1833,7 +1833,7 @@ class ShellModel extends ChangeNotifier {
     final behaviorWire = asString(dock['behavior']);
     _dockBehavior = DockBehavior.values.firstWhere(
       (behavior) => behavior.wire == behaviorWire,
-      orElse: () => DockBehavior.autoCollapse,
+      orElse: () => DockBehavior.alwaysOpen,
     );
     _restoreDockLayout(dock);
   }

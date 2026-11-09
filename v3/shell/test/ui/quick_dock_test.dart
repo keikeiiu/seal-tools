@@ -319,18 +319,21 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
   });
 
-  testWidgets('the header Keep open toggle stops the idle collapse', (
+  testWidgets('the header Keep open toggle controls the idle collapse', (
     tester,
   ) async {
     final harness = await _pumpDock(tester);
-    await tester.tap(find.byKey(const ValueKey('dock-keep-open')));
-    await tester.pump();
     expect(harness.model.dockBehavior, DockBehavior.alwaysOpen);
-
     await tester.pump(const Duration(seconds: 9));
     await tester.pump();
     expect(harness.model.dockCollapsed, isFalse);
-    expect(find.byKey(const ValueKey('dock-start-spammer')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('dock-keep-open')));
+    await tester.pump();
+    expect(harness.model.dockBehavior, DockBehavior.autoCollapse);
+    await tester.pump(const Duration(seconds: 9));
+    await tester.pump();
+    expect(harness.model.dockCollapsed, isTrue);
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 2));
@@ -358,7 +361,11 @@ void main() {
     tester,
   ) async {
     final harness = await _pumpDock(tester);
-    expect(harness.model.dockCollapsed, isFalse);
+    await tester.tap(find.byKey(const ValueKey('dock-placement')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Auto-collapse'));
+    await tester.pumpAndSettle();
+    expect(harness.model.dockBehavior, DockBehavior.autoCollapse);
 
     await tester.pump(const Duration(seconds: 8));
     await tester.pump();
@@ -369,6 +376,10 @@ void main() {
   testWidgets('Keep open disables the idle auto-collapse', (tester) async {
     final harness = await _pumpDock(tester);
 
+    await tester.tap(find.byKey(const ValueKey('dock-placement')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Auto-collapse'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('dock-placement')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Keep open'));

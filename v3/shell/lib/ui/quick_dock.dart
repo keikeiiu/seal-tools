@@ -333,48 +333,53 @@ class _QuickDockState extends State<QuickDock> {
         color: theme.colorScheme.onSurfaceVariant,
       ),
     );
-    return InkWell(
-      key: const ValueKey('dock-collapsed'),
-      onTap: () {
-        _hoverExpanded = false;
-        unawaited(model.setDockCollapsed(false));
-      },
-      child: Center(
-        child: rail
-            ? Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.drag_indicator,
-                    size: _m.dragIconSize,
-                    color: theme.colorScheme.onSurfaceVariant.withValues(
-                      alpha: 0.6,
-                    ),
-                  ),
-                  ...tools,
-                  expand,
-                ],
-              )
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  expand,
-                  const SizedBox(width: ShellSpace.xxs),
-                  ...tools,
-                  if (running > 0)
-                    Padding(
-                      padding: EdgeInsets.only(left: _m.tileGap),
-                      child: Container(
-                        width: _m.dotSize,
-                        height: _m.dotSize,
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primary,
-                          shape: BoxShape.circle,
-                        ),
+    return Tooltip(
+      message: rail
+          ? 'Quick dock — hover or click to open'
+          : 'Quick dock — click to open',
+      child: InkWell(
+        key: const ValueKey('dock-collapsed'),
+        onTap: () {
+          _hoverExpanded = false;
+          unawaited(model.setDockCollapsed(false));
+        },
+        child: Center(
+          child: rail
+              ? Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.drag_indicator,
+                      size: _m.dragIconSize,
+                      color: theme.colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.6,
                       ),
                     ),
-                ],
-              ),
+                    ...tools,
+                    expand,
+                  ],
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    expand,
+                    SizedBox(width: _m.tileGap),
+                    ...tools,
+                    if (running > 0)
+                      Padding(
+                        padding: EdgeInsets.only(left: _m.tileGap),
+                        child: Container(
+                          width: _m.dotSize,
+                          height: _m.dotSize,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+        ),
       ),
     );
   }

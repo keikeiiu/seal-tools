@@ -138,8 +138,8 @@ the full shell restores its saved placement and pin.
   the tab with the mouse** returns to the full launcher.
 - **Idle behaviour selectable** — Setup → Quick dock and the dock header's placement menu both offer
   **Auto-collapse** (collapse after eight idle seconds) and **Keep open** (stay expanded until the
-  player collapses it). The header also carries a one-click `dock-keep-open` toggle so stopping the
-  timer never requires opening the menu. The choice is persisted. Auto-collapse is paused while the
+  player collapses it, the default for new configs). The header also carries a one-click
+  `dock-keep-open` toggle so stopping the timer never requires opening the menu. The choice is persisted. Auto-collapse is paused while the
   pointer is over the dock and resets on any interaction; resizing or moving the dock restarts the
   idle countdown, and a collapsed-tab hover expands temporarily in either mode. A pointer click ends
   that transient hover expansion, so leaving the window does not undo a dock the player just opened.

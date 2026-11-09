@@ -319,6 +319,14 @@ void main() {
     final harness = await _pumpSetup(tester);
     harness.answerConfigCommands();
 
+    final autoCollapse = find.byKey(
+      const ValueKey('setup-dock-behavior-auto_collapse'),
+    );
+    await tester.ensureVisible(autoCollapse);
+    await tester.pump();
+    await tester.tap(autoCollapse);
+    await _flush(tester);
+
     final keepOpen = find.byKey(
       const ValueKey('setup-dock-behavior-always_open'),
     );

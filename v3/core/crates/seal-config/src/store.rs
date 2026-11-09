@@ -1104,7 +1104,7 @@ fn ensure_portable_ui(base: &mut Value) {
         shape.insert("collapsed".to_owned(), Value::Bool(false));
         shape.insert(
             "behavior".to_owned(),
-            Value::String("auto_collapse".to_owned()),
+            Value::String("always_open".to_owned()),
         );
         // Lists are a single leaf to the projection. The tiles default mirrors the shell's shipped
         // quick-action list so a config that never customised the dock still exposes all of them;

@@ -36,10 +36,18 @@ the Standard 13 px title, 12 px Start label and 28 px button, so the controls fl
 - **Auto-collapse escape hatch + latch fix:** the header has a one-click Keep open toggle; changing size
   or placement resets the timer; a pointer click ends the transient hover expansion so leaving a dock the
   player just clicked does not collapse it again.
+- **Keep open is the new default:** the shell fallback and the core's portable `ui.quick_dock` projection
+  now default to `always_open`. Auto-collapse remains selectable in Setup or the dock menu. This stops a
+  fresh install from shrinking after eight seconds while keeping the explicit option.
+- **Terms are now stated in the guide:** the collapsed quick-dock tab/pill/island is not the mini run bar;
+  its three icons are Skill Spammer, Buy and Sell glance markers, not separate buttons, and the whole tab
+  opens the dock. The mini bar's Stop / full-window and finished-state Quick dock / Full window buttons are
+  described separately.
 
 Verification: quick-dock tests **26/26** (large/compact metrics, size menu, keep-open, resize timer,
-hover/click), full shell gate **389/389**, analyze `--fatal-infos` clean, format clean, Windows debug
-build green. Design study: `.scratch/ui-audit/quick-dock-sizes.html` + `.md`; spec and both guides updated.
+hover/click), model tests **49/49**, full shell gate **389/389**, analyze `--fatal-infos` clean, format
+clean, Windows debug build green; `seal-config` 24/24 and `cargo fmt --check` green. Design study:
+`.scratch/ui-audit/quick-dock-sizes.html` + `.md`; spec and both guides updated.
 
 ## 2026-11-09 (51) — the quick dock gets Compact / Standard / Large
 

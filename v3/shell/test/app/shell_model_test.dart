@@ -1179,7 +1179,11 @@ void main() {
           'window': {'title': 'TW_LIVE'},
           'settings': {
             'ui': {
-              'quick_dock': {'placement': 'bottom_right', 'collapsed': true},
+              'quick_dock': {
+                'placement': 'bottom_right',
+                'collapsed': true,
+                'behavior': 'auto_collapse',
+              },
             },
           },
         },
