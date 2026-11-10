@@ -43,9 +43,11 @@ Filter and competed with the action sentence.
 - **Four bands:** identity/phase; the core's action or outcome as the primary 13 px semibold line; live
   facts as labelled mono chips (`GRADE`, `LEFT`, `TRY`, OCR attributes); the long `FILTER` value as its
   own ellipsized line; clock + countdown and one fixed primary action in the footer.
-- **Facts are derived, not ad hoc:** `state.detail` is split into `_MiniFact` records (attribute
-  `name=value` pairs included), at most five compact chips are shown, and the full set stays in the
-  hover tooltip. Finished/error states keep the outcome sentence and hide live facts.
+- **Facts are derived, not ad hoc:** `state.detail` is split into `_MiniFact` records. Grade/Left/Try
+  stay labelled chips; OCR attributes are one inline `name=value` run (no cards), tinted with the
+  primary colour when they satisfy an enabled filter rule's name and min/max. At most five metric
+  chips are shown; the full set stays in the hover tooltip. Finished/error states keep the outcome
+  sentence and hide live facts.
 - **Type/hierarchy:** tool name 14 px; primary action 13 px/600; chip label 7.5–8.5 px mono and value
   10.5–11.5 px mono; countdown includes a clock glyph; Stop remains 88 × 32.
 - Updated the mini-bar widget tests for the structured facts and the 460 × 168 spec/guide wording.

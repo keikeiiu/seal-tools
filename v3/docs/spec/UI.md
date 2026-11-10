@@ -97,11 +97,12 @@ existing `state` / `tool.finished` fact.
   click).
 - **Content, ranked** — row 1: drag grip, tool icon + name (14 px), phase chip (dot **and** word),
   resident-pet paw badge, expand icon. Row 2: the core's action/outcome sentence as one 13 px semibold
-  line (two lines only when there are no facts; full text on hover). Row 3: live `state.detail` facts as
-  labelled mono chips — Grade, Left, Try, then OCR attributes — followed by the long Filter value as its
-  own full-width ellipsized line. Row 4: clock + compact countdown (`in 12 s`) and exactly one primary
-  action. At most five compact facts are shown; the tooltip carries the full fact set. Rail, tabs,
-  header, save bar, logs, finished summaries and the native caption remain absent.
+  line (two lines only when there are no facts; full text on hover). Row 3: Grade/Left/Try as labelled
+  mono chips; OCR attributes stay an inline `name=value` run rather than cards, and an attribute named
+  by the enabled filter (and inside its min/max) is tinted with the primary colour. The long Filter
+  value follows as its own full-width ellipsized line. Row 4: clock + compact countdown (`in 12 s`) and
+  exactly one primary action. At most five metric chips are shown; the tooltip carries the full fact
+  set. Rail, tabs, header, save bar, logs, finished summaries and the native caption remain absent.
 - **Actions** — an active run shows **Stop** (88 × 32, one click, no confirmation; enabled while
   `running` and `starting`; disabled with a spinner while `stopping` or while a stop command is in
   flight, so the bar never invents a phase). A finished/error/lost bar shows **Full window**
@@ -438,7 +439,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 393/393; `dart format` clean. Every
+Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 394/394; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (460 × 168 logical / 690 × 252 physical, borderless + non-activating,

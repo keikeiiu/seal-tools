@@ -210,13 +210,51 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
       final equals = value.indexOf('=');
       if (equals > 0 && equals < value.length - 1) {
         facts.add(
-          _MiniFact(value.substring(0, equals), value.substring(equals + 1)),
+          _MiniFact(
+            value.substring(0, equals),
+            value.substring(equals + 1),
+            inline: true,
+          ),
         );
       } else {
-        facts.add(_MiniFact('Info', value));
+        facts.add(_MiniFact('Info', value, inline: true));
       }
     }
     return facts;
+  }
+
+  /// OCR attributes that satisfy an enabled Tuner filter rule. The OCR detail carries no
+  /// per-attribute matched flag, so the bar checks the rule name and the published min/max bounds
+  /// locally; the run's overall verdict still comes from the core's Filter line.
+  Set<String> _matchedAttributes(List<_MiniFact> facts) {
+    final tuner = asJsonMap(widget.model.config.config['tuner']);
+    final filter = asJsonMap(tuner['filter']);
+    if (asBool(filter['enabled']) != true) {
+      return const <String>{};
+    }
+    final rules = <Map<String, dynamic>>[
+      for (final key in const ['rules', 'override_rules'])
+        for (final rule in asJsonList(filter[key])) asJsonMap(rule),
+    ];
+    final matched = <String>{};
+    for (final fact in facts) {
+      final value = int.tryParse(fact.value.trim());
+      for (final rule in rules) {
+        if (asString(rule['name'])?.trim() != fact.label) {
+          continue;
+        }
+        final min = asNumber(rule['min']);
+        final max = asNumber(rule['max']);
+        final inBounds =
+            value == null ||
+            ((min == null || value >= min) && (max == null || value <= max));
+        if (inBounds) {
+          matched.add(fact.label);
+          break;
+        }
+      }
+    }
+    return matched;
   }
 
   /// The full OCR result set for the mini bar's hover tooltip. The visible line is one ellipsized
@@ -291,7 +329,11 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
     // The core's action/outcome sentence stays the primary line; the live read facts are
     // structured chips below it instead of being glued into one ` · ` sentence.
     final facts = active ? _detailFacts(tool, snapshot) : const <_MiniFact>[];
-    final compactFacts = facts.where((fact) => !fact.wide).take(5).toList();
+    final compactFacts = facts
+        .where((fact) => !fact.wide && !fact.inline)
+        .take(5)
+        .toList();
+    final inlineFacts = facts.where((fact) => fact.inline).toList();
     final wideFacts = facts.where((fact) => fact.wide).toList();
     // The "next moment" belongs to a live run. The bar is 360 px wide, so drop the full window's
     // "next action " prefix ("in 11 s" instead of "next action in 11 s"); a stopped bar shows the
@@ -431,11 +473,12 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
                       ),
                     ),
                   ),
-                  if (compactFacts.isNotEmpty) ...[
+                  if (compactFacts.isNotEmpty || inlineFacts.isNotEmpty) ...[
                     const SizedBox(height: ShellSpace.xs),
                     Wrap(
                       spacing: ShellSpace.xs,
                       runSpacing: ShellSpace.xxs,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         for (
                           var index = 0;
@@ -446,6 +489,12 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
                             key: ValueKey('mini-fact-$index'),
                             label: compactFacts[index].label,
                             value: compactFacts[index].value,
+                          ),
+                        if (inlineFacts.isNotEmpty)
+                          _MiniAttributeLine(
+                            key: const ValueKey('mini-attributes'),
+                            facts: inlineFacts,
+                            matched: _matchedAttributes(inlineFacts),
                           ),
                       ],
                     ),
@@ -549,11 +598,19 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
 
 /// A compact labelled fact in the mini bar. [wide] facts use the full row instead of a chip.
 class _MiniFact {
-  const _MiniFact(this.label, this.value, {this.wide = false});
+  const _MiniFact(
+    this.label,
+    this.value, {
+    this.wide = false,
+    this.inline = false,
+  });
 
   final String label;
   final String value;
   final bool wide;
+
+  /// OCR attribute pairs render as one inline text run, not a bordered card/chip.
+  final bool inline;
 }
 
 class _MiniFactChip extends StatelessWidget {
@@ -601,6 +658,59 @@ class _MiniFactChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// OCR attributes stay a readable inline run (`魔法力=22 · 攻擊速度=4`) instead of a row of
+/// bordered cards. An attribute named by the enabled filter is tinted with the primary colour; the
+/// rest stay neutral, so the checked attributes are visible without extra chips or icons.
+class _MiniAttributeLine extends StatelessWidget {
+  const _MiniAttributeLine({
+    super.key,
+    required this.facts,
+    required this.matched,
+  });
+
+  final List<_MiniFact> facts;
+  final Set<String> matched;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final separator = ShellText.mono.copyWith(
+      fontSize: 10.5,
+      color: muted.withValues(alpha: 0.65),
+    );
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 240),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (var index = 0; index < facts.length; index++) ...[
+              if (index > 0) Text(' · ', style: separator),
+              Text(
+                '${facts[index].label}=${facts[index].value}',
+                key: ValueKey('mini-attribute-$index'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: ShellText.mono.copyWith(
+                  fontSize: 10.5,
+                  fontWeight: matched.contains(facts[index].label)
+                      ? FontWeight.w600
+                      : FontWeight.w400,
+                  color: matched.contains(facts[index].label)
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

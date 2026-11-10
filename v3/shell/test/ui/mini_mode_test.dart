@@ -17,13 +17,16 @@ import 'package:seal_shell/ui/theme.dart';
 import '../support/app_harness.dart';
 
 /// Pumps the mini bar itself at its real 460 × 168 content size, with the model already collapsed.
-Future<AppHarness> _pumpBar(WidgetTester tester) async {
+Future<AppHarness> _pumpBar(
+  WidgetTester tester, {
+  Map<String, dynamic>? config,
+}) async {
   tester.view.physicalSize = const ui.Size(540, 260);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
   final harness = AppHarness();
   addTearDown(harness.model.dispose);
-  final connecting = harness.connect();
+  final connecting = harness.connect(config: config);
   await tester.pumpWidget(
     const MaterialApp(
       home: Scaffold(body: Center(child: CircularProgressIndicator())),
@@ -169,9 +172,14 @@ void main() {
       tester.widget<Text>(find.byKey(const ValueKey('mini-message'))).data,
       'Running',
     );
-    for (final value in ['284', '2', '22', '4']) {
-      expect(find.text(value), findsWidgets);
-    }
+    expect(find.byKey(const ValueKey('mini-attributes')), findsOneWidget);
+    expect(find.text('魔法力=22'), findsOneWidget);
+    expect(find.text('攻擊速度=4'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mini-fact-3')),
+      findsNothing,
+      reason: 'OCR attributes are inline text, not extra cards',
+    );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('mini-wide-fact-0')),
@@ -186,6 +194,47 @@ void main() {
       ),
       findsOneWidget,
     );
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('a filter-matched OCR attribute uses the accent colour', (
+    tester,
+  ) async {
+    final harness = await _pumpBar(
+      tester,
+      config: {
+        'tuner': {
+          'filter': {
+            'enabled': true,
+            'rules': [
+              {'name': '魔法力', 'count': 1, 'min': 1, 'max': 99},
+            ],
+          },
+        },
+      },
+    );
+    harness.emitState(
+      tool: ToolId.tuner,
+      message: 'reading',
+      countdown: 12,
+      detail: const [
+        {'value': '魔法力=22'},
+        {'value': '攻擊速度=4'},
+      ],
+    );
+    await _flush(tester);
+
+    final hit = tester.widget<Text>(
+      find.byKey(const ValueKey('mini-attribute-0')),
+    );
+    final neutral = tester.widget<Text>(
+      find.byKey(const ValueKey('mini-attribute-1')),
+    );
+    expect(hit.style?.fontWeight, FontWeight.w600);
+    expect(neutral.style?.fontWeight, FontWeight.w400);
+    expect(hit.style?.color, isNot(neutral.style?.color));
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 2));

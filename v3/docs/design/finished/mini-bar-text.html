@@ -100,6 +100,10 @@
     background:color-mix(in srgb,var(--muted-container) 70%,transparent);border:1px solid var(--border)}
   .fact b{font:600 7.5px var(--mono);letter-spacing:.04em;color:var(--faint);text-transform:uppercase}
   .fact span{font:500 10.5px var(--mono);color:var(--on)}
+  .attrs{display:inline-flex;align-items:center;gap:4px;padding:2px 0;white-space:nowrap;
+    font:400 10.5px var(--mono);color:var(--onvar)}
+  .attrs .hit{color:var(--primary);font-weight:600}
+  .attrs .sep{color:var(--faint);opacity:.65}
   .filter{display:flex;align-items:center;gap:6px;margin-top:4px;min-height:16px}
   .filter b{font:600 7.5px var(--mono);letter-spacing:.04em;color:var(--faint);text-transform:uppercase;flex:0 0 auto}
   .filter span{font-size:10.5px;color:var(--onvar);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -195,12 +199,12 @@
         <div class="bar-head"><span class="grip">⠿</span><span class="tico"><svg><use href="#i-tune"/></svg></span><span class="tname">Magic Tuner</span><span class="chip ok"><i></i>running</span><span class="paw"><svg><use href="#i-paw"/></svg></span><span class="iconbtn"><svg><use href="#i-expand"/></svg></span></div>
         <div class="after-body">
           <div class="prim">Reading the grade line</div>
-          <div class="facts"><span class="fact"><b>grade</b><span>N</span></span><span class="fact"><b>left</b><span>284</span></span><span class="fact"><b>try</b><span>2</span></span><span class="fact"><b>魔法力</b><span>22</span></span><span class="fact"><b>攻擊速度</b><span>4</span></span></div>
+          <div class="facts"><span class="fact"><b>grade</b><span>N</span></span><span class="fact"><b>left</b><span>284</span></span><span class="fact"><b>try</b><span>2</span></span><span class="attrs"><span class="hit">魔法力=22</span><span class="sep">·</span><span>攻擊速度=4</span></span></div>
           <div class="filter"><b>filter</b><span>'減少傷害' matched 0 attrs, need 2</span></div>
         </div>
         <div class="after-foot"><span class="when"><svg><use href="#i-clock"/></svg>in 12 s</span><span class="sp"></span><span class="stop">Stop</span></div>
       </div>
-      <div class="card-note"><b>Result:</b> the eye reads tool → phase → action → facts → next. The Filter is one ellipsized line with the full set in the hover tooltip; the primary button never moves.</div>
+      <div class="card-note"><b>Result:</b> the eye reads tool → phase → action → facts → next. OCR attributes stay inline (`name=value`); attributes named by the enabled filter use the primary colour (魔法力=22 here), the rest stay neutral. The Filter is one ellipsized line with the full set in the hover tooltip; the primary button never moves.</div>
     </div>
   </div>
 
@@ -208,7 +212,7 @@
   <div class="state-grid">
     <div class="state-card">
       <div class="card-h"><span class="tag after">running</span><span>facts and countdown present</span></div>
-      <div class="bar"><div class="bar-head"><span class="grip">⠿</span><span class="tico"><svg><use href="#i-tune"/></svg></span><span class="tname">Magic Tuner</span><span class="chip ok"><i></i>running</span><span class="iconbtn"><svg><use href="#i-expand"/></svg></span></div><div class="after-body"><div class="prim">Reading the grade line</div><div class="facts"><span class="fact"><b>grade</b><span>DG</span></span><span class="fact"><b>left</b><span>9</span></span><span class="fact"><b>try</b><span>4</span></span></div><div class="filter"><b>filter</b><span>any · 2 rules</span></div></div><div class="after-foot"><span class="when"><svg><use href="#i-clock"/></svg>in 12 s</span><span class="sp"></span><span class="stop">Stop</span></div></div>
+      <div class="bar"><div class="bar-head"><span class="grip">⠿</span><span class="tico"><svg><use href="#i-tune"/></svg></span><span class="tname">Magic Tuner</span><span class="chip ok"><i></i>running</span><span class="iconbtn"><svg><use href="#i-expand"/></svg></span></div><div class="after-body"><div class="prim">Reading the grade line</div><div class="facts"><span class="fact"><b>grade</b><span>DG</span></span><span class="fact"><b>left</b><span>9</span></span><span class="fact"><b>try</b><span>4</span></span><span class="attrs"><span class="hit">魔法力=22</span><span class="sep">·</span><span>攻擊速度=4</span></span></div><div class="filter"><b>filter</b><span>any · 2 rules</span></div></div><div class="after-foot"><span class="when"><svg><use href="#i-clock"/></svg>in 12 s</span><span class="sp"></span><span class="stop">Stop</span></div></div>
     </div>
     <div class="state-card">
       <div class="card-h"><span class="tag after">finished</span><span>outcome, then escape</span></div>
@@ -227,7 +231,7 @@
   <div class="sec-head"><span class="n">03</span><h2>Text rules and type scale</h2><div class="note">The bar is a status surface: one primary sentence, scannable facts, one action.</div></div>
   <div class="rules">
     <div class="rule"><span class="n">1</span><b>Primary line is the action/outcome</b><p>Tool name 14 px · action line 13 px semibold. The core’s <code>message</code> is never replaced by the fact summary; with no facts it may wrap to two lines.</p></div>
-    <div class="rule"><span class="n">2</span><b>Facts are labelled chips</b><p>Label 7.5 px uppercase mono, value 10.5 px mono. Grade/left/try and OCR attributes become scannable; take at most five compact facts, then the full set in the tooltip.</p></div>
+    <div class="rule"><span class="n">2</span><b>Metrics are chips; attributes are text</b><p>Grade/left/try use labelled chips (7.5 px label, 10.5 px value). OCR attributes stay an inline <code>name=value</code> run, no card; an attribute named by the enabled filter is tinted with the primary colour, the rest stay neutral.</p></div>
     <div class="rule"><span class="n">3</span><b>Long Filter gets its own line</b><p>The filter result can be a sentence, so it is a full-width, one-line ellipsized row with a <code>FILTER</code> label and the full text in the tooltip.</p></div>
     <div class="rule"><span class="n">4</span><b>Footer is stable</b><p>Clock icon + countdown on the left, one fixed-size primary action on the right: Stop while active, Quick dock + Full window when finished.</p></div>
   </div>
@@ -236,7 +240,8 @@
     <tbody>
       <tr><td>Tool name</td><td>14 px · 650</td><td>one line, ellipsize</td></tr>
       <tr><td>Action / outcome</td><td>13 px · 600</td><td>1–2 lines; never joins facts</td></tr>
-      <tr><td>Fact chip</td><td>7.5 / 10.5 px mono</td><td>label muted, value on-surface</td></tr>
+      <tr><td>Metric chip</td><td>7.5 / 10.5 px mono</td><td>label muted, value on-surface</td></tr>
+      <tr><td>OCR attribute</td><td>10.5 px mono inline</td><td>name=value; primary if the filter checks it</td></tr>
       <tr><td>Filter line</td><td>10.5 px · 8.5 label</td><td>full width, one line + tooltip</td></tr>
       <tr><td>Countdown</td><td>11 px mono + clock</td><td>only for a live run</td></tr>
       <tr><td>Primary action</td><td>88 × 32 · 12 px</td><td>Stop or Full window; fixed slot</td></tr>
