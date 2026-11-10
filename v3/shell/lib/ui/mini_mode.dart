@@ -190,23 +190,25 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
     if (detail.isEmpty) {
       return null;
     }
-    String? value(String label) {
-      for (final line in detail) {
-        if (line.label == label) {
-          return line.value;
-        }
-      }
-      return null;
-    }
 
     if (tool == ToolId.tuner) {
-      final parts = <String>[
-        if (value('Grade') case final grade? when grade.isNotEmpty) grade,
-        if (value('Remaining') case final remaining? when remaining.isNotEmpty)
-          '$remaining left',
-        if (value('Attempt') case final attempt? when attempt.isNotEmpty)
-          'attempt $attempt',
-      ];
+      // Keep the order the core publishes: Grade, Remaining, Attempt, attributes, Filter. The
+      // 360-px bar ellipsizes the tail, but the tooltip carries the full result set.
+      final parts = <String>[];
+      for (final line in detail) {
+        final label = line.label;
+        final text = switch (label) {
+          'Grade' when line.value.isNotEmpty => line.value,
+          'Remaining' when line.value.isNotEmpty => '${line.value} left',
+          'Attempt' when line.value.isNotEmpty => 'attempt ${line.value}',
+          'Filter' when line.value.isNotEmpty => 'filter ${line.value}',
+          null => line.value,
+          _ => '$label ${line.value}',
+        };
+        if (text.trim().isNotEmpty) {
+          parts.add(text);
+        }
+      }
       if (parts.isNotEmpty) {
         return parts.join(' · ');
       }
@@ -225,6 +227,23 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
       }
     }
     return parts.isEmpty ? null : parts.join(' · ');
+  }
+
+  /// The full OCR result set for the mini bar's hover tooltip. The visible line is one ellipsized
+  /// row; v2's card showed every attribute, so the tooltip must not hide the rest.
+  String? _detailTooltip(ToolSnapshot? snapshot) {
+    final detail = snapshot?.detail ?? const <ToolDetail>[];
+    if (detail.isEmpty) {
+      return null;
+    }
+    return detail
+        .map(
+          (line) => line.label == null || line.label!.isEmpty
+              ? line.value
+              : '${line.label}: ${line.value}',
+        )
+        .where((line) => line.trim().isNotEmpty)
+        .join('\n');
   }
 
   @override
@@ -406,7 +425,7 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
                       children: [
                         Expanded(
                           child: Tooltip(
-                            message: message,
+                            message: _detailTooltip(snapshot) ?? message,
                             child: Text(
                               barMessage,
                               key: const ValueKey('mini-message'),

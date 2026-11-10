@@ -115,8 +115,48 @@ void main() {
 
     expect(find.text('DG · 9 left · attempt 4'), findsOneWidget);
     expect(find.text('reading the grade line'), findsNothing);
-    // The message is still available as the tooltip rather than being silently lost.
-    expect(find.byTooltip('reading the grade line'), findsOneWidget);
+    // The visible line is compact; the full OCR fact set is available in the tooltip.
+    expect(
+      find.byTooltip('Grade: DG\nRemaining: 9\nAttempt: 4'),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('the mini bar includes OCR attributes and the filter', (
+    tester,
+  ) async {
+    final harness = await _pumpBar(tester);
+    harness.emitState(
+      tool: ToolId.tuner,
+      message: '',
+      countdown: 12,
+      detail: const [
+        {'label': 'Grade', 'value': 'N'},
+        {'label': 'Remaining', 'value': '284'},
+        {'label': 'Attempt', 'value': '2'},
+        {'value': '魔法力=22'},
+        {'value': '攻擊速度=4'},
+        {'label': 'Filter', 'value': "'減少傷害' matched 0 attrs, need 2"},
+      ],
+    );
+    await _flush(tester);
+
+    final message = tester
+        .widget<Text>(find.byKey(const ValueKey('mini-message')))
+        .data!;
+    expect(message, contains('N · 284 left · attempt 2'));
+    expect(message, contains('魔法力=22'));
+    expect(message, contains("filter '減少傷害' matched 0 attrs, need 2"));
+    expect(
+      find.byTooltip(
+        'Grade: N\nRemaining: 284\nAttempt: 2\n魔法力=22\n攻擊速度=4\n'
+        "Filter: '減少傷害' matched 0 attrs, need 2",
+      ),
+      findsOneWidget,
+    );
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 2));
