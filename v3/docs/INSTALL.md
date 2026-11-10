@@ -55,10 +55,13 @@ SealTools-v3.0\
   DirectML.dll                  the OCR runtime's GPU-side library
   flutter_windows.dll           the shell's Flutter runtime
   data\                         the shell's Flutter assets
-  models\                       the three OCR model files
+  models\                       the OCR model sets: v4 (default) and v6 small (trial)
     ch_PP-OCRv4_det_infer.onnx
     ch_PP-OCRv4_rec_infer.onnx
     ch_ppocr_mobile_v2.0_cls_infer.onnx
+    PP-OCRv6_small_det_infer.onnx
+    PP-OCRv6_small_rec_infer.onnx
+    PP-OCRv6_small_rec_dict.txt
   config\
     defaults.yaml.example       the shipped template (base config)
     local.yaml.example          the first-run seed for YOUR file

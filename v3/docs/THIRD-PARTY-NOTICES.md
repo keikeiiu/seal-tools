@@ -58,6 +58,14 @@ RapidOCR and redistributed under the **Apache License 2.0**. Attribution: Paddle
 RapidOCR (Apache-2.0). The models are not modified by Seal Tools; the character dictionary is
 extracted from RapidOCRSharp's packaged metadata.
 
+## PP-OCRv6 small trial models (`models/PP-OCRv6_small_*`)
+
+The optional PP-OCRv6 small detector and recogniser are the official PaddleOCR PP-OCRv6 small
+inference models, redistributed under the **Apache License 2.0**. Attribution: PaddleOCR
+(Apache-2.0). The models are not modified by Seal Tools. `PP-OCRv6_small_rec_dict.txt` is the
+character dictionary extracted from the recogniser's published `inference.yml`, because the ONNX
+graph does not embed it. v4 remains the default; the v6 set is a Setup-selectable trial.
+
 ## Flutter and Dart
 
 The shell is a Flutter Windows application. Flutter's own bundled notice file travels with the app at

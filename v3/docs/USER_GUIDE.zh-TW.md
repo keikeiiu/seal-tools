@@ -184,8 +184,9 @@ Hold Space 現在是自己的一張卡片（以前是頂端列的切換鈕），
 切到一半。
 
 Setup 也有一個 **OCR model** 區塊：**PP-OCRv4（目前）** 或 **PP-OCRv6 small（試驗）**。選擇會存進可攜
-`setup/common.yaml`，下一次 OCR 讀取時重建管線。若選了 v6 但模型檔不在核心旁，OCR 會以
-`ocr_unavailable` 拒絕，不會偷偷退回 v4。v6 模型較大，沒有要測試就維持 v4。
+`setup/common.yaml`，下一次 OCR 讀取時重建管線。**兩套模型都會放在 `models/`**，試用不需要另外下載。
+若把選取的 v6 檔案刪掉，OCR 會以 `ocr_unavailable` 拒絕，不會偷偷退回 v4。v4 仍是預設；沒有要測試就
+維持 v4。
 
 Setup 也有一個 **Appearance** 區塊：**Follow system**、**Light**、**Dark**。選擇會立即儲存（整個外殼與
 標題列一起切換），並保存在可攜設定裡。預設是 **Dark**，所以既有安裝會維持目前的外觀，直到你主動更改。

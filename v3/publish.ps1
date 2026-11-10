@@ -76,7 +76,11 @@ $VersionPattern = '^v\d+\.\d+\.\d+$'
 $ModelNames = @(
     'ch_PP-OCRv4_det_infer.onnx',
     'ch_PP-OCRv4_rec_infer.onnx',
-    'ch_ppocr_mobile_v2.0_cls_infer.onnx'
+    'ch_ppocr_mobile_v2.0_cls_infer.onnx',
+    # PP-OCRv6 small: the optional trial set selectable in Setup. v4 remains the default.
+    'PP-OCRv6_small_det_infer.onnx',
+    'PP-OCRv6_small_rec_infer.onnx',
+    'PP-OCRv6_small_rec_dict.txt'
 )
 # Release docs. THIRD-PARTY-NOTICES.md is a licence obligation, not an optional guide: it is
 # required by -Verify and exact-name allow-listed exactly like the guides.
@@ -445,6 +449,9 @@ function Get-StageAuditProblems([string]$stageDir) {
         'models/ch_PP-OCRv4_det_infer.onnx',
         'models/ch_PP-OCRv4_rec_infer.onnx',
         'models/ch_ppocr_mobile_v2.0_cls_infer.onnx',
+        'models/PP-OCRv6_small_det_infer.onnx',
+        'models/PP-OCRv6_small_rec_infer.onnx',
+        'models/PP-OCRv6_small_rec_dict.txt',
         'config/README.md',
         'config/defaults.yaml.example',
         'config/local.yaml.example',
@@ -1090,6 +1097,9 @@ function Invoke-Selftest {
             'models/ch_PP-OCRv4_det_infer.onnx',
             'models/ch_PP-OCRv4_rec_infer.onnx',
             'models/ch_ppocr_mobile_v2.0_cls_infer.onnx',
+            'models/PP-OCRv6_small_det_infer.onnx',
+            'models/PP-OCRv6_small_rec_infer.onnx',
+            'models/PP-OCRv6_small_rec_dict.txt',
             'config/README.md',
             'config/defaults.yaml.example',
             'config/local.yaml.example',
@@ -1231,7 +1241,7 @@ if ($Verify) {
     Write-Host '  native_assets.json (the Flutter native-asset manifest)'
     Write-Host '  build-info.json (commit, toolchain versions, payload SHA-256 list)'
     Write-Host '  seal-core.exe, DirectML.dll'
-    Write-Host '  models/<the three PP-OCRv4 .onnx files>'
+    Write-Host '  models/<the three PP-OCRv4 .onnx files and the three PP-OCRv6 small files>'
     Write-Host '  config/defaults.yaml.example, local.yaml.example, attributes.yaml, attributes.us.yaml.example'
     Write-Host '  docs/pet-data.csv, USER_GUIDE.md, USER_GUIDE.zh-TW.md, INSTALL.md, THIRD-PARTY-NOTICES.md'
     Write-Host "Firmware -> $FirmwareZip (seal_mouse/ + seal_mouse.ino)"
