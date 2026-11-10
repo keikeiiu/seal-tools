@@ -97,12 +97,13 @@ existing `state` / `tool.finished` fact.
   click).
 - **Content, ranked** — row 1: drag grip, tool icon + name (14 px), phase chip (dot **and** word),
   resident-pet paw badge, expand icon. Row 2: the core's action/outcome sentence as one 13 px semibold
-  line (two lines only when there are no facts; full text on hover). Row 3: Grade/Left/Try as labelled
-  mono chips; OCR attributes stay one `name=value` line each rather than cards, and an attribute named
-  by the enabled filter (and inside its min/max) is tinted with the primary colour. The long Filter
-  value follows as its own full-width ellipsized line. Row 4: clock + compact countdown (`in 12 s`) and
-  exactly one primary action. At most five metric chips are shown; the tooltip carries the full fact
-  set. Rail, tabs, header, save bar, logs, finished summaries and the native caption remain absent.
+  line (two lines only when there are no facts; full text on hover). Row 3: the OCR attributes as one
+  `name=value` line each, full width and without cards; normal attributes stay bright on-surface and
+  only an attribute named by the enabled filter (and inside its min/max) takes the primary colour.
+  The long Filter value follows as its own full-width ellipsized line. Row 4: Grade/Left/Try as compact
+  metric chips in the footer, then clock + countdown (`in 12 s`) and exactly one primary action. At most
+  three metric chips are shown; the tooltip carries the full fact set. Rail, tabs, header, save bar,
+  logs, finished summaries and the native caption remain absent.
 - **Actions** — an active run shows **Stop** (88 × 32, one click, no confirmation; enabled while
   `running` and `starting`; disabled with a spinner while `stopping` or while a stop command is in
   flight, so the bar never invents a phase). A finished/error/lost bar shows **Full window**

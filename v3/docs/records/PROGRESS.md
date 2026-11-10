@@ -19,6 +19,24 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-10 (58) — the Tuner mini bar reads OCR-first
+
+The three OCR attribute lines are the reason the player checks the collapsed bar between attempts, but
+the previous layout put the Grade/Left/Try chips beside them and squeezed the read into a 176 px column.
+
+- **OCR owns the middle:** all three `name=value` lines are full-width, one line each, no cards. Normal
+  attributes use bright `onSurface`; only attributes satisfying an enabled filter rule (name + min/max)
+  use the primary colour and semibold. The long Filter remains its own full-width line.
+- **Metrics move to the footer:** Grade/Left/Try are compact chips to the left of the countdown and
+  Stop. The footer is fixed height, so the one-action rule and Stop position do not move; finished and
+  error bars fall back to the dock/full-window actions.
+- **Tested hierarchy:** the mini-bar widget test asserts `mini-fact-0` starts below the last OCR
+  attribute and that three OCR attributes occupy three distinct rows.
+
+Verification: mini-bar tests **8/8**, full shell gate **394/394**, analyze `--fatal-infos` clean,
+format clean, Windows debug build green. Design study (reviewed before implementation):
+`v3/docs/design/finished/mini-bar-ocr-first.html`.
+
 ## 2026-11-10 (57) — finished design studies live in the docs
 
 The interactive prototypes were only in the gitignored `.scratch/ui-audit` folder, so they could not be

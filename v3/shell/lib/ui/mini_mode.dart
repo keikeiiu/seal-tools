@@ -331,7 +331,7 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
     final facts = active ? _detailFacts(tool, snapshot) : const <_MiniFact>[];
     final compactFacts = facts
         .where((fact) => !fact.wide && !fact.inline)
-        .take(5)
+        .take(3)
         .toList();
     final inlineFacts = facts.where((fact) => fact.inline).toList();
     final wideFacts = facts.where((fact) => fact.wide).toList();
@@ -473,41 +473,12 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
                       ),
                     ),
                   ),
-                  if (compactFacts.isNotEmpty || inlineFacts.isNotEmpty) ...[
+                  if (inlineFacts.isNotEmpty) ...[
                     const SizedBox(height: ShellSpace.xxs),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Wrap(
-                            spacing: ShellSpace.xs,
-                            runSpacing: ShellSpace.xxs,
-                            children: [
-                              for (
-                                var index = 0;
-                                index < compactFacts.length;
-                                index++
-                              )
-                                _MiniFactChip(
-                                  key: ValueKey('mini-fact-$index'),
-                                  label: compactFacts[index].label,
-                                  value: compactFacts[index].value,
-                                ),
-                            ],
-                          ),
-                        ),
-                        if (inlineFacts.isNotEmpty) ...[
-                          const SizedBox(width: ShellSpace.sm),
-                          SizedBox(
-                            width: 176,
-                            child: _MiniAttributeList(
-                              key: const ValueKey('mini-attributes'),
-                              facts: inlineFacts,
-                              matched: _matchedAttributes(inlineFacts),
-                            ),
-                          ),
-                        ],
-                      ],
+                    _MiniAttributeList(
+                      key: const ValueKey('mini-attributes'),
+                      facts: inlineFacts,
+                      matched: _matchedAttributes(inlineFacts),
                     ),
                   ],
                   for (var index = 0; index < wideFacts.length; index++) ...[
@@ -524,6 +495,27 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
                     height: 32,
                     child: Row(
                       children: [
+                        if (compactFacts.isNotEmpty)
+                          Expanded(
+                            child: Wrap(
+                              spacing: ShellSpace.xs,
+                              runSpacing: ShellSpace.xxs,
+                              children: [
+                                for (
+                                  var index = 0;
+                                  index < compactFacts.length;
+                                  index++
+                                )
+                                  _MiniFactChip(
+                                    key: ValueKey('mini-fact-$index'),
+                                    label: compactFacts[index].label,
+                                    value: compactFacts[index].value,
+                                  ),
+                              ],
+                            ),
+                          )
+                        else
+                          const Spacer(),
                         if (when != null && when.isNotEmpty)
                           Tooltip(
                             message: 'Next core action',
@@ -547,7 +539,8 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
                               ],
                             ),
                           ),
-                        const Spacer(),
+                        if (compactFacts.isNotEmpty || when != null)
+                          const SizedBox(width: ShellSpace.sm),
                         if (active)
                           _StopAction(
                             key: const ValueKey('mini-stop'),
@@ -690,7 +683,6 @@ class _MiniAttributeList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final muted = theme.colorScheme.onSurfaceVariant;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -709,7 +701,7 @@ class _MiniAttributeList extends StatelessWidget {
                   : FontWeight.w400,
               color: matched.contains(facts[index].label)
                   ? theme.colorScheme.primary
-                  : muted,
+                  : theme.colorScheme.onSurface,
             ),
           ),
       ],

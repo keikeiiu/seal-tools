@@ -120,16 +120,16 @@ the card, so the collapsed tile stays one line. When nothing runs, a banner show
 runs yet" on a fresh start, "Everything is idle" otherwise. A card's phase moves only when the core
 publishes `state`: a Start shows an in-flight label, never an optimistic phase.
 
-**Mini mode.** A foreground run collapses the window to a 460×168 bar beside the game. It is laid out
-in four bands: tool name + phase; the core's current action or finished outcome; Grade/Left/Try as
-labelled chips plus OCR attributes as one `name=value` line each (attributes named by the enabled
-filter/inside its bounds take the primary colour); and the countdown + **Stop**. The long Filter has
-its own line, and hovering the fact area shows the full OCR detail. When the run finishes the
-primary action switches to **Full window** instead of popping back over the game. The bar stays on top,
-remembers the screen edge you dragged it to for the next run, and the resident Pet Feeder keeps the full
-window (it is shown as a paw badge beside the foreground tool). Press **Full window** to return for
-the rest of this run; the next run collapses again. While a tool runs, the app bar's
-picture-in-picture button collapses manually.
+**Mini mode.** A foreground run collapses the window to a 460×168 bar beside the game. The main area
+is the OCR read: tool name + phase, the core's current action or finished outcome, then the OCR
+attributes as one `name=value` line each. Normal attributes stay bright; only attributes matching an
+enabled filter rule (name and min/max) use the primary colour. The long Filter has its own line; below
+it, Grade/Left/Try sit as compact metric chips in the footer next to the countdown and **Stop**.
+Hovering the fact area shows the full OCR detail. When the run finishes the primary action switches to
+**Full window** instead of popping back over the game. The bar stays on top, remembers the screen edge
+you dragged it to for the next run, and the resident Pet Feeder keeps the full window (it is shown as a
+paw badge beside the foreground tool). Press **Full window** to return for the rest of this run; the
+next run collapses again. While a tool runs, the app bar's picture-in-picture button collapses manually.
 
 **Quick dock.** When nothing is running, the app bar's dashboard button (or **Setup → Quick dock →
 Open quick dock**) collapses the window into a small always-on-top launcher. It has seven quick starts —

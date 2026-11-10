@@ -188,6 +188,18 @@ void main() {
     );
     expect(second.dy, greaterThan(first.dy));
     expect(third.dy, greaterThan(second.dy));
+    final lastAttributeBottom = tester
+        .getBottomLeft(find.byKey(const ValueKey('mini-attribute-2')))
+        .dy;
+    final firstMetricTop = tester
+        .getTopLeft(find.byKey(const ValueKey('mini-fact-0')))
+        .dy;
+    expect(
+      firstMetricTop,
+      greaterThan(lastAttributeBottom),
+      reason:
+          'OCR results are the main read; the run metrics sit in the footer',
+    );
     expect(
       find.byKey(const ValueKey('mini-fact-3')),
       findsNothing,
