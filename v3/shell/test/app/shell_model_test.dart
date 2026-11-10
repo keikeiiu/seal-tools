@@ -852,11 +852,11 @@ void main() {
       await settle();
       expect(harness.model.miniMode, isTrue);
       expect(harness.model.miniTool, ToolId.tuner);
-      expect(host.minSizeCalls, [(360, 96)]);
+      expect(host.minSizeCalls, [(460, 168)]);
       expect(host.miniChromeCalls, [true]);
       expect(
         host.appliedRects.last,
-        _rect(1920 - 360 - 16, 1040 * 18 ~/ 100, 360, 96),
+        _rect(1920 - 460 - 16, 1040 * 18 ~/ 100, 460, 168),
         reason: 'default dock: right edge, 16 px margin, a fifth down',
       );
       expect(host.alwaysOnTopCalls.last, isTrue);
@@ -908,14 +908,14 @@ void main() {
       await settle();
       expect(harness.model.miniMode, isTrue);
 
-      await harness.model.moveMiniWindow(_rect(5, 5, 360, 96));
+      await harness.model.moveMiniWindow(_rect(5, 5, 460, 168));
       await settle();
-      expect(host.currentWindowRect, _rect(5, 5, 360, 96));
+      expect(host.currentWindowRect, _rect(5, 5, 460, 168));
       await harness.model.settleMiniWindow();
       await settle();
       expect(
         host.currentWindowRect,
-        _rect(16, 16, 360, 96),
+        _rect(16, 16, 460, 168),
         reason: 'a drag near the corner snaps to the 16 px edge inset',
       );
 
@@ -932,7 +932,7 @@ void main() {
       harness.emitState(tool: ToolId.tuner, message: 'another run');
       await settle();
       expect(harness.model.miniMode, isTrue);
-      expect(host.currentWindowRect, _rect(16, 16, 360, 96));
+      expect(host.currentWindowRect, _rect(16, 16, 460, 168));
     });
 
     test('"Full window" suppresses collapsing until the next run', () async {
@@ -1353,8 +1353,8 @@ void main() {
       expect(harness.model.dockMode, isFalse);
       expect(harness.model.miniMode, isTrue);
       expect(harness.model.miniTool, ToolId.tuner);
-      expect(host.minSizeCalls.last, (360, 96));
-      expect(host.appliedRects.last, _rect(1544, 187, 360, 96));
+      expect(host.minSizeCalls.last, (460, 168));
+      expect(host.appliedRects.last, _rect(1444, 187, 460, 168));
 
       await harness.model.showFullWindow();
       await settle();

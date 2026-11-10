@@ -82,7 +82,7 @@ fall when that surface is rebuilt in Phases 2–4 (recorded in the plan §7.1).
 ## Mini running window (landed 2026-11-01)
 
 A foreground run (every tool except the resident Pet Feeder) collapses the whole window to a
-**360 × 96 borderless, always-on-top bar** (`MiniRunningCard`, `lib/ui/mini_mode.dart`). Approved
+**460 × 168 borderless, always-on-top bar** (`MiniRunningCard`, `lib/ui/mini_mode.dart`). Approved
 design demo: `v3/.scratch/ui-audit/ui-demo-mini.html`; real-build evidence
 `v3/.scratch/ui-audit/mini-real-*.png`. The core and protocol are unchanged: every bar value is an
 existing `state` / `tool.finished` fact.
@@ -90,10 +90,10 @@ existing `state` / `tool.finished` fact.
 - **Window chrome** — `setMiniChrome` (shell channel) → `Win32Window::SetMiniChrome`: saves the
   style/EX style, applies `WS_POPUP` (no caption/thick frame/min/max/system menu),
   `WS_EX_NOACTIVATE` and always-on-top, and rounds the popup on Windows 11; "Full window" restores the
-  saved chrome, the saved full rect and the saved pin. The minimum size is lowered to 360 × 96 while
+  saved chrome, the saved full rect and the saved pin. The minimum size is lowered to 460 × 168 while
   mini and restored to 1120 × 680 on expand. `WS_EX_NOACTIVATE` keeps the game's keyboard focus when
   Stop is clicked while the click is still delivered to Flutter (verified on the real 150 % build:
-  540 × 144 px, `has_caption=False`, `ex_noactivate=True`, foreground window unchanged after a Stop
+  690 × 252 px, `has_caption=False`, `ex_noactivate=True`, foreground window unchanged after a Stop
   click).
 - **Content, ranked** — row 1: drag grip, tool icon + name, phase chip (dot **and** word), resident-pet
   paw badge, expand icon. Row 2: the core's action line (one line, full text on hover), the compact
@@ -439,7 +439,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 391/391; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
-on a real Windows build at 150 % (360 × 96 logical / 540 × 144 physical, borderless + non-activating,
+on a real Windows build at 150 % (460 × 168 logical / 690 × 252 physical, borderless + non-activating,
 Stop click and expand restore exercised). The quick dock was verified on the real runner at all three
 form factors (right rail 450 × 720 physical, bottom-right bay 510 × 690, top-centre island 570 × 750 —
 all borderless, `WS_EX_NOACTIVATE|TOPMOST`), including opening a secondary menu.

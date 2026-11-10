@@ -420,7 +420,7 @@ class _SetupTabState extends State<SetupTab>
             children: [
               const ShellProse(
                 'These two switches decide how the window behaves around a run. The default '
-                'collapses to the 360×96 run bar on Start and keeps the bar (with Full window) '
+                'collapses to the 460×168 run bar on Start and keeps the bar (with Full window) '
                 'after a run. Turning collapse off keeps the full window; turning return on '
                 'restores the window you started from (the quick dock if you started there).',
               ),

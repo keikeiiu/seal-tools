@@ -188,7 +188,7 @@ class ShellModel extends ChangeNotifier {
   WindowRect? _pendingWindow;
 
   // ── mini running card ────────────────────────────────────────────────────────────────────────
-  // A foreground run collapses the window to the 360×96 bar beside the game. The full placement is
+  // A foreground run collapses the window to the 460×168 bar beside the game. The full placement is
   // read from the runner before the collapse and restored when the player expands; window moves
   // while mini are ignored so a resize cannot overwrite the player's remembered placement. The
   // resident Pet Feeder never collapses the window (Pet is excluded from `_foregroundTool`).
@@ -198,8 +198,8 @@ class ShellModel extends ChangeNotifier {
     width: 1120,
     height: 680,
   );
-  static const int _miniWidth = 360;
-  static const int _miniHeight = 96;
+  static const int _miniWidth = 460;
+  static const int _miniHeight = 168;
   bool _miniActive = false;
   bool _miniSuppressed = false;
   bool _miniSyncing = false;

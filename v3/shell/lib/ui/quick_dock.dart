@@ -1,6 +1,6 @@
 /// The **quick dock**: the compact launcher the shell shows between runs.
 ///
-/// It is the idle state of the same borderless window that becomes the 360 × 96 run bar. The player
+/// It is the idle state of the same borderless window that becomes the 460 × 168 run bar. The player
 /// can put it on either screen edge (tall rail), in either bottom corner (bay) or at the top centre
 /// (island); the content is the same ranked launcher in every form factor:
 ///

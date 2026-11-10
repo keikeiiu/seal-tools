@@ -16,9 +16,9 @@ import 'package:seal_shell/ui/theme.dart';
 
 import '../support/app_harness.dart';
 
-/// Pumps the mini bar itself at its real 360 × 96 content size, with the model already collapsed.
+/// Pumps the mini bar itself at its real 460 × 168 content size, with the model already collapsed.
 Future<AppHarness> _pumpBar(WidgetTester tester) async {
-  tester.view.physicalSize = const ui.Size(460, 200);
+  tester.view.physicalSize = const ui.Size(540, 260);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
   final harness = AppHarness();

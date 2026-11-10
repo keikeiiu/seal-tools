@@ -1,6 +1,6 @@
 /// The **mini running bar**: the shell window while a foreground tool runs.
 ///
-/// A foreground run collapses the whole shell to a 360 × 96 borderless, always-on-top bar beside the
+/// A foreground run collapses the whole shell to a 460 × 168 borderless, always-on-top bar beside the
 /// game (the model owns the geometry, the chrome switch and the always-on-top pin). The bar shows
 /// what matters at a glance and in this order — tool + phase, the core's current action, the next
 /// moment — plus ONE primary action: **Stop** while a run is active, **Full window** once nothing
@@ -24,8 +24,8 @@ import 'theme.dart';
 import 'tool_labels.dart';
 
 /// The bar's logical size; the runner's mini window is exactly this content area.
-const double miniBarWidth = 360;
-const double miniBarHeight = 96;
+const double miniBarWidth = 460;
+const double miniBarHeight = 168;
 
 class MiniRunningCard extends StatefulWidget {
   const MiniRunningCard({super.key, required this.model});
@@ -419,29 +419,33 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
                     ),
                   ),
                   const SizedBox(height: ShellSpace.xs),
+                  Expanded(
+                    child: Tooltip(
+                      message: _detailTooltip(snapshot) ?? message,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          barMessage,
+                          key: const ValueKey('mini-message'),
+                          maxLines: 5,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: 12.5,
+                            height: 1.3,
+                            color: errorState
+                                ? theme.colorScheme.error
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: ShellSpace.xs),
                   SizedBox(
                     height: 32,
                     child: Row(
                       children: [
-                        Expanded(
-                          child: Tooltip(
-                            message: _detailTooltip(snapshot) ?? message,
-                            child: Text(
-                              barMessage,
-                              key: const ValueKey('mini-message'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                fontSize: 12.5,
-                                color: errorState
-                                    ? theme.colorScheme.error
-                                    : theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        ),
-                        if (when != null && when.isNotEmpty) ...[
-                          const SizedBox(width: ShellSpace.xs),
+                        if (when != null && when.isNotEmpty)
                           Text(
                             when,
                             key: const ValueKey('mini-when'),
@@ -450,8 +454,7 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
-                        ],
-                        const SizedBox(width: ShellSpace.sm),
+                        const Spacer(),
                         if (active)
                           _StopAction(
                             key: const ValueKey('mini-stop'),
