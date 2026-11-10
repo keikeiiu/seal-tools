@@ -631,6 +631,7 @@ where
 fn completed_read_record(
     read: &TunerRead,
     lines: &[String],
+    raw_lines: &[String],
     attributes: Option<&[Vec<String>]>,
     attempt: u32,
     timestamp: &str,
@@ -645,6 +646,7 @@ fn completed_read_record(
         "remaining": read.remaining,
         "attributes": attributes,
         "lines": lines,
+        "raw_lines": raw_lines,
         "capture_path": capture_path.map_or(Value::Null, |path| Value::String(path.to_owned())),
     })
 }
@@ -728,9 +730,15 @@ impl OcrTunerSource {
             None
         };
         let lines: Vec<String> = scan.lines.iter().map(|line| line.text.clone()).collect();
+        let raw_lines: Vec<String> = scan
+            .items
+            .iter()
+            .map(|line| line.raw_text.clone())
+            .collect();
         let record = completed_read_record(
             &read,
             &lines,
+            &raw_lines,
             attributes_mode.attributes.as_deref(),
             attempt,
             &timestamp,
@@ -1105,6 +1113,7 @@ mod tests {
         let record = completed_read_record(
             &read,
             &["GRADE: DG".to_owned(), "STR +1".to_owned()],
+            &["GRADE：DG".to_owned(), "STR+1".to_owned()],
             Some(&[vec!["STR".to_owned(), "+1".to_owned()]]),
             2,
             "20261104_010203_456",
@@ -1116,6 +1125,7 @@ mod tests {
         assert_eq!(record["grade"], "DG");
         assert_eq!(record["remaining"], 9);
         assert_eq!(record["lines"][0], "GRADE: DG");
+        assert_eq!(record["raw_lines"][0], "GRADE：DG");
         assert_eq!(record["attributes"][0][0], "STR");
         assert_eq!(
             record["capture_path"],
@@ -1127,8 +1137,15 @@ mod tests {
         assert_eq!(record["confirmed"], true);
 
         // A partial read says so, and a missing capture is null rather than absent.
-        let partial =
-            completed_read_record(&partial_read(), &[], None, 3, "20261104_010203_457", None);
+        let partial = completed_read_record(
+            &partial_read(),
+            &[],
+            &[],
+            None,
+            3,
+            "20261104_010203_457",
+            None,
+        );
         assert_eq!(partial["confirmed"], false);
         assert_eq!(partial["attempt"], 3);
         assert!(partial["capture_path"].is_null());

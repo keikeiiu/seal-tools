@@ -466,6 +466,7 @@ mod tests {
     fn item(text: &str, confidence: f32, x: f64, y: f64) -> RecognizedLine {
         RecognizedLine {
             text: text.to_owned(),
+            raw_text: text.to_owned(),
             confidence,
             box_quad: quad(x, y),
         }

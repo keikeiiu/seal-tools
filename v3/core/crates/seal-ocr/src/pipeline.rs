@@ -77,7 +77,11 @@ impl std::error::Error for PipelineError {}
 /// One recognised text item before row bucketing.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecognizedLine {
+    /// The text AFTER the dictionary's `text_fixes` cleanup, which is what readers and the protocol use.
     pub text: String,
+    /// The recogniser's output BEFORE `text_fixes`: kept for the `ocr_log.jsonl` raw-vs-fixed
+    /// comparison and for diagnosing whether a fix helped or corrupted a v5/v6 read.
+    pub raw_text: String,
     pub confidence: f32,
     /// The detected box in the ORIGINAL image's coordinates.
     pub box_quad: Quad,
@@ -510,12 +514,14 @@ impl OcrPipeline {
             .infer(&input.data, &shape)
             .map_err(|error| runtime_error("rec", &error))?;
         let decoded: Decoded = self.rec.decode(&output);
-        let text = self.cleaner.clean(&decoded.text);
+        let raw_text = decoded.text;
+        let text = self.cleaner.clean(&raw_text);
         if text.is_empty() {
             return Ok(None);
         }
         Ok(Some(RecognizedLine {
             text,
+            raw_text,
             confidence: decoded.confidence,
             box_quad: quad,
         }))
@@ -799,6 +805,7 @@ mod tests {
     fn item(text: &str, confidence: f32, x: f64, y: f64) -> RecognizedLine {
         RecognizedLine {
             text: text.to_owned(),
+            raw_text: text.to_owned(),
             confidence,
             box_quad: quad(x, y),
         }
