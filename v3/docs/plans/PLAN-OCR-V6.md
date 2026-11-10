@@ -130,6 +130,8 @@ The trial path is now implemented, not a proposal only:
   spaces/U+3000.
 - `SEAL_OCR_MODEL_VERSION=v6-small` selects v6 for the app path; `ocr_eval --model-version v6-small`
   selects it for corpus runs. An invalid value fails loudly.
+- Setup now exposes `ocr.model_version` (`v4` / `v6-small`), persisted in `setup/common.yaml`; the core
+  rebuilds the pipeline when it changes and writes `logs/ocr_model.log`.
 - One tuner-panel fixture run: v4 exact 0/1, CER 0.2105, 679 ms; v6 exact 0/1, CER 0.2895, 806 ms.
   Too little data for a verdict — the live corpus and A/B gate remain required.
 

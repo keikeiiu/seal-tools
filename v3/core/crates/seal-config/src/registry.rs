@@ -110,6 +110,7 @@ pub const FILES: &[FileDef] = &[
             "game",
             "reference_window",
             "hotkeys",
+            "ocr",
             "arduino.vid",
             "arduino.pid",
             "arduino.baud",

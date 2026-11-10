@@ -30,6 +30,8 @@ hotkeys:
   quit: 122
   advance_grade: 71
   pause: 20
+ocr:
+  model_version: v4
 quest:
   active: base
 arduino:

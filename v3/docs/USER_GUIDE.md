@@ -213,6 +213,11 @@ the core to:
 Their lines are the core's own, verbatim. Press **Save** when the fields are right; a variant switch is
 resolved, validated, its dictionary loaded, and only then written, so it cannot half-switch.
 
+Setup also has an **OCR model** section: **PP-OCRv4 (current)** or **PP-OCRv6 small (trial)**. The
+choice is portable and is written to `setup/common.yaml`; the next OCR read rebuilds the pipeline. If
+the selected v6 model files are missing, OCR refuses with `ocr_unavailable` rather than falling back
+to v4. The trial model is larger, so leave v4 selected unless you are testing v6.
+
 Setup also has an **Appearance** section: **Follow system**, **Light** or **Dark**. It saves immediately
 (the shell and its title bar switch together), and the choice is kept in the portable config. **Dark**
 is the default, so an existing install keeps its current look until you change it.

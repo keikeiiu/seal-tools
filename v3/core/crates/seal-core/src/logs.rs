@@ -162,6 +162,12 @@ impl Logs {
         self.append("error.log", &format!("{}: {line}", line_stamp()));
     }
 
+    /// `ocr_model.log`: which model set the OCR pipeline selected and whether it loaded. Kept apart
+    /// from the per-scan `ocr_log.jsonl` because this is a boot/config decision, not a read.
+    pub fn ocr_model_line(&self, line: &str) {
+        self.append("ocr_model.log", &format!("{} {line}", line_stamp()));
+    }
+
     /// `ocr_log.jsonl`: one compact JSON object per completed scan (v2 wrote one per `ScanOnce`).
     pub fn ocr_line(&self, record: &Value) {
         self.json_line("ocr_log.jsonl", record);

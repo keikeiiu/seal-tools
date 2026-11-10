@@ -52,6 +52,10 @@ hotkeys:
   quit: 122
   advance_grade: 71
   pause: 20
+ocr:
+  # The OCR model set the launcher loads. v4 is the shipped default; v6-small is the trial target
+  # for Traditional Chinese + English and requires the v6 model files beside the core.
+  model_version: v4
 buy_sell:
   # The shop list's visible row count is a property of the GAME, not of this PC and not of the
   # player's calibration. It ships here so a fresh install with no config/machine/ yet still has

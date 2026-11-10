@@ -40,7 +40,8 @@ against it, and the golden fixtures in §10 are how they are kept in agreement.
   different: it is a response with `config_invalid` (§6).
 - **Logs are files, not protocol commands.** The core appends under `<root>/logs/`:
   `ocr_log.jsonl` (one record per completed scan), `ocr_errors.jsonl` (a completed scan that did not
-  produce its mode's target), optional `captures/*.png` while `tuner.save_captures` is on (the scan
+  produce its mode's target), `ocr_model.log` (which model set the pipeline loaded and why a load
+  was refused), optional `captures/*.png` while `tuner.save_captures` is on (the scan
   result carries the relative `capture_path`), `error.log` (internal errors and tool opening
   failures — never player-correctable refusals, which would bury them), `holdspace.log` (its own
   diagnostic trail) and `<tool>.log` (one timestamped line each for the run's start, every CHANGED

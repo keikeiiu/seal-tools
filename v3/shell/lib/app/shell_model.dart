@@ -475,6 +475,10 @@ class ShellModel extends ChangeNotifier {
       'core ${hello.coreVersion} connected '
       '(rev ${hello.rev}, root ${hello.root})',
     );
+    logs.addShellNote(
+      'OCR model: '
+      '${asString(asJsonMap(config.config['ocr'])['model_version']) ?? 'v4'}',
+    );
     // The shell owns its own placement preference in the portable `settings.ui.quick_dock` block
     // (`placement` + `collapsed`); take it before any compact window is shown.
     _restoreDockPreference();
@@ -1122,6 +1126,14 @@ class ShellModel extends ChangeNotifier {
         logs.addCoreLog(log);
       case ConfigChangedEvent(:final changed):
         config.applyChanged(changed);
+        if (changed.block == 'ocr') {
+          final version =
+              asString(asJsonMap(config.config['ocr'])['model_version']) ??
+              'v4';
+          logs.addShellNote(
+            'OCR model changed to $version; next read reloads the models',
+          );
+        }
       case CoreStoppingEvent(:final stopping):
         tools.applyEvent(event);
         logs.addShellNote('core stopping: ${stopping.reason.wire}');

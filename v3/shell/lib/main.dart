@@ -47,6 +47,10 @@ void _installShellLogging(ShellModel model) {
     );
     final fileLog = ShellFileLog(Directory(root.path));
     model.logs.sink = (origin, text) => fileLog.write(origin.name, text);
+    model.logs.addShellNote(
+      'launcher $productVersion starting; '
+      'root ${root.path} (${kReleaseMode ? 'release' : 'debug'})',
+    );
   } catch (_) {
     // No root (or no writable install folder): keep the ring buffer, surface logging stays best-effort.
   }

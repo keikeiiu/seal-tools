@@ -44,7 +44,7 @@ Map<String, dynamic> _displayJson() => {
 };
 
 Future<AppHarness> _pumpSetup(WidgetTester tester) async {
-  tester.view.physicalSize = const ui.Size(1600, 2400);
+  tester.view.physicalSize = const ui.Size(1600, 2800);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
   final harness = AppHarness();
@@ -148,7 +148,7 @@ void main() {
         'settings',
       }, reason: 'the read-only Arduino values are never sent back');
       final settings = sections['settings'] as Map<String, dynamic>;
-      expect(settings.keys.toSet(), {'window', 'game'});
+      expect(settings.keys.toSet(), {'window', 'game', 'ocr'});
       expect(
         (settings['window'] as Map<String, dynamic>)['title'],
         'TW_LIVE',
@@ -390,6 +390,31 @@ void main() {
                 as Map<String, dynamic>)['quick_dock']
             as Map<String, dynamic>;
     expect(dock['size'], 'large');
+  });
+
+  testWidgets('OCR model chip saves the portable ocr.model_version', (
+    tester,
+  ) async {
+    final harness = await _pumpSetup(tester);
+    harness.answerConfigCommands();
+
+    final v6 = find.byKey(const ValueKey('setup-ocr-model-v6-small'));
+    await tester.ensureVisible(v6);
+    await tester.pump();
+    await tester.tap(v6);
+    await _flush(tester);
+    await tester.tap(find.byKey(const ValueKey('save-setup')));
+    await _flush(tester);
+
+    final apply = harness.lastSentWithCmd('config.apply');
+    expect(apply, isNotNull);
+    final sections =
+        (apply!['args'] as Map<String, dynamic>)['sections']
+            as Map<String, dynamic>;
+    final ocr =
+        (sections['settings'] as Map<String, dynamic>)['ocr']
+            as Map<String, dynamic>;
+    expect(ocr['model_version'], 'v6-small');
   });
 
   testWidgets('Run window switches save the portable preference', (

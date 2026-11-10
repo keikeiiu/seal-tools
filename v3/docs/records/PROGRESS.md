@@ -34,6 +34,10 @@ trial implementation now has a real path without changing the app default.
   spaces and U+3000 instead of trimming them. v6 detector thresholds are 0.2 / 0.45 / 1.4.
 - **Trial switches:** `ocr_eval --model-version v6-small`, and `SEAL_OCR_MODEL_VERSION=v6-small`
   for the app path; invalid values fail loudly.
+- **Setup:** the Setup tab now exposes `ocr.model_version` (`v4` / `v6-small`), saved as portable
+  `settings.ocr` and routed to `setup/common.yaml`; the core rebuilds the OCR cache when it changes.
+- **Logging:** the shell writes startup/connection/OCR-choice lines to `logs/shell-YYYYMMDD.log`;
+  the core writes which model set loaded or failed to `logs/ocr_model.log`.
 - **Measured once:** tuner-panel fixture v4 exact 0/1, CER 0.2105, 679 ms; v6 small exact 0/1, CER
   0.2895, 806 ms. This is not a verdict; the live corpus and A/B gate are still required.
 

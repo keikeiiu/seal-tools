@@ -529,9 +529,15 @@ impl OcrTunerSource {
             .ok_or_else(|| format!("game window not found — is {title:?} running?"))?;
         let display = seal_win::window::measure(hwnd).map_err(|error| error.to_string())?;
         let geometry = crate::dispatch::ocr_geometry(config);
-        let pipeline =
-            seal_ocr::pipeline::OcrPipeline::load_for_root(root, &attributes, geometry.row_height)
-                .map_err(|error| format!("the OCR models are not available: {}", error.message))?;
+        let ocr_version = crate::dispatch::ocr_model_version(config)
+            .map_err(|error| format!("the OCR model set is invalid: {error}"))?;
+        let pipeline = seal_ocr::pipeline::OcrPipeline::load_for_root_version(
+            root,
+            &attributes,
+            geometry.row_height,
+            ocr_version,
+        )
+        .map_err(|error| format!("the OCR models are not available: {}", error.message))?;
         let retries = config
             .pointer("/tuner/ocr_retries")
             .and_then(Value::as_i64)

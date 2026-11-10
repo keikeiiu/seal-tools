@@ -10,7 +10,7 @@ A file holds one **class** (does it travel?) for one **tool**. The short version
 
 | folder / file | copy to another PC? | what it is |
 |---|---|---|
-| `setup/` | **YES** | everything you configured: window title, game variant, board IDs, hotkeys, tuner/gem behaviour, spammer rotations, quest flows, buy presets, pet preferences |
+| `setup/` | **YES** | everything you configured: window title, game variant, board IDs, hotkeys, OCR model set, tuner/gem behaviour, spammer rotations, quest flows, buy presets, pet preferences |
 | `config/user.yaml` | yes, if you want your notes to travel | your own extra blocks/notes; the core never reads or writes it |
 | `machine/` | **NO** | this PC's measurements: calibration environment, OCR geometry, gem/buy/pet marks, tooltip offset, window placement, COM port override |
 | `artifacts/` | **NO** | reference crops and learned icons (`pet_*.png`); recapture by calibrating |

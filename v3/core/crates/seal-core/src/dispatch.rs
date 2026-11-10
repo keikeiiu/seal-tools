@@ -57,6 +57,7 @@ pub struct OcrIdentity {
     dictionary: String,
     row_height: u32,
     attributes: AttributesConfig,
+    model_version: seal_ocr::profile::OcrModelVersion,
 }
 
 /// The state one connection's dispatcher works on: the root it bound to, the config store that owns
@@ -463,6 +464,24 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
 /// The OCR geometry the tuner read uses, including the region-relative v2 `grade_area` when it is
 /// present and valid. Public for the committed v2-config replay test; no production caller outside
 /// the core uses it.
+/// The OCR model set named by the merged config. Missing/blank means the shipped v4 default; an
+/// explicit unknown value is a named refusal so a typo cannot silently run the wrong model.
+///
+/// # Errors
+///
+/// Returns the invalid value in a player-readable line when `ocr.model_version` is present but not
+/// one of the known spellings.
+pub fn ocr_model_version(config: &Value) -> Result<seal_ocr::profile::OcrModelVersion, String> {
+    let raw = config
+        .pointer("/ocr/model_version")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("v4");
+    seal_ocr::profile::OcrModelVersion::parse(raw)
+        .ok_or_else(|| format!("ocr.model_version is {raw:?}; expected \"v4\" or \"v6-small\""))
+}
+
 pub fn ocr_geometry(config: &Value) -> seal_ocr::modes::OcrGeometry {
     let band = |name: &str| -> Option<(i32, i32)> {
         let array = config.pointer(&format!("/tuner/ocr/{name}"))?.as_array()?;
@@ -701,6 +720,8 @@ impl CoreState {
             dictionary: self.dictionary.clone(),
             row_height: ocr_geometry(&self.config).row_height,
             attributes: self.attributes.clone(),
+            model_version: ocr_model_version(&self.config)
+                .unwrap_or(seal_ocr::profile::OcrModelVersion::V4),
         }
     }
 
@@ -1582,17 +1603,48 @@ pub(crate) fn ensure_ocr(state: &mut CoreState, id: &str) -> Option<Response> {
     }
     let identity = state.ocr_identity();
     let geometry = ocr_geometry(&state.config);
-    match seal_ocr::pipeline::OcrPipeline::load_for_root(
+    let version = match ocr_model_version(&state.config) {
+        Ok(version) => version,
+        Err(message) => {
+            state
+                .logs
+                .ocr_model_line(&format!("invalid model version: {message}"));
+            return Some(Response::err(
+                id,
+                Error::new(
+                    "ocr_unavailable",
+                    "the configured OCR model set is invalid",
+                    json!({"reason": "ocr_model_version_invalid", "message": message}),
+                ),
+            ));
+        }
+    };
+    state.logs.ocr_model_line(&format!(
+        "loading {} from {}",
+        version.as_str(),
+        state.root.display()
+    ));
+    match seal_ocr::pipeline::OcrPipeline::load_for_root_version(
         &state.root,
         &state.attributes,
         geometry.row_height,
+        version,
     ) {
         Ok(pipeline) => {
+            state
+                .logs
+                .ocr_model_line(&format!("loaded {} (det+rec)", version.as_str()));
             state.ocr = Some(pipeline);
             state.ocr_build = Some(identity);
             None
         }
         Err(error) => {
+            state.logs.ocr_model_line(&format!(
+                "{} failed to load: {}: {}",
+                version.as_str(),
+                error.reason,
+                error.message
+            ));
             // The cache cannot be trusted any more: a stale pipeline would read with the dictionary
             // the config no longer names, so it is dropped rather than used behind the refusal.
             state.ocr = None;
@@ -2907,6 +2959,15 @@ mod tests {
 
         state.ocr_build = Some(state.ocr_identity());
         assert!(!state.ocr_is_stale());
+        // The Setup OCR-model choice changes the model set.
+        state.config["ocr"] = json!({"model_version": "v6-small"});
+        assert!(
+            state.ocr_is_stale(),
+            "an OCR model-set change must rebuild the pipeline"
+        );
+
+        state.ocr_build = Some(state.ocr_identity());
+        assert!(!state.ocr_is_stale());
         // `config.reload` can change only the cleanup table, with the same dictionary file name.
         state.attributes.text_fixes.whole.push(TextFix {
             from: "攻孽".to_owned(),
@@ -2916,5 +2977,21 @@ mod tests {
             state.ocr_is_stale(),
             "an edited text-fix table must rebuild the cleaner"
         );
+    }
+
+    #[test]
+    fn ocr_model_version_defaults_to_v4_and_refuses_unknown() {
+        assert_eq!(
+            ocr_model_version(&json!({})).expect("missing means v4"),
+            seal_ocr::profile::OcrModelVersion::V4
+        );
+        assert_eq!(
+            ocr_model_version(&json!({"ocr": {"model_version": "v6-small"}}))
+                .expect("v6-small is known"),
+            seal_ocr::profile::OcrModelVersion::V6Small
+        );
+        let error = ocr_model_version(&json!({"ocr": {"model_version": "v6"}}))
+            .expect_err("an unknown version is refused");
+        assert!(error.contains("v6-small"), "{error}");
     }
 }

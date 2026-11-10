@@ -65,9 +65,14 @@ class _SetupTabState extends State<SetupTab>
     scope: ConfigScope.portableSection,
     editableKeys: const {'variant'},
   );
+  late final ConfigDraft _ocrDraft = ConfigDraft(
+    blockName: 'ocr',
+    scope: ConfigScope.portableSection,
+    editableKeys: const {'model_version'},
+  );
   late final ConfigDraftGroup _group = ConfigDraftGroup(
     label: 'setup',
-    parts: [_windowDraft, _gameDraft],
+    parts: [_windowDraft, _gameDraft, _ocrDraft],
   );
 
   @override
@@ -134,6 +139,11 @@ class _SetupTabState extends State<SetupTab>
       asString(_gameDraft.value['variant']) ??
       asString(_merged('game')['variant']) ??
       '—';
+
+  String get _ocrModelVersion =>
+      asString(_ocrDraft.value['model_version']) ??
+      asString(_merged('ocr')['model_version']) ??
+      'v4';
 
   List<String> _variantNames() {
     final variants = asJsonMap(_merged('game')['variants']);
@@ -272,6 +282,35 @@ class _SetupTabState extends State<SetupTab>
                 options: _variantNames(),
                 width: ShellWidth.picker,
                 onChanged: (value) => _set(_gameDraft, 'variant', value),
+              ),
+            ],
+          ),
+          EditorSection(
+            title: 'OCR model',
+            children: [
+              const ShellProse(
+                'PP-OCRv4 is the shipped model set. PP-OCRv6 small is the trial set for Traditional '
+                'Chinese and English; selecting it requires the v6 model files in the core\'s models '
+                'folder. If the v6 files are missing, OCR refuses rather than falling back.',
+              ),
+              const SizedBox(height: ShellSpace.sm),
+              Wrap(
+                spacing: ShellSpace.sm,
+                runSpacing: ShellSpace.sm,
+                children: [
+                  for (final version in const ['v4', 'v6-small'])
+                    ChoiceChip(
+                      key: ValueKey('setup-ocr-model-$version'),
+                      label: Text(
+                        version == 'v4'
+                            ? 'PP-OCRv4 (current)'
+                            : 'PP-OCRv6 small (trial)',
+                      ),
+                      selected: _ocrModelVersion == version,
+                      onSelected: (_) =>
+                          _set(_ocrDraft, 'model_version', version),
+                    ),
+                ],
               ),
             ],
           ),

@@ -813,6 +813,27 @@ fn deleting_a_quest_flow_from_presets_survives_a_reload() {
 }
 
 #[test]
+fn ocr_model_version_is_accepted_written_and_preserved() {
+    let root = config_root();
+    let mut session = Session::start(root.path());
+    let hello = session.result("hello", json!({"protocol": 1, "client": "0.1.0"}));
+    let rev = hello["rev"].as_u64().expect("hello carries the rev");
+
+    let sections = json!({"settings": {"ocr": {"model_version": "v6-small"}}});
+    let validated = session.result("config.validate", json!({"sections": sections}));
+    assert_eq!(validated["errors"], json!([]));
+
+    let applied = session.result("config.apply", json!({"rev": rev, "sections": sections}));
+    assert_eq!(
+        applied["sections"]["settings"]["ocr"]["model_version"],
+        "v6-small"
+    );
+
+    let reloaded = session.result("config.reload", json!({}));
+    assert_eq!(reloaded["config"]["ocr"]["model_version"], "v6-small");
+}
+
+#[test]
 fn quick_dock_hand_written_preference_loads() {
     // A hand-written preference loads too (this is what a player migrating a setup file sees).
     let hand_written = config_root();

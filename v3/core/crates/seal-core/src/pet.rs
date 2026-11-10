@@ -675,9 +675,15 @@ impl PetReadSource {
         check_board(plan, firmware_level)?;
         let title = crate::win::configured_title(config).map_err(|error| error.line())?;
         let geometry = crate::dispatch::ocr_geometry(config);
-        let pipeline =
-            seal_ocr::pipeline::OcrPipeline::load_for_root(root, attributes, geometry.row_height)
-                .map_err(|error| format!("the OCR models are not available: {}", error.message))?;
+        let ocr_version = crate::dispatch::ocr_model_version(config)
+            .map_err(|error| format!("the OCR model set is invalid: {error}"))?;
+        let pipeline = seal_ocr::pipeline::OcrPipeline::load_for_root_version(
+            root,
+            attributes,
+            geometry.row_height,
+            ocr_version,
+        )
+        .map_err(|error| format!("the OCR models are not available: {}", error.message))?;
         Ok(Self {
             title,
             tooltip: plan.tooltip,
