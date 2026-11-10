@@ -64,3 +64,6 @@ reference/
 .archify/
 
 # ── Misc cruft ─────────────────────────────────────────
+
+# v3 dev/install OCR models: large binaries, copied locally; never committed
+v3/models/
