@@ -113,9 +113,30 @@ void main() {
     );
     await _flush(tester);
 
-    expect(find.text('DG · 9 left · attempt 4'), findsOneWidget);
-    expect(find.text('reading the grade line'), findsNothing);
-    // The visible line is compact; the full OCR fact set is available in the tooltip.
+    // The action sentence stays the primary line; the live facts are labelled chips below it.
+    expect(find.text('reading the grade line'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mini-fact-0')),
+        matching: find.text('DG'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mini-fact-1')),
+        matching: find.text('9'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mini-fact-2')),
+        matching: find.text('4'),
+      ),
+      findsOneWidget,
+    );
+    // The full OCR fact set is available in the tooltip.
     expect(
       find.byTooltip('Grade: DG\nRemaining: 9\nAttempt: 4'),
       findsOneWidget,
@@ -144,12 +165,20 @@ void main() {
     );
     await _flush(tester);
 
-    final message = tester
-        .widget<Text>(find.byKey(const ValueKey('mini-message')))
-        .data!;
-    expect(message, contains('N · 284 left · attempt 2'));
-    expect(message, contains('魔法力=22'));
-    expect(message, contains("filter '減少傷害' matched 0 attrs, need 2"));
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('mini-message'))).data,
+      'Running',
+    );
+    for (final value in ['284', '2', '22', '4']) {
+      expect(find.text(value), findsWidgets);
+    }
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mini-wide-fact-0')),
+        matching: find.textContaining("'減少傷害' matched 0 attrs"),
+      ),
+      findsOneWidget,
+    );
     expect(
       find.byTooltip(
         'Grade: N\nRemaining: 284\nAttempt: 2\n魔法力=22\n攻擊速度=4\n'

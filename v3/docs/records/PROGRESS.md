@@ -19,6 +19,25 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-10 (56) — the mini bar reads in four bands
+
+The enlarged 460 × 168 bar still rendered the primary action and every OCR fact as one ` · `-joined
+paragraph, so a line like `N · 284 left · attempt 2 · 魔法力=22 · 攻擊速度=4 · filter …` buried the
+Filter and competed with the action sentence.
+
+- **Four bands:** identity/phase; the core's action or outcome as the primary 13 px semibold line; live
+  facts as labelled mono chips (`GRADE`, `LEFT`, `TRY`, OCR attributes); the long `FILTER` value as its
+  own ellipsized line; clock + countdown and one fixed primary action in the footer.
+- **Facts are derived, not ad hoc:** `state.detail` is split into `_MiniFact` records (attribute
+  `name=value` pairs included), at most five compact chips are shown, and the full set stays in the
+  hover tooltip. Finished/error states keep the outcome sentence and hide live facts.
+- **Type/hierarchy:** tool name 14 px; primary action 13 px/600; chip label 7.5–8.5 px mono and value
+  10.5–11.5 px mono; countdown includes a clock glyph; Stop remains 88 × 32.
+- Updated the mini-bar widget tests for the structured facts and the 460 × 168 spec/guide wording.
+
+Verification: mini-bar tests **7/7**, full shell gate **393/393**, analyze `--fatal-infos` clean, format
+clean, Windows debug build green. Design study: `.scratch/ui-audit/mini-bar-text.html`.
+
 ## 2026-11-10 (55) — PP-OCRv6 small trial loads its own dictionary
 
 The v6 study found the official ONNX exports and measured the dictionary split: tiny has 6,904
@@ -55,7 +74,7 @@ chips, Appearance chips and other model-derived rows refresh as soon as the dock
 widget test flips the behavior from the model and asserts both ChoiceChips follow. Setup copy also says
 the chips mirror the dock-header toggle.
 
-Verification: Setup tests **10/10**, full shell gate **391/391**, analyze `--fatal-infos` clean, format
+Verification: Setup tests **10/10**, full shell gate **393/393**, analyze `--fatal-infos` clean, format
 clean, Windows debug build green.
 
 ## 2026-11-09 (53) — the mini bar returns to the same dock state as Setup

@@ -182,51 +182,41 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
     unawaited(widget.model.settleMiniWindow());
   }
 
-  /// One compact line from the live `state.detail`, so the bar carries the facts v2's running card
-  /// showed instead of only the action message. Tuner gets the v2 density (`DG · 9 left · attempt
-  /// 4`); other tools get up to three labelled facts. Null when the snapshot has no detail.
-  String? _detailSummary(ToolId tool, ToolSnapshot? snapshot) {
-    final detail = snapshot?.detail ?? const [];
-    if (detail.isEmpty) {
-      return null;
-    }
-
-    if (tool == ToolId.tuner) {
-      // Keep the order the core publishes: Grade, Remaining, Attempt, attributes, Filter. The
-      // 360-px bar ellipsizes the tail, but the tooltip carries the full result set.
-      final parts = <String>[];
-      for (final line in detail) {
-        final label = line.label;
-        final text = switch (label) {
-          'Grade' when line.value.isNotEmpty => line.value,
-          'Remaining' when line.value.isNotEmpty => '${line.value} left',
-          'Attempt' when line.value.isNotEmpty => 'attempt ${line.value}',
-          'Filter' when line.value.isNotEmpty => 'filter ${line.value}',
-          null => line.value,
-          _ => '$label ${line.value}',
-        };
-        if (text.trim().isNotEmpty) {
-          parts.add(text);
-        }
-      }
-      if (parts.isNotEmpty) {
-        return parts.join(' · ');
-      }
-    }
-    final parts = <String>[];
-    for (final line in detail) {
-      final text = line.label == null || line.label!.isEmpty
-          ? line.value
-          : '${line.label} ${line.value}';
-      if (text.trim().isEmpty) {
+  /// The live `state.detail` as labelled facts. The old bar joined these into one ` · ` sentence;
+  /// in the larger bar they become scannable chips, with long Filter text kept as its own line.
+  List<_MiniFact> _detailFacts(ToolId tool, ToolSnapshot? snapshot) {
+    final facts = <_MiniFact>[];
+    for (final line in snapshot?.detail ?? const <ToolDetail>[]) {
+      final rawLabel = (line.label ?? '').trim();
+      final value = line.value.trim();
+      if (value.isEmpty) {
         continue;
       }
-      parts.add(text);
-      if (parts.length == 3) {
-        break;
+      if (rawLabel == 'Filter') {
+        facts.add(_MiniFact(rawLabel, value, wide: true));
+        continue;
+      }
+      if (rawLabel.isNotEmpty) {
+        final label = switch (rawLabel) {
+          'Grade' => 'Grade',
+          'Remaining' => 'Left',
+          'Attempt' => 'Try',
+          _ => rawLabel,
+        };
+        facts.add(_MiniFact(label, value));
+        continue;
+      }
+      // OCR attribute lines arrive as "name=value"; split them so the chip has a label.
+      final equals = value.indexOf('=');
+      if (equals > 0 && equals < value.length - 1) {
+        facts.add(
+          _MiniFact(value.substring(0, equals), value.substring(equals + 1)),
+        );
+      } else {
+        facts.add(_MiniFact('Info', value));
       }
     }
-    return parts.isEmpty ? null : parts.join(' · ');
+    return facts;
   }
 
   /// The full OCR result set for the mini bar's hover tooltip. The visible line is one ellipsized
@@ -298,10 +288,11 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
               ? snapshot!.message.trim()
               : 'Running')
         : (finished?.message ?? 'Run ended');
-    // The live read facts outrank the generic action line while a run is active: the bar is the
-    // only surface a collapsed player can see. Finished bar still shows the outcome.
-    final detailSummary = active ? _detailSummary(tool, snapshot) : null;
-    final barMessage = detailSummary ?? message;
+    // The core's action/outcome sentence stays the primary line; the live read facts are
+    // structured chips below it instead of being glued into one ` · ` sentence.
+    final facts = active ? _detailFacts(tool, snapshot) : const <_MiniFact>[];
+    final compactFacts = facts.where((fact) => !fact.wide).take(5).toList();
+    final wideFacts = facts.where((fact) => fact.wide).toList();
     // The "next moment" belongs to a live run. The bar is 360 px wide, so drop the full window's
     // "next action " prefix ("in 11 s" instead of "next action in 11 s"); a stopped bar shows the
     // outcome sentence only.
@@ -374,7 +365,8 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.titleSmall?.copyWith(
-                              fontSize: 13.5,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
@@ -418,40 +410,81 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: ShellSpace.xs),
-                  Expanded(
-                    child: Tooltip(
-                      message: _detailTooltip(snapshot) ?? message,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          barMessage,
-                          key: const ValueKey('mini-message'),
-                          maxLines: 5,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontSize: 12.5,
-                            height: 1.3,
-                            color: errorState
-                                ? theme.colorScheme.error
-                                : theme.colorScheme.onSurfaceVariant,
-                          ),
+                  const SizedBox(height: ShellSpace.xxs),
+                  Tooltip(
+                    message: _detailTooltip(snapshot) ?? message,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        message,
+                        key: const ValueKey('mini-message'),
+                        maxLines: facts.isEmpty ? 2 : 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontSize: 13.2,
+                          height: 1.25,
+                          fontWeight: FontWeight.w600,
+                          color: errorState
+                              ? theme.colorScheme.error
+                              : theme.colorScheme.onSurface,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: ShellSpace.xs),
+                  if (compactFacts.isNotEmpty) ...[
+                    const SizedBox(height: ShellSpace.xs),
+                    Wrap(
+                      spacing: ShellSpace.xs,
+                      runSpacing: ShellSpace.xxs,
+                      children: [
+                        for (
+                          var index = 0;
+                          index < compactFacts.length;
+                          index++
+                        )
+                          _MiniFactChip(
+                            key: ValueKey('mini-fact-$index'),
+                            label: compactFacts[index].label,
+                            value: compactFacts[index].value,
+                          ),
+                      ],
+                    ),
+                  ],
+                  for (var index = 0; index < wideFacts.length; index++) ...[
+                    const SizedBox(height: ShellSpace.xxs),
+                    _MiniFactLine(
+                      key: ValueKey('mini-wide-fact-$index'),
+                      label: wideFacts[index].label,
+                      value: wideFacts[index].value,
+                      tooltip: null,
+                    ),
+                  ],
+                  const Spacer(),
                   SizedBox(
                     height: 32,
                     child: Row(
                       children: [
                         if (when != null && when.isNotEmpty)
-                          Text(
-                            when,
-                            key: const ValueKey('mini-when'),
-                            style: ShellText.mono.copyWith(
-                              fontSize: 11.5,
-                              color: theme.colorScheme.onSurfaceVariant,
+                          Tooltip(
+                            message: 'Next core action',
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.schedule,
+                                  size: 12,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  when,
+                                  key: const ValueKey('mini-when'),
+                                  style: ShellText.mono.copyWith(
+                                    fontSize: 11.5,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         const Spacer(),
@@ -511,6 +544,109 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
         ),
       ),
     );
+  }
+}
+
+/// A compact labelled fact in the mini bar. [wide] facts use the full row instead of a chip.
+class _MiniFact {
+  const _MiniFact(this.label, this.value, {this.wide = false});
+
+  final String label;
+  final String value;
+  final bool wide;
+}
+
+class _MiniFactChip extends StatelessWidget {
+  const _MiniFactChip({super.key, required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.55,
+        ),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.55),
+        ),
+        borderRadius: BorderRadius.circular(ShellRadius.s),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: ShellText.mono.copyWith(
+              fontSize: 8.5,
+              letterSpacing: 0.04,
+              color: muted,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: ShellText.mono.copyWith(
+                fontSize: 11.5,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniFactLine extends StatelessWidget {
+  const _MiniFactLine({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.tooltip,
+  });
+
+  final String label;
+  final String value;
+  final String? tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final line = Row(
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: ShellText.mono.copyWith(
+            fontSize: 8.5,
+            letterSpacing: 0.04,
+            color: muted,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 11.5,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+        ),
+      ],
+    );
+    return tooltip == null ? line : Tooltip(message: tooltip!, child: line);
   }
 }
 

@@ -120,10 +120,12 @@ the card, so the collapsed tile stays one line. When nothing runs, a banner show
 runs yet" on a fresh start, "Everything is idle" otherwise. A card's phase moves only when the core
 publishes `state`: a Start shows an in-flight label, never an optimistic phase.
 
-**Mini mode.** A foreground run collapses the window to a 360×96 bar beside the game: the tool name
-and phase, the core's latest message, the next moment and **Stop**; when the run finishes the bar
-switches to **Full window** instead of popping back over the game. The bar stays on top, remembers
-the screen edge you dragged it to for the next run, and the resident Pet Feeder keeps the full
+**Mini mode.** A foreground run collapses the window to a 460×168 bar beside the game. It is laid out
+in four bands: tool name + phase; the core's current action or finished outcome; live read facts as
+labelled chips (Grade, Left, Try, OCR attributes) with a long Filter on its own line; then the
+countdown and **Stop**. Hovering the fact area shows the full OCR detail. When the run finishes the
+primary action switches to **Full window** instead of popping back over the game. The bar stays on top,
+remembers the screen edge you dragged it to for the next run, and the resident Pet Feeder keeps the full
 window (it is shown as a paw badge beside the foreground tool). Press **Full window** to return for
 the rest of this run; the next run collapses again. While a tool runs, the app bar's
 picture-in-picture button collapses manually.
@@ -164,7 +166,7 @@ placement is session-only.
 The small resting form of the quick dock is **not** the mini run bar. It shows three shortcuts —
 Skill Spammer, Buy and Sell — plus an unfold button. Clicking a tool icon expands the quick dock and
 opens that tool's options; clicking the rest of the tab just expands it. Hovering only pauses
-Auto-collapse, so it never steals the icon click. The **mini run bar** is the 360 × 96 window shown only
+Auto-collapse, so it never steals the icon click. The **mini run bar** is the 460 × 168 window shown only
 while a foreground tool is running: its red **Stop** stops that tool (the resident Pet Feeder keeps
 running), the top-right full-window icon expands the shell, and after the run finishes it also offers the
 **Quick dock** button and a filled **Full window** button. **Quick dock** follows the Setup idle

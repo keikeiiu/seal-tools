@@ -83,7 +83,7 @@ fall when that surface is rebuilt in Phases 2–4 (recorded in the plan §7.1).
 
 A foreground run (every tool except the resident Pet Feeder) collapses the whole window to a
 **460 × 168 borderless, always-on-top bar** (`MiniRunningCard`, `lib/ui/mini_mode.dart`). Approved
-design demo: `v3/.scratch/ui-audit/ui-demo-mini.html`; real-build evidence
+design demos: `v3/.scratch/ui-audit/ui-demo-mini.html` and `mini-bar-text.html`; real-build evidence
 `v3/.scratch/ui-audit/mini-real-*.png`. The core and protocol are unchanged: every bar value is an
 existing `state` / `tool.finished` fact.
 
@@ -95,11 +95,13 @@ existing `state` / `tool.finished` fact.
   Stop is clicked while the click is still delivered to Flutter (verified on the real 150 % build:
   690 × 252 px, `has_caption=False`, `ex_noactivate=True`, foreground window unchanged after a Stop
   click).
-- **Content, ranked** — row 1: drag grip, tool icon + name, phase chip (dot **and** word), resident-pet
-  paw badge, expand icon. Row 2: the core's action line (one line, full text on hover), the compact
-  countdown (`in 11 s`), then exactly one primary action. Rail, tabs, header, save bar, logs, detail
-  rows, finished summaries and the native caption are deliberately absent: Stop first, then tool +
-  phase, then the current action, then the next moment, nothing else.
+- **Content, ranked** — row 1: drag grip, tool icon + name (14 px), phase chip (dot **and** word),
+  resident-pet paw badge, expand icon. Row 2: the core's action/outcome sentence as one 13 px semibold
+  line (two lines only when there are no facts; full text on hover). Row 3: live `state.detail` facts as
+  labelled mono chips — Grade, Left, Try, then OCR attributes — followed by the long Filter value as its
+  own full-width ellipsized line. Row 4: clock + compact countdown (`in 12 s`) and exactly one primary
+  action. At most five compact facts are shown; the tooltip carries the full fact set. Rail, tabs,
+  header, save bar, logs, finished summaries and the native caption remain absent.
 - **Actions** — an active run shows **Stop** (88 × 32, one click, no confirmation; enabled while
   `running` and `starting`; disabled with a spinner while `stopping` or while a stop command is in
   flight, so the bar never invents a phase). A finished/error/lost bar shows **Full window**
@@ -436,7 +438,7 @@ keeps its spinner + status text, with the stderr tail only when there is one.
 - `StatusBanner` has no widget-detail slot yet (Pet's checklist rows sit in the panel below the banner);
   noted for the next primitive pass, not a behaviour gap.
 
-Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 391/391; `dart format` clean. Every
+Gates for this build: `flutter analyze --fatal-infos` No issues (strict casts/inference/raw-types + async hygiene lints); `flutter test` 393/393; `dart format` clean. Every
 destination plus the empty/logs/all-running/crash states was rendered at 1280 and 960
 (`.scratch/ui-audit/shots/final-*.png`) with no layout overflow. The mini bar was additionally verified
 on a real Windows build at 150 % (460 × 168 logical / 690 × 252 physical, borderless + non-activating,
