@@ -92,12 +92,17 @@ python checkin.py
 成功 7/7。session 已存，下次免重新登入（直到過期）。
 ```
 
-## Scheduled daily run (00:05, all accounts)
+## Scheduled runs (00:05 and 21:00, all accounts)
 
 A Windows Task Scheduler task named **SealTools CheckIn** starts `run_checkin.ps1`
-hidden every day at 00:05. It runs `checkin.py` once, so it walks every account in
-`checkin_config.yaml`, and writes the run's stdout + stderr to
+hidden **twice a day — 00:05 and 21:00** — and it runs `checkin.py` once, so it walks
+every account in `checkin_config.yaml`, writing the run's stdout + stderr to
 `logs/checkin-<yyyyMMdd-HHmm>.log` and `.err.log` beside it.
+
+Two triggers mean the PC does not have to stay on past midnight: the 21:00 run claims
+the current calendar day's reward before you shut down. Only one day can be claimed per
+calendar day, and a run that finds today already claimed reports success (`-10`), so
+whichever trigger fires first claims and the other becomes a cheap no-op.
 
 ```powershell
 Get-ScheduledTaskInfo -TaskName 'SealTools CheckIn'                      # last result + next run
@@ -105,8 +110,9 @@ Start-ScheduledTask    -TaskName 'SealTools CheckIn'                      # run 
 Unregister-ScheduledTask -TaskName 'SealTools CheckIn' -Confirm:$false    # stop the schedule
 ```
 
-- The task only runs while you are logged on; if the PC is asleep or off at 00:05 it
-  starts as soon as Windows can (`StartWhenAvailable`).
+- The task only runs while you are logged on; if the PC is off at both times it starts
+  as soon as Windows can (`StartWhenAvailable`), and that catch-up still claims that
+  day's reward.
 - An expired session still triggers the manual-captcha flow: the unattended run opens a
   visible browser and waits up to 2 minutes per account. Run `python checkin.py` once
   while you are at the PC, and the saved session makes the scheduled runs headless again.
@@ -115,8 +121,11 @@ Unregister-ScheduledTask -TaskName 'SealTools CheckIn' -Confirm:$false    # stop
 ```powershell
 $action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
     -Argument '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Git_repo\seal-tools\v1\checkin\run_checkin.ps1"'
-$trigger = New-ScheduledTaskTrigger -Daily -At '00:05'
-Register-ScheduledTask -TaskName 'SealTools CheckIn' -Action $action -Trigger $trigger `
+$triggers = @(
+    (New-ScheduledTaskTrigger -Daily -At '00:05'),
+    (New-ScheduledTaskTrigger -Daily -At '21:00')
+)
+Register-ScheduledTask -TaskName 'SealTools CheckIn' -Action $action -Trigger $triggers `
     -Settings (New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew)
 ```
 
