@@ -188,6 +188,21 @@ void main() {
     );
     expect(second.dy, greaterThan(first.dy));
     expect(third.dy, greaterThan(second.dy));
+    final messageLeft = tester
+        .getTopLeft(find.byKey(const ValueKey('mini-message')))
+        .dx;
+    for (final key in const [
+      'mini-attribute-0',
+      'mini-attribute-1',
+      'mini-attribute-2',
+      'mini-wide-fact-0',
+    ]) {
+      expect(
+        tester.getTopLeft(find.byKey(ValueKey(key))).dx,
+        closeTo(messageLeft, 0.5),
+        reason: '$key must share the primary line\'s left edge',
+      );
+    }
     final lastAttributeBottom = tester
         .getBottomLeft(find.byKey(const ValueKey('mini-attribute-2')))
         .dy;

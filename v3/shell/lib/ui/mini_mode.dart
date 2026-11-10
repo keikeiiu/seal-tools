@@ -410,6 +410,7 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   SizedBox(
                     height: 32,

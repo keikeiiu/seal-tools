@@ -34,8 +34,12 @@ the previous layout put the Grade/Left/Try chips beside them and squeezed the re
   so the finished/stopped/error bar still shows the three attribute lines for inspection while the
   live metrics and Filter line are dropped, matching the approved result card.
 - **Tested hierarchy:** the mini-bar widget test asserts `mini-fact-0` starts below the last OCR
-  attribute, that three OCR attributes occupy three distinct rows, and that the finished bar keeps the
-  OCR lines but not the live metrics/Filter.
+  attribute, that three OCR attributes occupy three distinct rows, that the OCR lines and Filter share
+  the primary line's left edge, and that the finished bar keeps the OCR lines but not the live
+  metrics/Filter.
+- **Alignment:** the outer bar Column now stretches its children. Without that the compact attribute
+  column was centred by the parent's default `CrossAxisAlignment.center`, so the OCR lines started in
+  the middle of the bar instead of under the action line. The left-edge assertion above guards it.
 
 Verification: mini-bar tests **8/8**, full shell gate **394/394**, analyze `--fatal-infos` clean,
 format clean, Windows debug build green. Design study (reviewed before implementation):
