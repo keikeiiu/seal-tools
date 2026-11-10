@@ -163,6 +163,7 @@ void main() {
         {'label': 'Attempt', 'value': '2'},
         {'value': '魔法力=22'},
         {'value': '攻擊速度=4'},
+        {'value': 'STR=1'},
         {'label': 'Filter', 'value': "'減少傷害' matched 0 attrs, need 2"},
       ],
     );
@@ -175,6 +176,18 @@ void main() {
     expect(find.byKey(const ValueKey('mini-attributes')), findsOneWidget);
     expect(find.text('魔法力=22'), findsOneWidget);
     expect(find.text('攻擊速度=4'), findsOneWidget);
+    expect(find.text('STR=1'), findsOneWidget);
+    final first = tester.getTopLeft(
+      find.byKey(const ValueKey('mini-attribute-0')),
+    );
+    final second = tester.getTopLeft(
+      find.byKey(const ValueKey('mini-attribute-1')),
+    );
+    final third = tester.getTopLeft(
+      find.byKey(const ValueKey('mini-attribute-2')),
+    );
+    expect(second.dy, greaterThan(first.dy));
+    expect(third.dy, greaterThan(second.dy));
     expect(
       find.byKey(const ValueKey('mini-fact-3')),
       findsNothing,
@@ -189,7 +202,7 @@ void main() {
     );
     expect(
       find.byTooltip(
-        'Grade: N\nRemaining: 284\nAttempt: 2\n魔法力=22\n攻擊速度=4\n'
+        'Grade: N\nRemaining: 284\nAttempt: 2\n魔法力=22\n攻擊速度=4\nSTR=1\n'
         "Filter: '減少傷害' matched 0 attrs, need 2",
       ),
       findsOneWidget,

@@ -44,7 +44,7 @@ Filter and competed with the action sentence.
   facts as labelled mono chips (`GRADE`, `LEFT`, `TRY`, OCR attributes); the long `FILTER` value as its
   own ellipsized line; clock + countdown and one fixed primary action in the footer.
 - **Facts are derived, not ad hoc:** `state.detail` is split into `_MiniFact` records. Grade/Left/Try
-  stay labelled chips; OCR attributes are one inline `name=value` run (no cards), tinted with the
+  stay labelled chips; OCR attributes are one `name=value` line each (no cards), tinted with the
   primary colour when they satisfy an enabled filter rule's name and min/max. At most five metric
   chips are shown; the full set stays in the hover tooltip. Finished/error states keep the outcome
   sentence and hide live facts.

@@ -122,7 +122,7 @@ publishes `state`: a Start shows an in-flight label, never an optimistic phase.
 
 **Mini mode.** A foreground run collapses the window to a 460×168 bar beside the game. It is laid out
 in four bands: tool name + phase; the core's current action or finished outcome; Grade/Left/Try as
-labelled chips plus OCR attributes as inline `name=value` text (attributes named by the enabled
+labelled chips plus OCR attributes as one `name=value` line each (attributes named by the enabled
 filter/inside its bounds take the primary colour); and the countdown + **Stop**. The long Filter has
 its own line, and hovering the fact area shows the full OCR detail. When the run finishes the
 primary action switches to **Full window** instead of popping back over the game. The bar stays on top,

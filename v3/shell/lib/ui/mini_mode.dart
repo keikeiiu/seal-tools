@@ -474,28 +474,39 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
                     ),
                   ),
                   if (compactFacts.isNotEmpty || inlineFacts.isNotEmpty) ...[
-                    const SizedBox(height: ShellSpace.xs),
-                    Wrap(
-                      spacing: ShellSpace.xs,
-                      runSpacing: ShellSpace.xxs,
-                      crossAxisAlignment: WrapCrossAlignment.center,
+                    const SizedBox(height: ShellSpace.xxs),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        for (
-                          var index = 0;
-                          index < compactFacts.length;
-                          index++
-                        )
-                          _MiniFactChip(
-                            key: ValueKey('mini-fact-$index'),
-                            label: compactFacts[index].label,
-                            value: compactFacts[index].value,
+                        Expanded(
+                          child: Wrap(
+                            spacing: ShellSpace.xs,
+                            runSpacing: ShellSpace.xxs,
+                            children: [
+                              for (
+                                var index = 0;
+                                index < compactFacts.length;
+                                index++
+                              )
+                                _MiniFactChip(
+                                  key: ValueKey('mini-fact-$index'),
+                                  label: compactFacts[index].label,
+                                  value: compactFacts[index].value,
+                                ),
+                            ],
                           ),
-                        if (inlineFacts.isNotEmpty)
-                          _MiniAttributeLine(
-                            key: const ValueKey('mini-attributes'),
-                            facts: inlineFacts,
-                            matched: _matchedAttributes(inlineFacts),
+                        ),
+                        if (inlineFacts.isNotEmpty) ...[
+                          const SizedBox(width: ShellSpace.sm),
+                          SizedBox(
+                            width: 176,
+                            child: _MiniAttributeList(
+                              key: const ValueKey('mini-attributes'),
+                              facts: inlineFacts,
+                              matched: _matchedAttributes(inlineFacts),
+                            ),
                           ),
+                        ],
                       ],
                     ),
                   ],
@@ -663,11 +674,11 @@ class _MiniFactChip extends StatelessWidget {
   }
 }
 
-/// OCR attributes stay a readable inline run (`魔法力=22 · 攻擊速度=4`) instead of a row of
-/// bordered cards. An attribute named by the enabled filter is tinted with the primary colour; the
-/// rest stay neutral, so the checked attributes are visible without extra chips or icons.
-class _MiniAttributeLine extends StatelessWidget {
-  const _MiniAttributeLine({
+/// OCR attributes follow v2's `FormatStatus` order and stay one line each (`魔法力=22` on its own
+/// row), not cards. An attribute named by the enabled filter is tinted with the primary colour; the
+/// rest stay neutral.
+class _MiniAttributeList extends StatelessWidget {
+  const _MiniAttributeList({
     super.key,
     required this.facts,
     required this.matched,
@@ -680,38 +691,28 @@ class _MiniAttributeLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
-    final separator = ShellText.mono.copyWith(
-      fontSize: 10.5,
-      color: muted.withValues(alpha: 0.65),
-    );
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 240),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            for (var index = 0; index < facts.length; index++) ...[
-              if (index > 0) Text(' · ', style: separator),
-              Text(
-                '${facts[index].label}=${facts[index].value}',
-                key: ValueKey('mini-attribute-$index'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: ShellText.mono.copyWith(
-                  fontSize: 10.5,
-                  fontWeight: matched.contains(facts[index].label)
-                      ? FontWeight.w600
-                      : FontWeight.w400,
-                  color: matched.contains(facts[index].label)
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var index = 0; index < facts.length; index++)
+          Text(
+            '${facts[index].label}=${facts[index].value}',
+            key: ValueKey('mini-attribute-$index'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: ShellText.mono.copyWith(
+              fontSize: 10.5,
+              height: 1.1,
+              fontWeight: matched.contains(facts[index].label)
+                  ? FontWeight.w600
+                  : FontWeight.w400,
+              color: matched.contains(facts[index].label)
+                  ? theme.colorScheme.primary
+                  : muted,
+            ),
+          ),
+      ],
     );
   }
 }
