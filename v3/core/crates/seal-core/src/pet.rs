@@ -684,6 +684,8 @@ impl PetReadSource {
             ocr_version,
         )
         .map_err(|error| format!("the OCR models are not available: {}", error.message))?;
+        crate::logs::Logs::new(root)
+            .ocr_model_line(&format!("loaded {} for pet", ocr_version.as_str()));
         Ok(Self {
             title,
             tooltip: plan.tooltip,

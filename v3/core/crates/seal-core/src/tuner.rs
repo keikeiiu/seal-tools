@@ -538,6 +538,8 @@ impl OcrTunerSource {
             ocr_version,
         )
         .map_err(|error| format!("the OCR models are not available: {}", error.message))?;
+        crate::logs::Logs::new(root)
+            .ocr_model_line(&format!("loaded {} for tuner", ocr_version.as_str()));
         let retries = config
             .pointer("/tuner/ocr_retries")
             .and_then(Value::as_i64)
