@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pet Feeder — a calmer setup</title>
+<!--
+CONSTRAINT BRIEF — Refactoring UI (Workflow B), design study only.
+
+Context. The current v3 Flutter Pet tab is one long scroll of 10+ panels: readiness checklist,
+boarding rows, queue, add-pet capture, bag scan, 8×8 food grid, return slot, food loading, timing
+thresholds, portable feeding, and a reference panel. This demo keeps every capability but ranks it.
+
+Existing v3 tokens (lib/ui/theme.dart + tokens.dart):
+  primary #3B82F6 · dark surface #111318 / low #151A21 / high #1F2732
+  dark text #E6E9EF / muted #98A2B3 / outline #2A3341
+  success #7EE2B8 · warning #F2CC7B · info #9ECAFF
+  light: bg #F6F7F9 · surface #FFFFFF · text #17202B · muted #5C6A7A · primary #2563EB
+  spacing 4/8/12/16/24 · radius 6/10/14 · body 12.5–14, title 16/18, page 22 · Roboto/Consolas.
+
+Content ranking:
+  PRIMARY   readiness verdict + next action, then the two things that change a run:
+            boarding rows (left) and food plan (right)
+  SECONDARY queue, return slot, food loading
+  TERTIARY  timing/threshold tuning, portable rates, read-only calibration marks
+Actions, one filled per page:
+  Save setup (primary). Revert / Open Calibrate / Scan bag / Capture icon are outlined or quiet.
+Hierarchy:
+  rows are compact list items, not cards-in-cards; queue is a list; advanced values hide until
+  "Advanced" is opened; readiness is a single banner with a checklist disclosure; no duplicate
+  prose, no per-field paragraph walls.
+-->
+<style>
+  :root {
+    --bg: #0b0f14; --surface: #111318; --surface-low: #151a21; --surface-mid: #1a2029;
+    --surface-high: #1f2732; --line: #2a3341; --line-soft: rgba(255,255,255,.07);
+    --text: #e6e9ef; --muted: #98a2b3; --faint: #6f7a8b;
+    --primary: #3b82f6; --primary-strong: #2563eb; --on-primary: #fff; --primary-soft: #16345f;
+    --success: #7ee2b8; --success-bg: #10382b;
+    --warning: #f2cc7b; --warning-bg: #3e2f10;
+    --info: #9ecaff; --info-bg: #122b48;
+    --danger: #fca5a5;
+    --shadow: 0 12px 32px rgba(0,0,0,.35);
+    --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px;
+    --r-sm: 6px; --r-md: 10px; --r-lg: 14px;
+    --font: Roboto, "Segoe UI", system-ui, sans-serif;
+    --mono: Consolas, "Cascadia Mono", monospace;
+  }
+  html[data-theme="light"] {
+    --bg: #f6f7f9; --surface: #ffffff; --surface-low: #f0f2f5; --surface-mid: #e9edf2;
+    --surface-high: #e1e6ed; --line: #cbd3dd; --line-soft: rgba(23,32,43,.09);
+    --text: #17202b; --muted: #5c6a7a; --faint: #7d8a99;
+    --primary: #2563eb; --primary-strong: #1d4ed8; --primary-soft: #dbeafe;
+    --success: #0f6b4d; --success-bg: #d5f3e4;
+    --warning: #8a5a00; --warning-bg: #ffe7be;
+    --info: #1d5fa8; --info-bg: #dbeafe;
+    --danger: #b91c1c;
+    --shadow: 0 12px 32px rgba(23,32,43,.12);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; overflow-x: hidden; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--font); font-size: 14px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select { font: inherit; }
+  button { cursor: pointer; }
+  .mono { font-family: var(--mono); }
+
+  .demo-bar {
+    height: 38px; display: flex; align-items: center; gap: var(--space-3);
+    padding: 0 var(--space-4); background: #070a0e; color: var(--faint);
+    border-bottom: 1px solid rgba(255,255,255,.07); font-size: 11px;
+  }
+  html[data-theme="light"] .demo-bar { background: #eef1f5; border-bottom-color: var(--line); color: var(--muted); }
+  .demo-bar strong { color: var(--muted); font-weight: 600; }
+  .demo-bar .spacer { flex: 1; }
+  .demo-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+  .demo-toggle button { border: 0; background: transparent; color: var(--muted); padding: 4px 10px; font-size: 11px; }
+  .demo-toggle button + button { border-left: 1px solid var(--line); }
+  .demo-toggle button[aria-pressed="true"] { background: var(--surface-high); color: var(--text); }
+
+  .app { height: calc(100vh - 38px); display: flex; overflow: hidden; }
+  .rail {
+    width: 216px; flex: 0 0 216px; background: var(--surface); border-right: 1px solid var(--line-soft);
+    padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-4); overflow: auto;
+  }
+  .brand { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2) var(--space-3); font-weight: 600; font-size: 14px; }
+  .brand-mark { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(145deg,#5aa2ff,#2563eb); display: grid; place-items: center; color: white; font-size: 12px; font-weight: 700; }
+  .rail-label { color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; padding: 0 var(--space-2); margin-bottom: var(--space-1); }
+  .rail-group { display: flex; flex-direction: column; gap: 2px; }
+  .rail-item { display: flex; align-items: center; gap: var(--space-2); height: 32px; padding: 0 var(--space-2); border: 0; background: transparent; border-radius: var(--r-sm); color: var(--muted); font-size: 12.5px; text-align: left; }
+  .rail-item:hover { background: var(--surface-low); color: var(--text); }
+  .rail-item.active { background: var(--primary-soft); color: var(--text); box-shadow: inset 2px 0 0 var(--primary); }
+  .rail-icon { width: 16px; height: 16px; display: grid; place-items: center; opacity: .9; }
+  .rail-icon svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .topbar { height: 48px; flex: 0 0 48px; display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); background: var(--surface-mid); border-bottom: 1px solid var(--line-soft); color: var(--muted); font-size: 12px; }
+  .topbar .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+  .topbar .spacer { flex: 1; }
+  .icon-btn { width: 30px; height: 30px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--muted); display: grid; place-items: center; }
+  .icon-btn:hover { background: var(--surface-high); color: var(--text); }
+  .icon-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+
+  .page { flex: 1; min-height: 0; overflow: auto; }
+  .content { padding: var(--space-4) var(--space-4) var(--space-6); max-width: 1380px; margin: 0 auto; }
+  .page-head { display: flex; align-items: flex-start; gap: var(--space-4); }
+  .page-title { margin: 0; font-size: 22px; line-height: 1.25; font-weight: 600; }
+  .page-sub { margin: 4px 0 0; max-width: 680px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+  .page-actions { margin-left: auto; display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 500; white-space: nowrap; }
+  .btn:hover { color: var(--text); background: var(--surface-low); }
+  .btn-primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 600; }
+  .btn-primary:hover { background: var(--primary-strong); border-color: var(--primary-strong); color: var(--on-primary); }
+  .btn-secondary { border-color: var(--line); background: var(--surface-low); color: var(--text); }
+  .btn-secondary:hover { background: var(--surface-mid); }
+  .btn-quiet { color: var(--muted); padding: 0 8px; }
+  .btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+
+  .readiness { margin-top: var(--space-4); display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
+  .readiness.warn { border-color: color-mix(in srgb, var(--warning) 45%, var(--line)); }
+  .readiness .status-icon { width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%; display: grid; place-items: center; background: var(--success-bg); color: var(--success); }
+  .readiness.warn .status-icon { background: var(--warning-bg); color: var(--warning); }
+  .readiness .title { font-size: 13px; font-weight: 600; }
+  .readiness .detail { color: var(--muted); font-size: 11.5px; margin-top: 1px; }
+  .readiness .spacer { flex: 1; }
+  .readiness .checks { display: flex; align-items: center; gap: 6px; }
+  .checklist { display: none; padding: var(--space-3) var(--space-4); border-top: 1px solid var(--line-soft); background: var(--surface-low); }
+  .checklist.open { display: block; }
+  .check-row { display: flex; gap: var(--space-2); align-items: flex-start; padding: 4px 0; color: var(--muted); font-size: 11.5px; }
+  .check-row b { color: var(--text); font-weight: 500; }
+  .check-row .ok { color: var(--success); }
+  .check-row .no { color: var(--warning); }
+
+  .metrics { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-3); color: var(--muted); font-size: 11px; }
+  .metric { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--line-soft); border-radius: 999px; background: var(--surface-low); }
+  .metric b { color: var(--text); font-weight: 600; }
+  .metric .mono { color: var(--muted); }
+
+  .workspace { margin-top: var(--space-4); display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,.9fr); gap: var(--space-4); align-items: start; }
+  .panel { border: 1px solid var(--line-soft); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; }
+  .panel + .panel { margin-top: var(--space-4); }
+  .panel-head { display: flex; align-items: center; gap: var(--space-2); min-height: 38px; padding: 0 var(--space-3); border-bottom: 1px solid var(--line-soft); }
+  .panel-title { font-size: 12.5px; font-weight: 600; }
+  .panel-meta { margin-left: auto; color: var(--faint); font: 10.5px var(--mono); }
+  .panel-body { padding: var(--space-3); }
+  .panel-note { padding: 0 var(--space-3) var(--space-3); color: var(--faint); font-size: 10.5px; line-height: 1.5; }
+  .panel-note b { color: var(--muted); font-weight: 500; }
+
+  .row-item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; border-top: 1px solid var(--line-soft); }
+  .row-item:first-child { border-top: 0; }
+  .row-index { width: 22px; height: 22px; flex: 0 0 22px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--line); color: var(--muted); font: 10.5px var(--mono); }
+  .row-main { min-width: 0; flex: 1; }
+  .row-title { font-size: 12.5px; font-weight: 600; }
+  .row-sub { color: var(--faint); font-size: 10.5px; margin-top: 1px; }
+  .row-sub .active { color: var(--success); }
+  .row-controls { display: flex; align-items: center; gap: var(--space-3); }
+  .switch { position: relative; width: 30px; height: 18px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-mid); flex: 0 0 auto; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); transition: transform .15s ease; }
+  .switch.on { background: var(--primary); border-color: var(--primary); }
+  .switch.on::after { transform: translateX(12px); background: #fff; }
+  .stepper { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+  .stepper button { width: 22px; height: 24px; border: 0; background: var(--surface-low); color: var(--muted); font-size: 13px; }
+  .stepper button:hover { color: var(--text); background: var(--surface-high); }
+  .stepper span { min-width: 24px; text-align: center; font: 11px var(--mono); color: var(--text); }
+  .expand { border: 0; background: transparent; color: var(--faint); width: 22px; height: 24px; border-radius: var(--r-sm); }
+  .expand:hover { background: var(--surface-low); color: var(--text); }
+  .expand svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+  .row-detail { display: none; margin: 0 0 var(--space-2) 34px; padding: var(--space-2) var(--space-3); border-left: 2px solid var(--line); color: var(--muted); font-size: 10.5px; line-height: 1.5; }
+  .row-detail.open { display: block; }
+
+  .queue-item { display: flex; align-items: center; gap: var(--space-2); padding: 7px 0; border-top: 1px solid var(--line-soft); }
+  .queue-item:first-of-type { border-top: 0; }
+  .pet-icon { width: 26px; height: 26px; flex: 0 0 26px; border-radius: var(--r-sm); border: 1px solid var(--line); display: grid; place-items: center; color: var(--info); background: var(--info-bg); font-size: 13px; }
+  .queue-main { min-width: 0; flex: 1; }
+  .queue-name { font-size: 12px; font-weight: 500; }
+  .queue-sub { color: var(--faint); font-size: 10px; }
+  .queue-tag { font: 9.5px var(--mono); color: var(--faint); }
+  .queue-tag.next { color: var(--success); }
+  .remove { border: 0; background: transparent; color: var(--faint); width: 22px; height: 22px; border-radius: var(--r-sm); }
+  .remove:hover { color: var(--danger); background: var(--surface-low); }
+  .queue-actions { display: flex; align-items: center; gap: var(--space-2); padding-top: var(--space-2); }
+  .queue-actions .hint { color: var(--faint); font-size: 10px; }
+
+  .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; margin-left: auto; }
+  .segmented button { border: 0; background: transparent; color: var(--muted); font: 10.5px var(--mono); padding: 3px 8px; }
+  .segmented button + button { border-left: 1px solid var(--line); }
+  .segmented button[aria-pressed="true"] { background: var(--primary-soft); color: var(--text); }
+
+  .food-wrap { display: flex; gap: var(--space-4); align-items: flex-start; }
+  .food-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; width: 248px; flex: 0 0 248px; }
+  .food-cell { aspect-ratio: 1; border: 1px solid var(--line-soft); border-radius: 2px; background: var(--surface-low); position: relative; }
+  .food-cell.marked { background: var(--primary-soft); border-color: color-mix(in srgb, var(--primary) 55%, var(--line)); }
+  .food-cell.marked::after { content: ""; position: absolute; inset: 30%; border-radius: 50%; background: var(--primary); }
+  .food-cell.selected { outline: 2px solid var(--primary); outline-offset: 1px; }
+  .food-side { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: var(--space-2); }
+  .food-stat { color: var(--muted); font-size: 11px; }
+  .food-stat b { color: var(--text); }
+  .food-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+  .food-note { color: var(--faint); font-size: 10px; line-height: 1.45; }
+  .scan-result { padding: var(--space-2); border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--surface-low); color: var(--muted); font-size: 10.5px; }
+  .scan-result b { color: var(--text); font-weight: 500; }
+
+  .field-row { display: flex; align-items: flex-end; gap: var(--space-3); flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 3px; min-width: 110px; }
+  .field label { color: var(--muted); font-size: 10.5px; }
+  .field input, .field select { height: 28px; padding: 0 7px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-low); color: var(--text); outline: none; font: 11.5px var(--mono); }
+  .field input:focus, .field select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 22%, transparent); }
+  .field .help { color: var(--faint); font-size: 9.5px; }
+
+  .inline-bar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+  .inline-bar .label { color: var(--muted); font-size: 11px; }
+  .divider { height: 1px; background: var(--line-soft); margin: var(--space-3) 0; }
+
+  .collapse { border: 1px solid var(--line-soft); border-radius: var(--r-lg); background: var(--surface); margin-top: var(--space-4); overflow: hidden; }
+  .collapse-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3); width: 100%; border: 0; background: transparent; color: var(--text); text-align: left; }
+  .collapse-head:hover { background: var(--surface-low); }
+  .collapse-title { font-size: 12.5px; font-weight: 600; }
+  .collapse-meta { color: var(--faint); font: 10.5px var(--mono); margin-left: auto; }
+  .collapse-head svg { width: 14px; height: 14px; stroke: var(--muted); fill: none; stroke-width: 1.8; transition: transform .15s ease; }
+  .collapse.open .collapse-head svg { transform: rotate(180deg); }
+  .collapse-body { display: none; padding: 0 var(--space-3) var(--space-3); border-top: 1px solid var(--line-soft); }
+  .collapse.open .collapse-body { display: block; }
+  .advanced-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); padding-top: var(--space-3); }
+  .advanced-grid .field input { width: 100%; }
+  .reference-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; padding-top: var(--space-3); }
+  .reference-row { display: flex; justify-content: space-between; gap: var(--space-2); padding: 3px 0; border-top: 1px solid var(--line-soft); color: var(--muted); font-size: 10.5px; }
+  .reference-row:first-child, .reference-row:nth-child(2) { border-top: 0; }
+  .reference-row span:last-child { font: 10px var(--mono); color: var(--text); }
+
+  .toast { position: fixed; right: 24px; bottom: 24px; padding: 9px 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-high); color: var(--text); font-size: 11.5px; box-shadow: var(--shadow); opacity: 0; transform: translateY(6px); pointer-events: none; transition: .18s ease; }
+  .toast.show { opacity: 1; transform: none; }
+
+  @media (max-width: 1100px) {
+    .rail { width: 72px; flex-basis: 72px; padding: var(--space-2); }
+    .brand { justify-content: center; padding-left: 0; padding-right: 0; }
+    .brand-name, .rail-label, .rail-item span:not(.rail-icon) { display: none; }
+    .rail-group { align-items: center; }
+    .rail-item { justify-content: center; width: 40px; padding: 0; }
+    .workspace { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 760px) {
+    .app { height: auto; min-height: calc(100vh - 38px); overflow: visible; }
+    .rail { display: none; }
+    .page { overflow: visible; }
+    .content { padding: var(--space-3); max-width: 100vw; }
+    .page-head { flex-wrap: wrap; }
+    .page-actions { width: 100%; margin-left: 0; flex-wrap: wrap; }
+    .readiness { flex-wrap: wrap; }
+    .readiness .checks { width: 100%; }
+    .metrics { display: none; }
+    .row-item { flex-wrap: wrap; }
+    .row-main { flex: 1 1 140px; }
+    .row-controls { width: 100%; justify-content: flex-end; }
+    .food-wrap { flex-direction: column; }
+    .food-grid { width: 100%; flex-basis: auto; }
+    .advanced-grid, .reference-list { grid-template-columns: 1fr; }
+    .row-controls { gap: var(--space-2); }
+    .field-row .field { min-width: 0; flex: 1 1 45%; }
+    .demo-bar { height: auto; min-height: 38px; flex-wrap: wrap; padding: var(--space-2) var(--space-3); }
+    .demo-bar .spacer { display: none; }
+    .demo-bar > span:not(.spacer) { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="demo-bar">
+    <strong>Design study</strong>
+    <span>Pet Feeder · less form, more setup</span>
+    <span class="spacer"></span>
+    <span>theme</span>
+    <div class="demo-toggle" role="group" aria-label="Demo theme">
+      <button id="theme-dark" aria-pressed="true">Dark</button>
+      <button id="theme-light" aria-pressed="false">Light</button>
+    </div>
+  </div>
+
+  <div class="app">
+    <aside class="rail" aria-label="Main navigation">
+      <div class="brand"><span class="brand-mark">S</span><span class="brand-name">Seal Tools</span></div>
+      <div class="rail-group">
+        <div class="rail-label">Run</div>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span><span>Cards</span></button>
+      </div>
+      <div class="rail-group">
+        <div class="rail-label">Tools</div>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg></span><span>Skill Spammer</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/><circle cx="12" cy="12" r="8"/></svg></span><span>Magic Tuner</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="m12 3 2.4 6.2L21 12l-6.6 2.8L12 21l-2.4-6.2L3 12z"/></svg></span><span>Gem Composer</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="M6 6h15l-2 9H8z"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/><path d="M6 6 5 3H2"/></svg></span><span>Buy</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h12"/></svg></span><span>Sell</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="M8 6h13v4H8zM8 14h13v4H8z"/><path d="M3 6h.01M3 14h.01M3 18h.01M3 10h.01"/></svg></span><span>Quest Hand-in</span></button>
+        <button class="rail-item active"><span class="rail-icon"><svg viewBox="0 0 24 24"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="7" r="3"/><path d="M4 20c0-3 2-5 5-5s5 2 5 5M14 20c0-2 1-3 3-3s3 1 3 3"/></svg></span><span>Pet Feeder</span></button>
+      </div>
+      <div class="rail-group">
+        <div class="rail-label">System</div>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M4 9h16"/></svg></span><span>Attributes</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="m7 8 5-4 5 4v8l-5 4-5-4z"/><path d="M12 4v16"/></svg></span><span>Arduino</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></span><span>Hotkeys</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.3 1a7 7 0 0 0-1.7-1L14.5 3h-5l-.4 2.1a7 7 0 0 0-1.7 1l-2.3-1-2 3.4L5.1 11a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 1.7 1l.4 2.1h5l.4-2.1a7 7 0 0 0 1.7-1l2.3 1 2-3.4-2-1.5c.1-.3.1-.7.1-1z"/></svg></span><span>Setup</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></span><span>Calibrate</span></button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <button class="icon-btn" title="Hide sidebar"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M9 4v16"/></svg></button>
+        <span class="dot"></span>
+        <span>core ready · rev 12 · TW_LIVE</span>
+        <span class="spacer"></span>
+        <button class="icon-btn" title="Appearance"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+        <button class="icon-btn" title="Logs"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
+      </div>
+
+      <div class="page">
+        <div class="content">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Pet Feeder</h1>
+              <p class="page-sub">Rows, queue, food plan and run behaviour. Calibrated marks are read-only here — fix those in Calibrate.</p>
+            </div>
+            <div class="page-actions">
+              <button class="btn btn-quiet"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M8 3v4M16 3v4M4 10h16"/></svg>Open Calibrate</button>
+              <button class="btn btn-quiet" id="revert">Revert</button>
+              <button class="btn btn-primary" id="save">Save setup</button>
+            </div>
+          </div>
+
+          <section class="readiness warn" id="readiness">
+            <span class="status-icon">!</span>
+            <div>
+              <div class="title" id="ready-title">1 check needs attention</div>
+              <div class="detail" id="ready-detail">Page 2 has no food marks · rows and queue are ready</div>
+            </div>
+            <span class="spacer"></span>
+            <div class="checks">
+              <button class="btn btn-secondary" id="checks-toggle">Show checks</button>
+              <button class="btn btn-quiet" id="refresh">Refresh</button>
+            </div>
+          </section>
+          <div class="checklist" id="checklist">
+            <div class="check-row"><span class="ok">✓</span><span><b>Calibration</b> — bag grid, row rects and icon crops present.</span></div>
+            <div class="check-row"><span class="ok">✓</span><span><b>Boarding session</b> — rows and return slot configured.</span></div>
+            <div class="check-row"><span class="no">!</span><span><b>Food plan</b> — page 2 is not marked yet. <b>Scan or mark it before a run.</b></span></div>
+            <div class="check-row"><span class="ok">✓</span><span><b>Input</b> — board and game window ready.</span></div>
+          </div>
+          <div class="metrics">
+            <span class="metric"><b>3</b> rows</span>
+            <span class="metric"><b>4</b> queued</span>
+            <span class="metric"><b>12</b> / 64 food cells</span>
+            <span class="metric">next: <b>Luna</b></span>
+          </div>
+
+          <div class="workspace">
+            <div>
+              <section class="panel">
+                <div class="panel-head"><span class="panel-title">Boarding rows</span><span class="panel-meta">3 rows</span></div>
+                <div class="panel-body">
+                  <div class="row-item">
+                    <span class="row-index">1</span>
+                    <div class="row-main"><div class="row-title">Row 1</div><div class="row-sub"><span class="active">Spring Bunny is boarding</span></div></div>
+                    <div class="row-controls"><span class="switch on" role="switch" aria-checked="true" tabindex="0" title="Enabled"></span><div class="stepper"><button>−</button><span>2</span><button>+</button></div><button class="expand" aria-expanded="false" title="Details"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></div>
+                  </div>
+                  <div class="row-detail">Uses the row's calibrated toggle, boarding slot and food strip. Stacks = 2.</div>
+                  <div class="row-item">
+                    <span class="row-index">2</span>
+                    <div class="row-main"><div class="row-title">Row 2</div><div class="row-sub">Empty</div></div>
+                    <div class="row-controls"><span class="switch on" role="switch" aria-checked="true" tabindex="0" title="Enabled"></span><div class="stepper"><button>−</button><span>2</span><button>+</button></div><button class="expand" aria-expanded="false" title="Details"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></div>
+                  </div>
+                  <div class="row-item">
+                    <span class="row-index">3</span>
+                    <div class="row-main"><div class="row-title">Row 3</div><div class="row-sub">Empty</div></div>
+                    <div class="row-controls"><span class="switch" role="switch" aria-checked="false" tabindex="0" title="Disabled"></span><div class="stepper"><button>−</button><span>1</span><button>+</button></div><button class="expand" aria-expanded="false" title="Details"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></div>
+                  </div>
+                </div>
+                <div class="panel-note"><b>Boarding writes immediately.</b> Enabled and stacks save with the tab's Save. Rows come from Calibrate and cannot be added here.</div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-head"><span class="panel-title">Queue</span><span class="panel-meta">4 pets · next Luna</span></div>
+                <div class="panel-body">
+                  <div class="queue-item"><span class="pet-icon">🐾</span><div class="queue-main"><div class="queue-name">Luna</div><div class="queue-sub">Cat · icon captured</div></div><span class="queue-tag next">next</span><button class="remove" title="Remove">×</button></div>
+                  <div class="queue-item"><span class="pet-icon">🐾</span><div class="queue-main"><div class="queue-name">Mochi</div><div class="queue-sub">Rabbit · icon captured</div></div><span class="queue-tag">waiting</span><button class="remove" title="Remove">×</button></div>
+                  <div class="queue-item"><span class="pet-icon">🐾</span><div class="queue-main"><div class="queue-name">Pico</div><div class="queue-sub">Bird · icon captured</div></div><span class="queue-tag">waiting</span><button class="remove" title="Remove">×</button></div>
+                  <div class="queue-item"><span class="pet-icon">🐾</span><div class="queue-main"><div class="queue-name">Nori</div><div class="queue-sub">Cat · icon captured</div></div><span class="queue-tag">waiting</span><button class="remove" title="Remove">×</button></div>
+                  <div class="queue-actions"><button class="btn btn-secondary" id="capture-icon">Capture pet icon</button><span class="hint">one bag cell becomes the identity</span></div>
+                </div>
+              </section>
+            </div>
+
+            <div>
+              <section class="panel">
+                <div class="panel-head"><span class="panel-title">Food plan</span><span class="segmented" role="group" aria-label="Bag page"><button aria-pressed="true">ITEM 1</button><button aria-pressed="false">ITEM 2</button><button aria-pressed="false">ITEM 3</button></span></div>
+                <div class="panel-body">
+                  <div class="food-wrap">
+                    <div class="food-grid" id="food-grid"></div>
+                    <div class="food-side">
+                      <div class="food-stat"><b>12</b> marked on this page · <b>0</b> used</div>
+                      <div class="food-actions"><button class="btn btn-secondary" id="scan">Scan bag</button><button class="btn btn-quiet" id="clear">Clear page</button></div>
+                      <div class="food-note">Scan is read-only. Apply only after the requested page and report look right.</div>
+                      <div class="scan-result" id="scan-result"><b>Not scanned yet.</b> Put the bag on the chosen page, then Scan.</div>
+                    </div>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="inline-bar"><span class="label">Return slot</span><label class="field" style="min-width:90px"><span>Page</span><input value="2"></label><label class="field" style="min-width:90px"><span>Cell</span><input value="14"></label><span class="hint" style="color:var(--faint);font-size:10px">both values save together</span></div>
+                </div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-head"><span class="panel-title">Run behaviour</span><span class="panel-meta">2 settings</span></div>
+                <div class="panel-body">
+                  <div class="field-row">
+                    <label class="field"><span>Food load mode</span><select><option>right_click</option><option>drag</option></select></label>
+                    <label class="field" style="justify-content:flex-end"><span>Reload on start</span><span class="switch on" role="switch" aria-checked="true" tabindex="0" style="margin-top:4px"></span></label>
+                  </div>
+                  <div class="food-note" style="margin-top:8px">right_click lets the game choose the box; drag names it and needs the row food strip.</div>
+                </div>
+              </section>
+
+              <button class="collapse" id="advanced" style="margin-top:16px">
+                <div class="collapse-head"><span class="collapse-title">Timing & thresholds</span><span class="collapse-meta">6 settings</span><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+                <div class="collapse-body">
+                  <div class="advanced-grid">
+                    <label class="field"><span>Action wait (ms)</span><input value="1200"><span class="help">core default 1200</span></label>
+                    <label class="field"><span>Wait after empty (min)</span><input value="5"><span class="help">core default 5</span></label>
+                    <label class="field"><span>Count read · left fraction</span><input value="0.40"><span class="help">0–1</span></label>
+                    <label class="field"><span>Count read · min score</span><input value="0.75"><span class="help">0–1</span></label>
+                    <label class="field"><span>Items per minute</span><input value="18"><span class="help">portable fallback rate</span></label>
+                    <label class="field"><span>Occupied above</span><input value="2"><span class="help">portable</span></label>
+                  </div>
+                </div>
+              </button>
+
+              <button class="collapse" id="reference">
+                <div class="collapse-head"><span class="collapse-title">Calibrated marks & crops</span><span class="collapse-meta">7 marks · read-only</span><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+                <div class="collapse-body">
+                  <div class="reference-list">
+                    <div class="reference-row"><span>Menu point</span><span class="mono">2310 · 760</span></div>
+                    <div class="reference-row"><span>Feed icon</span><span class="mono">2310 · 840</span></div>
+                    <div class="reference-row"><span>Boarding X</span><span class="mono">2010 · 560</span></div>
+                    <div class="reference-row"><span>Bag grid</span><span class="mono">120 · 1000 · 640×640</span></div>
+                    <div class="reference-row"><span>Bag slot</span><span class="mono">120 · 1000 · 80×80</span></div>
+                    <div class="reference-row"><span>Page tabs</span><span class="mono">3 points</span></div>
+                    <div class="reference-row"><span>MAX button</span><span class="mono">2240 · 780</span></div>
+                  </div>
+                  <div style="padding-top:12px"><button class="btn btn-secondary">Open Calibrate</button></div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const $$ = (s) => [...document.querySelectorAll(s)];
+    let toastTimer;
+
+    // The study's URL hash lets the screenshot pass open the light theme directly.
+    if (location.hash === '#light') {
+      document.documentElement.dataset.theme = 'light';
+      $('#theme-light')?.setAttribute('aria-pressed', 'true');
+      $('#theme-dark')?.setAttribute('aria-pressed', 'false');
+    }
+
+    function toast(message) {
+      const el = $('#toast');
+      el.textContent = message;
+      el.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+    }
+
+    // Demo theme state mirrors the real Setup > Appearance choice.
+    $('#theme-dark').addEventListener('click', () => {
+      document.documentElement.dataset.theme = 'dark';
+      $('#theme-dark').setAttribute('aria-pressed', 'true');
+      $('#theme-light').setAttribute('aria-pressed', 'false');
+    });
+    $('#theme-light').addEventListener('click', () => {
+      document.documentElement.dataset.theme = 'light';
+      $('#theme-light').setAttribute('aria-pressed', 'true');
+      $('#theme-dark').setAttribute('aria-pressed', 'false');
+    });
+
+    // Readiness checklist disclosure.
+    $('#checks-toggle').addEventListener('click', () => {
+      $('#checklist').classList.toggle('open');
+      const open = $('#checklist').classList.contains('open');
+      $('#checks-toggle').textContent = open ? 'Hide checks' : '2 checks';
+    });
+
+    // Keep the primary action in the header; Revert/Save are demo affordances.
+    $('#save').addEventListener('click', () => toast('Design demo: Save setup writes rows, queue, food plan, return slot and run behaviour together.'));
+    $('#revert').addEventListener('click', () => toast('Design demo: Revert restores the saved Pet setup.'));
+    $('#refresh').addEventListener('click', () => toast('Design demo: Refresh re-reads the core preflight.'));
+
+    // Row switches and the detail disclosure.
+    $$('.switch').forEach((el) => {
+      el.addEventListener('click', () => {
+        const on = el.classList.toggle('on');
+        el.setAttribute('aria-checked', String(on));
+      });
+    });
+    $$('.expand').forEach((button) => {
+      button.addEventListener('click', () => {
+        const detail = button.closest('.row-item').nextElementSibling;
+        if (!detail || !detail.classList.contains('row-detail')) return;
+        detail.classList.toggle('open');
+        button.setAttribute('aria-expanded', String(detail.classList.contains('open')));
+      });
+    });
+
+    // Queue remove.
+    $$('.remove').forEach((button) => button.addEventListener('click', () => {
+      button.closest('.queue-item').remove();
+      toast('Design demo: the pet is removed from the next run queue.');
+    }));
+    $('#capture-icon').addEventListener('click', () => toast('Design demo: capture one bag cell as the pet icon, then review before Save.'));
+    $('#clear').addEventListener('click', () => toast('Design demo: clear the marks on this page; Save is required to write.'));
+
+    // Bag grid: 12 marked cells on ITEM 1; pages switch the representative state.
+    const marked = new Set([0, 2, 4, 9, 13, 16, 18, 21, 32, 34, 41, 45]);
+    const grid = $('#food-grid');
+    for (let i = 0; i < 64; i++) {
+      const cell = document.createElement('span');
+      cell.className = 'food-cell';
+      cell.title = 'Cell ' + i;
+      grid.appendChild(cell);
+    }
+    function renderPage(page) {
+      $$('.food-cell').forEach((cell, i) => {
+        const markedHere = page === 0 ? marked.has(i) : page === 1 ? new Set([3, 7, 10, 11, 27, 29]).has(i) : new Set([1, 6, 20, 22, 43]).has(i);
+        cell.classList.toggle('marked', markedHere);
+        cell.classList.toggle('selected', page === 0 && i === 13);
+      });
+      $$('.segmented button').forEach((b, i) => b.setAttribute('aria-pressed', String(i === page)));
+      const count = page === 0 ? 12 : page === 1 ? 6 : 5;
+      $('.food-stat').innerHTML = `<b>${count}</b> marked on this page · <b>0</b> used`;
+    }
+    $$('.segmented button').forEach((button, index) => button.addEventListener('click', () => renderPage(index)));
+    renderPage(0);
+
+    $('#scan').addEventListener('click', () => {
+      $('#scan-result').innerHTML = '<b>Scanned ITEM 2:</b> 6 food cells found. Review before applying.';
+      toast('Design demo: one hidden scan per page; applying is a separate confirmed write.');
+    });
+
+    // Collapsible advanced/reference.
+    $('#advanced').addEventListener('click', (event) => {
+      if (event.target.closest('.collapse-body')) return;
+      $('#advanced').classList.toggle('open');
+    });
+    $('#reference').addEventListener('click', (event) => {
+      if (event.target.closest('.collapse-body')) return;
+      $('#reference').classList.toggle('open');
+    });
+  </script>
+</body>
+</html>

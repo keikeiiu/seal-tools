@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seal Tools v3 — quick dock size design</title>
+<style>
+  :root{
+    --bg:#0b0d12; --bg-soft:#11141b; --panel:#171a22; --panel-2:#1d212a;
+    --border:#2b303b; --border-soft:rgba(255,255,255,.06);
+    --on:#e7eaf1; --on-var:#b9c0cc; --faint:#7f8998;
+    --primary:#adc6ff; --on-primary:#0f2a55; --primary-container:#243a63; --on-primary-container:#dbe6ff;
+    --success:#7ee2b8; --success-container:#10382b; --on-success-container:#b9f5da;
+    --warning:#f2cc7b; --warning-container:#3e2f10; --on-warning-container:#ffe2a8;
+    --error:#ffb4ab; --error-container:#5c1412; --on-error-container:#ffdad6;
+    --mono:"Cascadia Mono","Consolas",ui-monospace,monospace;
+    --sans:"Segoe UI Variable Text","Segoe UI",Roboto,system-ui,sans-serif;
+    --radius-s:6px; --radius-m:10px; --radius-l:14px;
+  }
+  body.light{
+    --bg:#f4f6fa; --bg-soft:#eef1f7; --panel:#ffffff; --panel-2:#f6f8fc;
+    --border:#d5dae3; --border-soft:rgba(15,23,42,.07);
+    --on:#16202e; --on-var:#465163; --faint:#728094;
+    --primary:#245fc4; --on-primary:#ffffff; --primary-container:#dbe7ff; --on-primary-container:#0c2d63;
+    --success:#0f6b4a; --success-container:#c8f2df; --on-success-container:#002116;
+    --warning:#7a4d00; --warning-container:#ffe8b3; --on-warning-container:#2b1a00;
+    --error:#a12a22; --error-container:#ffdad6; --on-error-container:#410002;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg); color:var(--on); font:400 14px/1.5 var(--sans);
+    -webkit-font-smoothing:antialiased;
+  }
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+  .page{max-width:1320px;margin:0 auto;padding:34px 34px 80px}
+  .topline{display:flex;align-items:center;gap:12px;margin-bottom:26px}
+  .brand{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--on-var);font-weight:600}
+  .brand .logo{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#8ab4ff,#4d7bd1);
+    display:grid;place-items:center;color:#0b1733;font-size:12px;font-weight:800}
+  .topline .sp{flex:1}
+  .control{display:inline-flex;align-items:center;gap:7px;height:31px;padding:0 11px;border:1px solid var(--border);
+    border-radius:8px;color:var(--on-var);font-size:12px;background:var(--bg-soft)}
+  .control:hover{color:var(--on);border-color:var(--faint)}
+  .control.on{background:var(--primary-container);color:var(--on-primary-container);border-color:transparent}
+  .control svg{width:14px;height:14px;fill:currentColor}
+
+  .kicker{display:inline-flex;align-items:center;gap:8px;font-size:10.5px;font-weight:700;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--primary);border:1px solid var(--border);background:var(--bg-soft);
+    border-radius:999px;padding:5px 10px;margin-bottom:16px}
+  .kicker .dot{width:6px;height:6px;border-radius:50%;background:var(--primary)}
+  .hero{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:44px;align-items:end;margin-bottom:26px}
+  h1{font-size:clamp(30px,3.6vw,46px);line-height:1.06;letter-spacing:-.025em;font-weight:680}
+  h1 em{font-style:normal;color:var(--primary)}
+  .lead{margin-top:15px;max-width:66ch;color:var(--on-var);font-size:15px;line-height:1.65}
+  .hero-side{border-left:1px solid var(--border);padding-left:26px;align-self:stretch;display:flex;flex-direction:column;justify-content:flex-end;gap:9px}
+  .hero-side .h{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);font-weight:700}
+  .hero-side .row{display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:12.5px;color:var(--on-var)}
+  .hero-side .row b{color:var(--on);font-weight:600;font-family:var(--mono);font-size:11.5px}
+  .callout{display:flex;gap:12px;padding:13px 15px;border:1px solid var(--border);border-radius:10px;
+    background:var(--bg-soft);color:var(--on-var);font-size:13px;line-height:1.55;margin-bottom:36px}
+  .callout svg{width:17px;height:17px;fill:var(--warning);flex:0 0 17px;margin-top:1px}
+  .callout b{color:var(--on);font-weight:600}
+
+  .sec-head{display:flex;align-items:flex-end;gap:14px;margin:44px 0 16px}
+  .sec-head .num{font:600 11px var(--mono);color:var(--primary);border:1px solid var(--border);border-radius:5px;padding:2px 6px;align-self:flex-start;margin-top:3px}
+  .sec-head h2{font-size:20px;line-height:1.2;letter-spacing:-.01em;font-weight:650}
+  .sec-head .note{margin-left:auto;color:var(--faint);font-size:12px;max-width:48ch;text-align:right}
+  .section{margin-bottom:8px}
+
+  /* ── docks ─────────────────────────────────────────────────── */
+  .dock{
+    --w:340px; --h:460px;
+    --pad-x:8px; --pad-y:4px; --gap:6px;
+    --row:44px; --icon:30px; --icon-size:16px;
+    --title:13px; --summary:10.5px;
+    --btn-w:64px; --btn-h:28px; --btn-font:12px; --menu:28px;
+    --head-h:36px; --head-label:9.5px; --head-icon:26px; --head-fs:15px;
+    --foot-h:32px; --foot-font:12px; --radius:7px; --line:1.2;
+    width:var(--w);height:var(--h);background:linear-gradient(180deg,var(--panel-2),var(--panel));
+    border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;
+    color:var(--on);box-shadow:0 18px 50px rgba(0,0,0,.28);
+  }
+  body.light .dock{box-shadow:0 18px 40px rgba(20,32,52,.10)}
+  .dock.compact{
+    --w:306px;--h:414px;--pad-x:6px;--pad-y:3px;--gap:5px;
+    --row:40px;--icon:28px;--icon-size:15px;--title:12.5px;--summary:10px;
+    --btn-w:58px;--btn-h:26px;--btn-font:11.5px;--menu:26px;
+    --head-h:32px;--head-label:9px;--head-icon:24px;--head-fs:14px;
+    --foot-h:30px;--foot-font:12px;--radius:6px;
+  }
+  .dock.large{
+    --w:425px;--h:575px;--pad-x:10px;--pad-y:6px;--gap:8px;
+    --row:54px;--icon:36px;--icon-size:19px;--title:15px;--summary:11.5px;
+    --btn-w:76px;--btn-h:34px;--btn-font:13.5px;--menu:32px;
+    --head-h:44px;--head-label:11px;--head-icon:30px;--head-fs:19px;
+    --foot-h:40px;--foot-font:13.5px;--radius:8px;
+  }
+  .dock-head{display:flex;align-items:center;gap:calc(var(--gap) - 1px);min-height:var(--head-h);
+    padding:0 calc(var(--pad-x) + 1px);border-bottom:1px solid var(--border)}
+  .dock-head .lbl{font-size:var(--head-label);font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--on-var);white-space:nowrap}
+  .dock-head .sp{flex:1}
+  .hbtn{width:var(--head-icon);height:var(--head-icon);border-radius:6px;display:grid;place-items:center;color:var(--faint)}
+  .hbtn:hover{background:var(--bg-soft);color:var(--on)}
+  .hbtn svg{width:var(--head-fs);height:var(--head-fs);fill:currentColor}
+  .hbtn.accent{color:var(--primary)}
+  .run-chip{display:inline-flex;align-items:center;gap:5px;height:calc(var(--summary) + 7px);padding:0 6px;
+    border-radius:999px;background:var(--success-container);color:var(--on-success-container);
+    font-size:calc(var(--summary) - .5px);font-weight:700;white-space:nowrap}
+  .run-chip i{width:5px;height:5px;border-radius:50%;background:currentColor}
+  .dock-body{flex:1;min-height:0;overflow:hidden;padding:calc(var(--pad-y) - 1px) 0}
+  .tile{display:grid;grid-template-columns:var(--icon) minmax(0,1fr) var(--btn-w) var(--menu);
+    gap:var(--gap);align-items:center;min-height:var(--row);padding:var(--pad-y) var(--pad-x);position:relative}
+  .tile + .tile::before{content:"";position:absolute;left:var(--pad-x);right:var(--pad-x);top:0;border-top:1px solid var(--border-soft)}
+  .tile-icon{width:var(--icon);height:var(--icon);border-radius:var(--radius);display:grid;place-items:center;
+    background:var(--bg-soft);color:var(--on-var);flex:0 0 auto}
+  .tile-icon svg{width:var(--icon-size);height:var(--icon-size);fill:currentColor}
+  .tile.running .tile-icon{background:var(--primary-container);color:var(--on-primary-container)}
+  .tile-main{min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px}
+  .tile-title{display:flex;align-items:center;gap:6px;min-width:0;font-size:var(--title);line-height:var(--line);font-weight:650;letter-spacing:-.005em}
+  .tile-title .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .state{display:none;align-items:center;height:calc(var(--summary) + 5px);padding:0 5px;border-radius:999px;
+    background:var(--success-container);color:var(--on-success-container);font-size:calc(var(--summary) - 1px);font-weight:700;white-space:nowrap}
+  .tile.running .state{display:inline-flex}
+  .tile-summary{font-size:var(--summary);line-height:1.25;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .start{width:var(--btn-w);height:var(--btn-h);border-radius:var(--radius);display:grid;place-items:center;
+    background:var(--primary-container);color:var(--on-primary-container);font-size:var(--btn-font);font-weight:700;
+    line-height:1;white-space:nowrap;border:1px solid transparent}
+  .start:hover{filter:brightness(1.08)}
+  .tile.running .start{background:var(--error-container);color:var(--on-error-container)}
+  .more{width:var(--menu);height:var(--btn-h);border-radius:var(--radius);display:grid;place-items:center;color:var(--faint)}
+  .more:hover{background:var(--bg-soft);color:var(--on)}
+  .more svg{width:calc(var(--icon-size) + 2px);height:calc(var(--icon-size) + 2px);fill:currentColor}
+  .sectionline{display:flex;align-items:center;gap:6px;padding:calc(var(--pad-y) + 3px) var(--pad-x) 2px;
+    font-size:calc(var(--summary) - 1px);letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-weight:700}
+  .sectionline .sp{flex:1}
+  .sectionline span:last-child{letter-spacing:.04em;font-weight:600}
+  .tile.pet{grid-template-columns:var(--icon) minmax(0,1fr) var(--btn-w)}
+  .open{width:var(--btn-w);height:var(--btn-h);border-radius:var(--radius);border:1px solid var(--border);
+    display:grid;place-items:center;color:var(--on-var);font-size:calc(var(--btn-font) - .5px);font-weight:650;line-height:1;white-space:nowrap}
+  .open:hover{border-color:var(--faint);color:var(--on)}
+  .dock-foot{margin-top:auto;border-top:1px solid var(--border);padding:calc(var(--pad-y) + 3px) var(--pad-x);
+    display:flex;align-items:center;gap:var(--gap);min-height:var(--foot-h)}
+  .foot-btn{width:100%;height:calc(var(--foot-h) - 8px);border-radius:var(--radius);border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center;gap:6px;color:var(--on-var);font-size:var(--foot-font);font-weight:600}
+  .foot-btn:hover{border-color:var(--faint);color:var(--on)}
+  .foot-btn svg{width:calc(var(--foot-font) + 2px);height:calc(var(--foot-font) + 2px);fill:currentColor}
+  .scroll-fade{position:relative;height:10px;margin-top:-10px;pointer-events:none;
+    background:linear-gradient(to bottom,transparent,var(--panel))}
+
+  /* ── comparison and stage ──────────────────────────────────── */
+  .compare{display:grid;grid-template-columns:repeat(2,425px);gap:40px;justify-content:center;align-items:start}
+  .compare-card{display:flex;flex-direction:column;align-items:center;gap:10px}
+  .compare-head{width:100%;display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700}
+  .tag{padding:3px 7px;border-radius:5px;border:1px solid var(--border);font-size:9.5px;letter-spacing:.06em}
+  .tag.current{color:var(--warning);border-color:color-mix(in srgb,var(--warning) 45%,transparent);background:var(--warning-container)}
+  .tag.proposed{color:var(--primary);border-color:color-mix(in srgb,var(--primary) 45%,transparent);background:var(--primary-container)}
+  .compare-head .sp{flex:1}
+  .compare-head .meta{font:10px var(--mono);color:var(--faint);text-transform:none;letter-spacing:0}
+  .compare-card .dock{flex:0 0 auto}
+  .metrics{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .metric{border:1px solid var(--border);background:var(--bg-soft);border-radius:7px;padding:6px 8px;min-width:0}
+  .metric .k{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);font-weight:700;white-space:nowrap}
+  .metric .v{font:600 11px var(--mono);color:var(--on);margin-top:2px;white-space:nowrap}
+  .metric.hot .v{color:var(--primary)}
+  .compare-note{width:100%;font-size:11.5px;color:var(--faint);line-height:1.5}
+  .compare-note b{color:var(--on-var);font-weight:600}
+  .compare-note.bad b{color:var(--warning)}
+  .compare-note.good b{color:var(--primary)}
+  .stage{display:grid;grid-template-columns:repeat(3,max-content);gap:32px;align-items:start;justify-content:center;padding:18px 0 8px}
+  .dock-col{display:flex;flex-direction:column;align-items:center;gap:10px}
+  .size-cap{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11.5px;color:var(--on-var);font-weight:600}
+  .size-cap .dims{font:10px var(--mono);color:var(--faint);font-weight:400}
+  .size-cap .factor{font:9px var(--mono);color:var(--primary)}
+  .scale-note{text-align:center;color:var(--faint);font-size:11.5px;margin-top:6px}
+
+  /* ── tables / rules ────────────────────────────────────────── */
+  .tokens{width:100%;border-collapse:collapse;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  .tokens th,.tokens td{text-align:left;padding:9px 13px;border-bottom:1px solid var(--border);font-size:12px}
+  .tokens th{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);font-weight:700;background:var(--bg-soft)}
+  .tokens th:not(:first-child),.tokens td:not(:first-child){text-align:center;font-family:var(--mono);font-size:11.5px}
+  .tokens tr:last-child td{border-bottom:0}
+  .tokens td:first-child{color:var(--on-var);font-weight:500}
+  .tokens tr.accent td{background:color-mix(in srgb,var(--primary-container) 45%,transparent);color:var(--on)}
+  .tokens tr.accent td:first-child{color:var(--on);font-weight:650}
+  .tokens tr.accent td:not(:first-child){color:var(--primary);font-weight:700}
+  .tokens .sub{display:block;font-size:9.5px;color:var(--faint);font-weight:400;font-family:var(--sans);margin-top:1px}
+
+  .rules{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}
+  .rule{border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:14px 16px}
+  .rule .n{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;background:var(--bg-soft);
+    border:1px solid var(--border);font:700 10px var(--mono);color:var(--primary);margin-bottom:8px}
+  .rule b{display:block;font-size:13px;margin-bottom:4px}
+  .rule p{font-size:12px;line-height:1.55;color:var(--on-var)}
+  .rule code{font:11px var(--mono);color:var(--primary);background:var(--bg-soft);border:1px solid var(--border);border-radius:4px;padding:1px 4px}
+
+  .code{margin-top:14px;background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:15px 17px;
+    font:11.5px/1.75 var(--mono);color:var(--on-var);overflow:auto}
+  .code .c{color:var(--faint)} .code .p{color:var(--primary)} .code .s{color:var(--success)}
+  .code .k{color:var(--warning)}
+
+  .footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--border);display:flex;align-items:center;gap:12px;
+    color:var(--faint);font-size:11.5px}
+  .footer .sp{flex:1}
+  .footer b{color:var(--on-var);font-weight:600}
+
+
+  .setup-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 14px;border:1px solid var(--border);
+    border-radius:10px;background:var(--bg-soft);margin:0 0 16px}
+  .setup-row .ttl{font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+  .segmented{display:inline-flex;padding:3px;background:var(--bg);border:1px solid var(--border);border-radius:8px;gap:2px}
+  .seg{font-size:11.5px;font-weight:650;color:var(--on-var);padding:4px 10px;border-radius:5px}
+  .seg:hover{color:var(--on)}
+  .seg.active{background:var(--primary-container);color:var(--on-primary-container)}
+  .size-hint{font:10.5px var(--mono);color:var(--faint)}
+  .dock-col{position:relative}
+  .dock-col.focus .dock{outline:2px solid var(--primary);outline-offset:5px}
+  #selftest{position:fixed;left:12px;bottom:12px;z-index:200;background:var(--bg);border:1px solid var(--border);
+    border-radius:8px;padding:10px 12px;font:11px/1.5 var(--mono);color:var(--on-var);white-space:pre;
+    box-shadow:0 10px 30px rgba(0,0,0,.35)}
+
+  /* ── guides ────────────────────────────────────────────────── */
+  .guides .dock .tile{outline:1px dashed rgba(173,198,255,.22);outline-offset:-1px}
+  .guides .dock .start{box-shadow:0 0 0 2px rgba(126,226,184,.6)}
+  .guides .dock .tile-icon{box-shadow:0 0 0 1px rgba(126,226,184,.45)}
+  .guides .dock .head-row{outline:1px dashed rgba(255,180,171,.35);outline-offset:-1px}
+
+  @media (max-width:1120px){
+    .hero{grid-template-columns:minmax(0,1fr)}
+    .hero-side{border-left:0;border-top:1px solid var(--border);padding:18px 0 0}
+    .compare{grid-template-columns:1fr;justify-items:center}
+    .stage{grid-template-columns:repeat(3,max-content);gap:18px;overflow:auto;justify-content:start;padding-left:4px}
+    .dock{transform-origin:top left}
+  }
+  @media (max-width:820px){
+    .page{padding:22px 16px 60px}
+    .stage{grid-template-columns:1fr;justify-items:center}
+    .rules{grid-template-columns:1fr}
+    .dock.compact,.dock.standard,.dock.large{zoom:.72}
+    .compare .dock{transform:scale(.72);transform-origin:top center;margin-bottom:-150px}
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M11 21h-1l1-7H7.5c-.88 0-.33-.75-.31-.78C8.48 10.94 10.42 7.54 13.01 3h1l-1 7h3.51c.4 0 .62.19.4.66C12.97 17.55 11 21 11 21z"/></symbol>
+  <symbol id="i-tune" viewBox="0 0 24 24"><path d="M3 7h11a3 3 0 1 0 0 2H3V7Zm0 8h5a3 3 0 1 0 0 2H3v-2Zm18 2h-5v-2h5v2Zm0-8h-9V7h9v2Z"/></symbol>
+  <symbol id="i-gem" viewBox="0 0 24 24"><path d="M12 2l4 6h-8l4-6zm-8 8h16l-8 12L4 10z"/></symbol>
+  <symbol id="i-cart" viewBox="0 0 24 24"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12L8.1 13h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1z"/></symbol>
+  <symbol id="i-quest" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></symbol>
+  <symbol id="i-space" viewBox="0 0 24 24"><path d="M20 5H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2ZM8 8h2v2H8V8Zm0 3h2v2H8v-2Zm-3-3h2v2H5V8Zm0 3h2v2H5v-2Zm6 0h2v2h-2v-2Zm3 0h2v2h-2v-2Zm3 0h2v2h-2v-2ZM8 17v-2h8v2H8Z"/></symbol>
+  <symbol id="i-paw" viewBox="0 0 24 24"><circle cx="6.5" cy="14.5" r="2.1"/><circle cx="12" cy="9" r="2.1"/><circle cx="17.5" cy="14.5" r="2.1"/><path d="M12 15.5c2.2 0 4.2 1.5 4.2 3.2 0 1.1-.9 1.8-2 1.8h-4.4c-1.1 0-2-.7-2-1.8 0-1.7 2-3.2 4.2-3.2z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><path d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><path d="M3 3h8v8H3V3Zm10 0h8v8h-8V3ZM3 13h8v8H3v-8Zm10 0h8v8h-8v-8Z"/></symbol>
+  <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M4 12h16v2H4v-2Zm4 7h8v2H8v-2Zm-4-12h16v2H4V7Zm6-5h4v4h-4V2Z"/></symbol>
+  <symbol id="i-full" viewBox="0 0 24 24"><path d="M5 6h4V4H5c-1.1 0-2 .9-2 2v4h2V6zm14 0v4h2V6c0-1.1-.9-2-2-2h-4v2h4zM5 14H3v4c0 1.1.9 2 2 2h4v-2H5v-4zm14 4h-4v2h4c1.1 0 2-.9 2-2v-4h-2v4z"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 2 1.5 21h21L12 2Zm1 15h-2v2h2v-2Zm0-7h-2v5h2v-5Z"/></symbol>
+  <symbol id="i-open" viewBox="0 0 24 24"><path d="M14 3h7v7h-2V6.41l-8.29 8.3-1.42-1.42 8.3-8.29H14V3ZM5 5h6v2H7v10h10v-4h2v6H5V5Z"/></symbol>
+</defs></svg>
+
+<div class="page">
+  <div class="topline">
+    <span class="brand"><span class="logo">S</span>Seal Tools v3</span>
+    <span class="badge" style="border:1px solid var(--border);border-radius:999px;padding:3px 9px;font-size:10.5px;color:var(--faint)">Design study</span>
+    <span class="sp"></span>
+    <button class="control" id="themeBtn"><svg><use href="#i-grid"/></svg><span id="themeLabel">Dark</span></button>
+    <button class="control" id="guideBtn"><svg><use href="#i-warn"/></svg>Alignment grid</button>
+  </div>
+
+  <div class="kicker"><span class="dot"></span>Quick dock · size presets</div>
+  <div class="hero">
+    <div>
+      <h1>Same dock. Three sizes.<br><em>Type that scales with it.</em></h1>
+      <p class="lead">The larger window option resized the dock, but every label, icon and Start button stayed at the
+        Standard pixel size. The result is a roomier frame with tiny controls floating in it. This study keeps the
+        same dock shape and introduces one metrics table per preset: the window and the UI scale together, while the
+        action column stays fixed so Start/Stop labels line up across every row.</p>
+    </div>
+    <div class="hero-side">
+      <div class="h">The rule</div>
+      <div class="row">Window <b>0.90 / 1.00 / 1.25×</b></div>
+      <div class="row">Type <b>0.96 / 1.00 / 1.15×</b></div>
+      <div class="row">Controls <b>0.93 / 1.00 / 1.21×</b></div>
+      <div class="row">Density <b>same tile order</b></div>
+    </div>
+  </div>
+
+  <div class="callout"><svg><use href="#i-warn"/></svg><div><b>What is actually off:</b> the window factor is applied in
+    <span class="mono" style="color:var(--primary)">DockSize.scale()</span>, but tile typography and button heights are constants.
+    A Large dock is 1.25× wider while its Start button is still 64 × 28 px with a 12 px label — so the button text reads
+    smaller than the title and sits on a different visual centre line than the row.</div></div>
+
+  <div class="section">
+    <div class="sec-head"><span class="num">01</span><h2>Large, before and after — same 425 × 575 window</h2><div class="note">Both columns are actual size. Compare the title, summary, Start label and row rhythm, not the window.</div></div>
+    <div class="compare">
+      <div class="compare-card">
+        <div class="compare-head"><span class="tag current">Current</span><span>window ×1.25</span><span class="sp"></span><span class="meta">UI ×1.00</span></div>
+        <div class="dock" style="--w:425px;--h:575px" data-current>
+          <div class="dock-head"><span class="lbl">Quick start</span><span class="sp"></span><span class="run-chip"><i></i>1 running</span><span class="hbtn"><svg><use href="#i-edit"/></svg></span><span class="hbtn"><svg><use href="#i-grid"/></svg></span><span class="hbtn"><svg><use href="#i-collapse"/></svg></span><span class="hbtn"><svg><use href="#i-full"/></svg></span></div>
+          <div class="dock-body">
+            <div class="tile running"><span class="tile-icon"><svg><use href="#i-bolt"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Skill Spammer</span><span class="state">running</span></div><div class="tile-summary">3 keys · rotation “buffs”</div></div><button class="start">Stop</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-tune"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Magic Tuner</span></div><div class="tile-summary">DG · 5 retries</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-cart"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Buy</span></div><div class="tile-summary">potion · 3 per run</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-cart"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Sell</span></div><div class="tile-summary">12 slots armed</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-quest"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Quest Hand-in</span></div><div class="tile-summary">flow “run1”</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+<div class="tile"><span class="tile-icon"><svg><use href="#i-gem"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Gem Composer</span></div><div class="tile-summary">N → G → DG</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-space"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Hold Space</span></div><div class="tile-summary">off · spacebar pickup</div></div><button class="start">On</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="sectionline"><span>Long-running</span><span class="sp"></span><span>Set up in full window</span></div>
+            <div class="tile pet"><span class="tile-icon"><svg><use href="#i-paw"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Pet Feeder</span></div><div class="tile-summary">2 rows · next reload 12 min</div></div><button class="open">Open</button></div>
+          </div>
+          <div class="dock-foot"><button class="foot-btn"><svg><use href="#i-open"/></svg>Open full window</button></div>
+        </div>
+        <div class="metrics"><div class="metric"><div class="k">Title</div><div class="v">13 px</div></div><div class="metric hot"><div class="k">Start</div><div class="v">12 / 28 px</div></div><div class="metric"><div class="k">Row</div><div class="v">44 px</div></div></div>
+        <div class="compare-note bad"><b>Result:</b> the frame grew, the controls did not. The Start label looks smaller than the tile title and the action column has no visual weight against the wider row.</div>
+      </div>
+
+      <div class="compare-card">
+        <div class="compare-head"><span class="tag proposed">Proposed</span><span>window ×1.25</span><span class="sp"></span><span class="meta">UI ×1.15</span></div>
+        <div class="dock large">
+          <div class="dock-head"><span class="lbl">Quick start</span><span class="sp"></span><span class="run-chip"><i></i>1 running</span><span class="hbtn"><svg><use href="#i-edit"/></svg></span><span class="hbtn"><svg><use href="#i-grid"/></svg></span><span class="hbtn"><svg><use href="#i-collapse"/></svg></span><span class="hbtn"><svg><use href="#i-full"/></svg></span></div>
+          <div class="dock-body">
+            <div class="tile running"><span class="tile-icon"><svg><use href="#i-bolt"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Skill Spammer</span><span class="state">running</span></div><div class="tile-summary">3 keys · rotation “buffs”</div></div><button class="start">Stop</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-tune"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Magic Tuner</span></div><div class="tile-summary">DG · 5 retries</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-cart"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Buy</span></div><div class="tile-summary">potion · 3 per run</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-cart"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Sell</span></div><div class="tile-summary">12 slots armed</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-quest"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Quest Hand-in</span></div><div class="tile-summary">flow “run1”</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+<div class="tile"><span class="tile-icon"><svg><use href="#i-gem"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Gem Composer</span></div><div class="tile-summary">N → G → DG</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-space"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Hold Space</span></div><div class="tile-summary">off · spacebar pickup</div></div><button class="start">On</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="sectionline"><span>Long-running</span><span class="sp"></span><span>Set up in full window</span></div>
+            <div class="tile pet"><span class="tile-icon"><svg><use href="#i-paw"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Pet Feeder</span></div><div class="tile-summary">2 rows · next reload 12 min</div></div><button class="open">Open</button></div>
+          </div>
+          <div class="dock-foot"><button class="foot-btn"><svg><use href="#i-open"/></svg>Open full window</button></div>
+        </div>
+        <div class="metrics"><div class="metric"><div class="k">Title</div><div class="v">15 px</div></div><div class="metric hot"><div class="k">Start</div><div class="v">13.5 / 34 px</div></div><div class="metric"><div class="k">Row</div><div class="v">54 px</div></div></div>
+        <div class="compare-note good"><b>Result:</b> the type ramp and controls grow with the window. Every Start button has the same 76 × 34 box, so its label is optically aligned with the title and every action stops at the same column edge.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="sec-head"><span class="num">02</span><h2>Compact, Standard and Large at 1:1</h2><div class="note">Bay form factor shown. Rail and island use the same three metrics tables; only the window dimensions change.</div></div>
+    <div class="setup-row"><span class="ttl">Setup → Quick dock · size</span>
+      <div class="segmented" id="sizePref"><button class="seg" data-size="compact">Compact</button><button class="seg" data-size="standard">Standard</button><button class="seg active" data-size="large">Large</button></div>
+      <span class="size-hint" id="sizeHint">Large · window 425 × 575 · UI 15 / 13.5 / 54</span></div>
+    <div class="stage">
+      <div class="dock-col" data-col="compact">
+        <div class="dock compact" data-dock>
+          <div class="dock-head"><span class="lbl">Quick start</span><span class="sp"></span><span class="hbtn"><svg><use href="#i-edit"/></svg></span><span class="hbtn"><svg><use href="#i-collapse"/></svg></span></div>
+          <div class="dock-body">
+            <div class="tile running"><span class="tile-icon"><svg><use href="#i-bolt"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Skill Spammer</span><span class="state">running</span></div><div class="tile-summary">3 keys · buffs</div></div><button class="start">Stop</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-tune"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Magic Tuner</span></div><div class="tile-summary">DG · 5 retries</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-cart"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Buy</span></div><div class="tile-summary">potion · 3 per run</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-cart"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Sell</span></div><div class="tile-summary">12 slots armed</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="sectionline"><span>Long-running</span><span class="sp"></span><span>Full window</span></div>
+            <div class="tile pet"><span class="tile-icon"><svg><use href="#i-paw"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Pet Feeder</span></div><div class="tile-summary">2 rows · next 12 min</div></div><button class="open">Open</button></div>
+          </div>
+          <div class="dock-foot"><button class="foot-btn"><svg><use href="#i-open"/></svg>Open full window</button></div>
+        </div>
+        <div class="size-cap">Compact<span class="dims">306 × 414 · window 0.90×</span><span class="factor">type 0.96×</span></div>
+      </div>
+
+      <div class="dock-col" data-col="standard">
+        <div class="dock" data-dock>
+          <div class="dock-head"><span class="lbl">Quick start</span><span class="sp"></span><span class="run-chip"><i></i>1 running</span><span class="hbtn"><svg><use href="#i-edit"/></svg></span><span class="hbtn"><svg><use href="#i-grid"/></svg></span><span class="hbtn"><svg><use href="#i-collapse"/></svg></span><span class="hbtn"><svg><use href="#i-full"/></svg></span></div>
+          <div class="dock-body">
+            <div class="tile running"><span class="tile-icon"><svg><use href="#i-bolt"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Skill Spammer</span><span class="state">running</span></div><div class="tile-summary">3 keys · rotation “buffs”</div></div><button class="start">Stop</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-tune"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Magic Tuner</span></div><div class="tile-summary">DG · 5 retries</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-cart"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Buy</span></div><div class="tile-summary">potion · 3 per run</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-cart"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Sell</span></div><div class="tile-summary">12 slots armed</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-quest"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Quest Hand-in</span></div><div class="tile-summary">flow “run1”</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+<div class="tile"><span class="tile-icon"><svg><use href="#i-gem"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Gem Composer</span></div><div class="tile-summary">N → G → DG</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="sectionline"><span>Long-running</span><span class="sp"></span><span>Set up in full window</span></div>
+            <div class="tile pet"><span class="tile-icon"><svg><use href="#i-paw"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Pet Feeder</span></div><div class="tile-summary">2 rows · next reload 12 min</div></div><button class="open">Open</button></div>
+          </div>
+          <div class="dock-foot"><button class="foot-btn"><svg><use href="#i-open"/></svg>Open full window</button></div>
+        </div>
+        <div class="size-cap">Standard<span class="dims">340 × 460 · window 1.00×</span><span class="factor">type 1.00×</span></div>
+      </div>
+
+      <div class="dock-col" data-col="large">
+        <div class="dock large" data-dock>
+          <div class="dock-head"><span class="lbl">Quick start</span><span class="sp"></span><span class="run-chip"><i></i>1 running</span><span class="hbtn"><svg><use href="#i-edit"/></svg></span><span class="hbtn"><svg><use href="#i-grid"/></svg></span><span class="hbtn"><svg><use href="#i-collapse"/></svg></span><span class="hbtn"><svg><use href="#i-full"/></svg></span></div>
+          <div class="dock-body">
+            <div class="tile running"><span class="tile-icon"><svg><use href="#i-bolt"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Skill Spammer</span><span class="state">running</span></div><div class="tile-summary">3 keys · rotation “buffs”</div></div><button class="start">Stop</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-tune"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Magic Tuner</span></div><div class="tile-summary">DG · 5 retries</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-cart"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Buy</span></div><div class="tile-summary">potion · 3 per run</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-cart"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Sell</span></div><div class="tile-summary">12 slots armed</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-quest"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Quest Hand-in</span></div><div class="tile-summary">flow “run1”</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+<div class="tile"><span class="tile-icon"><svg><use href="#i-gem"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Gem Composer</span></div><div class="tile-summary">N → G → DG</div></div><button class="start">Start</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="tile"><span class="tile-icon"><svg><use href="#i-space"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Hold Space</span></div><div class="tile-summary">off · spacebar pickup</div></div><button class="start">On</button><button class="more"><svg><use href="#i-more"/></svg></button></div>
+            <div class="sectionline"><span>Long-running</span><span class="sp"></span><span>Set up in full window</span></div>
+            <div class="tile pet"><span class="tile-icon"><svg><use href="#i-paw"/></svg></span><div class="tile-main"><div class="tile-title"><span class="nm">Pet Feeder</span></div><div class="tile-summary">2 rows · next reload 12 min</div></div><button class="open">Open</button></div>
+          </div>
+          <div class="dock-foot"><button class="foot-btn"><svg><use href="#i-open"/></svg>Open full window</button></div>
+        </div>
+        <div class="size-cap">Large<span class="dims">425 × 575 · window 1.25×</span><span class="factor">type 1.15×</span></div>
+      </div>
+    </div>
+    <div class="scale-note">Try the Start/Stop buttons, then switch appearance. The row height, icon tile and action column scale as one unit.</div>
+  </div>
+
+  <div class="section">
+    <div class="sec-head"><span class="num">03</span><h2>Token table — one row per preset</h2><div class="note">Window scaling and UI scaling are deliberately not the same number. Compact keeps text legible; Large spends the extra space on type and action targets.</div></div>
+    <table class="tokens">
+      <thead><tr><th>Metric</th><th>Compact</th><th>Standard</th><th>Large</th></tr></thead>
+      <tbody>
+        <tr><td>Window (bay)<span class="sub">rail 300×480 base; same factors</span></td><td>306 × 414</td><td>340 × 460</td><td>425 × 575</td></tr>
+        <tr><td>Header label</td><td>9 px</td><td>9.5 px</td><td>11 px</td></tr>
+        <tr><td>Tile title</td><td>12.5 px</td><td>13 px</td><td>15 px</td></tr>
+        <tr><td>Tile summary</td><td>10 px</td><td>10.5 px</td><td>11.5 px</td></tr>
+        <tr><td>Tile row min height</td><td>40 px</td><td>44 px</td><td>54 px</td></tr>
+        <tr><td>Icon tile / icon</td><td>28 / 15 px</td><td>30 / 16 px</td><td>36 / 19 px</td></tr>
+        <tr class="accent"><td>Start button<span class="sub">fixed action column</span></td><td>58 × 26 · 11.5</td><td>64 × 28 · 12</td><td>76 × 34 · 13.5</td></tr>
+        <tr><td>Options button</td><td>26 px</td><td>28 px</td><td>32 px</td></tr>
+        <tr><td>Header control</td><td>24 px</td><td>26 px</td><td>30 px</td></tr>
+        <tr><td>Footer button</td><td>30 · 12 px</td><td>32 · 12 px</td><td>40 · 13.5 px</td></tr>
+        <tr><td>Row padding x / y</td><td>6 / 3 px</td><td>8 / 4 px</td><td>10 / 6 px</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="sec-head"><span class="num">04</span><h2>Four implementation rules</h2><div class="note">These remove the “small text in a big frame” look without turning the dock into a different component.</div></div>
+    <div class="rules">
+      <div class="rule"><span class="n">1</span><b>One metrics object per preset</b><p>Derive <code>DockMetrics</code> from <code>DockSize</code> once. Pass it into the header, tile, footer and collapsed form instead of hard-coded <code>fontSize: 13</code> and <code>height: 28</code>.</p></div>
+      <div class="rule"><span class="n">2</span><b>Fixed action column, fixed row height</b><p>Wrap Start in a column of <code>--action-width</code> and centre it in a row of <code>--row-height</code>. Start and Stop never change the column width; every row's action edge is identical.</p></div>
+      <div class="rule"><span class="n">3</span><b>Type scales by a type ramp, not the window factor</b><p>Window 1.25× is room, not a zoom. Use 15 px titles and 13.5 px button labels for Large, and keep Compact labels at ≥11.5 px even though the window is 0.9×.</p></div>
+      <div class="rule"><span class="n">4</span><b>Keep the status out of the action geometry</b><p>The running chip belongs in the title line (or a reserved slot). It must never push the Start button off the action column or change the row height.</p></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="sec-head"><span class="num">05</span><h2>Flutter mapping</h2><div class="note">A small metrics layer keeps the three presets consistent with the existing dock code.</div></div>
+    <div class="code"><span class="c">// one source of truth; DockSize stays the persisted preset</span><br><span class="k">final</span> m = <span class="p">DockMetrics</span>.forSize(model.dockSize);<br><br><span class="c">// tile</span><br><span class="p">SizedBox</span>(height: m.rowHeight, child: <span class="p">Row</span>(children: [<br>&nbsp;&nbsp;<span class="p">IconTile</span>(size: m.iconTile, iconSize: m.iconSize),<br>&nbsp;&nbsp;<span class="p">Expanded</span>(child: <span class="p">Text</span>(title, style: m.titleStyle)),<br>&nbsp;&nbsp;<span class="p">SizedBox</span>(width: m.actionWidth, height: m.actionHeight,<br>&nbsp;&nbsp;&nbsp;&nbsp;child: <span class="p">FilledButton</span>(style: <span class="p">FilledButton</span>.styleFrom(textStyle: m.actionTextStyle))),<br>&nbsp;&nbsp;<span class="p">IconButton</span>(minimumSize: <span class="p">Size</span>.square(m.optionsSize)),<br>]));<br><br><span class="c">// large tokens (bay)</span><br>rowHeight <span class="s">54</span> · title <span class="s">15</span> · summary <span class="s">11.5</span><br>actionWidth <span class="s">76</span> · actionHeight <span class="s">34</span> · actionLabel <span class="s">13.5</span><br>iconTile <span class="s">36</span> · iconSize <span class="s">19</span> · options <span class="s">32</span> · footer <span class="s">40</span></div>
+  </div>
+
+  <div class="footer"><span>Design study · quick dock size presets</span><span class="sp"></span><span>Same tiles, same Start semantics, <b>one metrics table</b></span></div>
+</div>
+
+<script>
+const body = document.body;
+const themeBtn = document.getElementById('themeBtn');
+let theme = 'dark';
+const initialTheme = new URLSearchParams(location.search).get('theme');
+if(initialTheme === 'light') theme = 'light';
+function applyTheme(){
+  body.classList.toggle('light', theme === 'light');
+  document.getElementById('themeLabel').textContent = theme === 'light' ? 'Light' : 'Dark';
+}
+themeBtn.addEventListener('click', () => { theme = theme === 'dark' ? 'light' : 'dark'; applyTheme(); });
+applyTheme();
+
+const guideBtn = document.getElementById('guideBtn');
+guideBtn.addEventListener('click', () => {
+  body.classList.toggle('guides');
+  guideBtn.classList.toggle('on', body.classList.contains('guides'));
+});
+
+const sizeData = {
+  compact: {w:'306 × 414', ui:'12.5 / 11.5 / 40'},
+  standard:{w:'340 × 460', ui:'13 / 12 / 44'},
+  large:   {w:'425 × 575', ui:'15 / 13.5 / 54'},
+};
+const sizePref = document.getElementById('sizePref');
+const sizeHint = document.getElementById('sizeHint');
+function selectSize(size){
+  document.querySelectorAll('#sizePref [data-size]').forEach(b => b.classList.toggle('active', b.dataset.size === size));
+  const d = sizeData[size];
+  sizeHint.textContent = `${size[0].toUpperCase() + size.slice(1)} · window ${d.w} · UI ${d.ui}`;
+  document.querySelectorAll('.dock-col').forEach(c => c.classList.toggle('focus', c.dataset.col === size));
+}
+sizePref.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-size]'); if(b) selectSize(b.dataset.size);
+});
+selectSize('large');
+
+const params = new URLSearchParams(location.search);
+if(params.get('selftest') === '1'){
+  const results = [];
+  const check = (name, fn) => { try { results.push([name, !!fn()]); } catch { results.push([name, false]); } };
+  check('theme toggles', () => { theme = 'light'; applyTheme(); return body.classList.contains('light'); });
+  check('size selector', () => { selectSize('compact'); return document.querySelector('#sizePref .active').dataset.size === 'compact'; });
+  check('size hint updates', () => sizeHint.textContent.includes('306 × 414'));
+  check('focus follows size', () => document.querySelector('.dock-col.focus')?.dataset.col === 'compact');
+  check('start toggles', () => { const b = document.querySelector('.dock-col.focus .start'); b.click(); return b.closest('.tile').classList.contains('running'); });
+  check('guides toggle', () => { guideBtn.click(); return body.classList.contains('guides'); });
+  const passed = results.filter(r => r[1]).length;
+  const box = document.createElement('pre'); box.id = 'selftest';
+  box.textContent = `SELFTEST ${passed}/${results.length}\n` + results.map(r => (r[1]?'PASS ':'FAIL ')+r[0]).join('\n');
+  document.body.appendChild(box);
+}
+
+document.addEventListener('click', (e) => {
+  const start = e.target.closest('.start');
+  if(!start) return;
+  const tile = start.closest('.tile');
+  const running = tile.classList.toggle('running');
+  start.textContent = running ? 'Stop' : 'Start';
+  const state = tile.querySelector('.state');
+  if(state) state.textContent = running ? 'running' : 'idle';
+});
+</script>
+</body>
+</html>

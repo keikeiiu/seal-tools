@@ -1,0 +1,1436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calibrate — capture once, calibrate many</title>
+<!--
+CONSTRAINT BRIEF — Refactoring UI, Workflow B (demo only).
+
+Context. This is a standalone HTML/CSS/JS design study for the v3 Flutter shell's Calibrate
+workspace. No Tailwind and no build step; the values below are translated from the shell's own
+tokens (lib/ui/theme.dart, lib/ui/tokens.dart) because the existing system always wins.
+
+Tokens (existing v3 shell):
+  seed #3B82F6 | surface #111318 | surfaceContainerLow #171C24 | surfaceContainerHigh #1D232C
+  onSurface #E6E9EF | onSurfaceVariant #98A2B3 | outlineVariant #2C3442
+  success #7EE2B8 | warning #F2CC7B | info #9ECAFF
+  spacing 2 / 4 / 8 / 12 / 16 / 24 | radius 6 / 10 / 14 | body 14/12.5, title 16, page 22
+  Roboto (bundled in the app; system fallback here), Consolas for technical values.
+
+Content ranking:
+  PRIMARY   the captured game frame + the active target being drawn
+  SECONDARY the tool switcher, the capture identity, the target list, the inspector fields
+  TERTIARY  display environment, capture age, hints, frame metadata, status strip
+One primary action per page:
+  captured -> Save <tool> (filled). Empty -> Capture <tool> (filled). Never both.
+Every value comes from the token scale above; no hand-tuned one-offs.
+-->
+<style>
+  :root {
+    --bg: #0b0f14;
+    --surface: #111318;
+    --surface-low: #151a21;
+    --surface-mid: #1a2029;
+    --surface-high: #1f2732;
+    --line: #2a3341;
+    --line-soft: rgba(255,255,255,0.07);
+    --text: #e6e9ef;
+    --muted: #98a2b3;
+    --faint: #6f7a8b;
+    --primary: #3b82f6;
+    --primary-hover: #2f6fdc;
+    --primary-container: #16345f;
+    --on-primary: #ffffff;
+    --success: #7ee2b8;
+    --success-bg: #10382b;
+    --warning: #f2cc7b;
+    --warning-bg: #3e2f10;
+    --info: #9ecaff;
+    --danger: #fca5a5;
+    --grade: #34d399;
+    --attr: #60a5fa;
+    --remaining: #f59e0b;
+    --cursor: #f472b6;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-6: 24px;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --font: Roboto, "Segoe UI", system-ui, sans-serif;
+    --mono: Consolas, "Cascadia Mono", monospace;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input { font: inherit; }
+  button { cursor: pointer; }
+
+  .demo-bar {
+    height: 38px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 0 var(--space-4);
+    background: #070a0e;
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--faint);
+    font-size: 11px;
+    letter-spacing: .02em;
+  }
+  .demo-bar strong { color: var(--muted); font-weight: 500; }
+  .demo-bar .spacer { flex: 1; }
+  .demo-toggle {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+  .demo-toggle button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+  .demo-toggle button + button { border-left: 1px solid var(--line); }
+  .demo-toggle button[aria-pressed="true"] {
+    background: var(--surface-high);
+    color: var(--text);
+  }
+
+  .app {
+    height: calc(100vh - 38px);
+    display: flex;
+    overflow: hidden;
+  }
+
+  .rail {
+    width: 216px;
+    flex: 0 0 216px;
+    background: var(--surface);
+    border-right: 1px solid var(--line-soft);
+    padding: var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    overflow: auto;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2) var(--space-3);
+    color: var(--text);
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .brand-mark {
+    width: 22px; height: 22px;
+    border-radius: 7px;
+    background: linear-gradient(145deg, #5aa2ff, #2563eb);
+    display: grid; place-items: center;
+    color: white; font-size: 12px; font-weight: 700;
+  }
+  .rail-label {
+    color: var(--faint);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 0 var(--space-2);
+    margin-bottom: var(--space-1);
+  }
+  .rail-group { display: flex; flex-direction: column; gap: 2px; }
+  .rail-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 34px;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-sm);
+    color: var(--muted);
+    font-size: 13px;
+    border: 0;
+    background: transparent;
+    text-align: left;
+  }
+  .rail-item:hover { background: var(--surface-low); color: var(--text); }
+  .rail-item.active {
+    background: var(--primary-container);
+    color: var(--text);
+    box-shadow: inset 2px 0 0 var(--primary);
+  }
+  .rail-icon {
+    width: 16px; height: 16px;
+    flex: 0 0 16px;
+    display: grid; place-items: center;
+    color: currentColor;
+    opacity: .9;
+  }
+  .rail-icon svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+
+  .content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-4) var(--space-2);
+    overflow: hidden;
+  }
+
+  .page-head {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-4);
+    flex: 0 0 auto;
+  }
+  .page-title { margin: 0; font-size: 22px; line-height: 1.25; font-weight: 600; }
+  .page-sub {
+    margin: var(--space-1) 0 0;
+    max-width: 620px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .page-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 0 0 auto;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+    min-height: 32px;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    color: var(--muted);
+    background: transparent;
+    font-size: 12.5px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .btn:hover { color: var(--text); background: var(--surface-low); }
+  .btn-primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--on-primary);
+    font-weight: 600;
+  }
+  .btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); color: var(--on-primary); }
+  .btn-secondary {
+    border-color: var(--line);
+    background: var(--surface-low);
+    color: var(--text);
+  }
+  .btn-secondary:hover { background: var(--surface-mid); }
+  .btn-quiet { padding: 0 var(--space-2); color: var(--faint); }
+  .btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+
+  .toolbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  .tool-tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    padding: 3px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-low);
+  }
+  .tool-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 30px;
+    padding: 0 var(--space-3);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--muted);
+    font-size: 12.5px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .tool-tab:hover { color: var(--text); background: var(--surface-mid); }
+  .tool-tab[aria-selected="true"] {
+    background: var(--surface-high);
+    border-color: var(--line);
+    color: var(--text);
+  }
+  .tab-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--success);
+  }
+  .tab-dot.empty { background: var(--faint); }
+  .toolbar-note {
+    margin-left: auto;
+    color: var(--faint);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .capture-strip {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 54px;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+  .capture-thumb {
+    width: 66px;
+    height: 38px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
+    background:
+      linear-gradient(115deg, #13202b 0%, #1b2b35 42%, #101820 100%);
+    position: relative;
+    overflow: hidden;
+    flex: 0 0 auto;
+  }
+  .capture-thumb::before {
+    content: "";
+    position: absolute; inset: 11px 8px 9px 10px;
+    border: 1px solid rgba(158,202,255,.42);
+    border-radius: 2px;
+  }
+  .capture-thumb::after {
+    content: "";
+    position: absolute; right: 6px; top: 5px; width: 10px; height: 2px;
+    background: rgba(242,204,123,.65);
+  }
+  .capture-copy { min-width: 0; }
+  .capture-title {
+    display: flex; align-items: center; gap: var(--space-2);
+    color: var(--text); font-size: 12.5px; font-weight: 600;
+  }
+  .capture-meta {
+    margin-top: 1px;
+    color: var(--faint); font-size: 10.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .capture-use {
+    margin-left: var(--space-2);
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--success-bg);
+    color: var(--success);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .02em;
+  }
+  .capture-strip .spacer { flex: 1; }
+  .capture-tip { color: var(--faint); font-size: 11px; max-width: 280px; }
+  .empty-strip { color: var(--muted); font-size: 12px; }
+
+  .workspace {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 254px minmax(0, 1fr) 332px;
+    gap: var(--space-3);
+  }
+  .panel {
+    min-height: 0;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .panel-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 38px;
+    padding: 0 var(--space-3);
+    border-bottom: 1px solid var(--line-soft);
+    flex: 0 0 auto;
+  }
+  .panel-title { font-size: 12.5px; font-weight: 600; }
+  .panel-count { margin-left: auto; color: var(--faint); font: 10.5px var(--mono); }
+  .panel-scroll { min-height: 0; overflow: auto; }
+
+  .target-note {
+    display: flex;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--muted);
+    font-size: 10.5px;
+    line-height: 1.45;
+  }
+  .target-note .dot { color: var(--primary); font-weight: 700; }
+  .target-group {
+    padding: var(--space-2) var(--space-3) var(--space-1);
+    color: var(--faint);
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+  .target {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    min-height: 34px;
+    padding: 6px var(--space-3);
+    border: 0;
+    border-left: 2px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    text-align: left;
+    font-size: 12px;
+  }
+  .target:hover { background: var(--surface-low); color: var(--text); }
+  .target.active {
+    background: var(--surface-high);
+    border-left-color: var(--primary);
+    color: var(--text);
+  }
+  .target .status-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--success);
+    flex: 0 0 6px;
+  }
+  .target .status-dot.warn { background: var(--warning); }
+  .target .status-dot.empty { background: var(--faint); }
+  .target-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .target-meta { margin-left: auto; color: var(--faint); font: 9.5px var(--mono); }
+  .target.active .target-meta { color: var(--muted); }
+
+  .canvas-panel { background: var(--surface-low); }
+  .canvas-head {
+    display: flex; align-items: center; gap: var(--space-2);
+    height: 38px; padding: 0 var(--space-3);
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--muted); font-size: 11px;
+    flex: 0 0 auto;
+  }
+  .canvas-head .mono { font-family: var(--mono); color: var(--faint); }
+  .canvas-head .spacer { flex: 1; }
+  .canvas-body {
+    min-height: 0;
+    flex: 1;
+    padding: var(--space-3);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .frame {
+    position: relative;
+    width: 100%;
+    max-height: 100%;
+    aspect-ratio: 16 / 9;
+    max-width: 860px;
+    background: #0d1117;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    box-shadow: 0 2px 0 rgba(255,255,255,.03) inset, 0 12px 32px rgba(0,0,0,.35);
+  }
+  .game {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(120% 90% at 25% 18%, rgba(64,111,126,.35) 0%, rgba(64,111,126,0) 52%),
+      radial-gradient(90% 80% at 78% 82%, rgba(34,61,74,.55) 0%, rgba(34,61,74,0) 55%),
+      linear-gradient(160deg, #16232b 0%, #101a21 45%, #0c141a 100%);
+  }
+  .game::before {
+    content: "";
+    position: absolute; left: -5%; right: -5%; top: 42%;
+    height: 40%;
+    background: linear-gradient(180deg, rgba(21,36,40,.2), rgba(9,17,20,.75));
+    border-top: 1px solid rgba(127,168,157,.18);
+    transform: skewY(-3deg);
+  }
+  .hud {
+    position: absolute; inset: 0;
+    background:
+      linear-gradient(180deg, rgba(7,11,14,.7) 0%, rgba(7,11,14,0) 14%),
+      linear-gradient(0deg, rgba(7,11,14,.55) 0%, rgba(7,11,14,0) 18%);
+    pointer-events: none;
+  }
+  .hud-bar {
+    position: absolute; top: 10px; left: 12px; right: 12px;
+    height: 2px; background: linear-gradient(90deg, rgba(158,202,255,.5), rgba(158,202,255,0));
+  }
+  .hud-bar.bottom {
+    top: auto; bottom: 12px; left: 12px; right: 45%;
+    background: linear-gradient(90deg, rgba(126,226,184,.55), rgba(126,226,184,0));
+  }
+
+  .pet-window {
+    position: absolute; right: 5%; top: 12%; width: 38%; min-width: 190px;
+    border: 1px solid rgba(242,204,123,.48);
+    border-radius: 3px;
+    background: rgba(13, 19, 23, .93);
+    box-shadow: 0 10px 26px rgba(0,0,0,.55);
+    padding: 8px 9px 9px;
+    color: #d9e2e8;
+    font-size: clamp(8px, 1vw, 11px);
+  }
+  .pet-window .win-title {
+    color: var(--warning);
+    font-size: clamp(7px, .85vw, 10px);
+    letter-spacing: .08em;
+    font-weight: 600;
+    margin-bottom: 5px;
+    display: flex; justify-content: space-between;
+  }
+  .pet-window .win-gear { color: var(--muted); font-weight: 400; }
+  .pet-row {
+    display: grid; grid-template-columns: 1fr auto;
+    gap: 4px; padding: 3px 0;
+    border-top: 1px solid rgba(255,255,255,.07);
+    color: #c7d1d8;
+  }
+  .pet-row:first-of-type { border-top: 0; }
+  .pet-row .muted { color: #84939d; }
+  .pet-row .action { color: var(--success); }
+  .tuner-window {
+    position: absolute; left: 63%; top: 16%; width: 27%;
+    border: 1px solid rgba(158,202,255,.4);
+    background: rgba(13,19,23,.94);
+    border-radius: 3px; padding: 6px 8px;
+    color: #d9e2e8; font-size: clamp(6px, .75vw, 9px);
+  }
+  .tuner-line { display: flex; justify-content: space-between; padding: 2px 0; border-top: 1px solid rgba(255,255,255,.06); }
+  .tuner-line:first-child { border-top: 0; }
+  .tuner-line .label { color: #91a0aa; }
+  .tuner-line .value { color: #d8e7ee; font-family: var(--mono); }
+  .tuner-line .value.hot { color: var(--success); }
+  .tooltip-window {
+    position: absolute; left: 52%; top: 28%; width: 28%;
+    border: 1px solid rgba(242,204,123,.55);
+    background: rgba(13,19,23,.94);
+    border-radius: 3px; padding: 7px 8px;
+    color: #d9e2e8; font-size: clamp(7px, .8vw, 10px);
+    box-shadow: 0 10px 26px rgba(0,0,0,.55);
+  }
+  .tooltip-title { color: var(--warning); font-weight: 600; margin-bottom: 4px; }
+  .tooltip-line { display: flex; justify-content: space-between; color: #aebac2; padding: 1px 0; }
+  .tooltip-line b { color: #e9f1f4; font-weight: 500; }
+
+  .bag-window {
+    position: absolute; left: 5%; bottom: 8%; width: 41%; height: 48%;
+    border: 1px solid rgba(158,202,255,.42);
+    background: rgba(13,19,23,.94);
+    border-radius: 3px; padding: 7px 8px;
+    color: #d9e2e8;
+  }
+  .bag-window .win-title { color: var(--info); font-size: clamp(7px,.85vw,10px); letter-spacing:.08em; font-weight:600; margin-bottom:5px; display:flex; justify-content:space-between; }
+  .bag-grid {
+    display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px;
+    height: calc(100% - 16px);
+  }
+  .bag-cell {
+    border: 1px solid rgba(158,202,255,.25);
+    background: rgba(158,202,255,.05);
+    border-radius: 1px;
+  }
+  .bag-cell:nth-child(3n) { background: rgba(126,226,184,.08); border-color: rgba(126,226,184,.28); }
+  .bag-cell:nth-child(5n) { background: rgba(242,204,123,.07); border-color: rgba(242,204,123,.25); }
+  .shop-window {
+    position: absolute; right: 6%; top: 15%; width: 35%;
+    border: 1px solid rgba(242,204,123,.45);
+    background: rgba(13,19,23,.94);
+    border-radius: 3px; padding: 7px 8px;
+    color: #d9e2e8; font-size: clamp(7px,.8vw,10px);
+    box-shadow: 0 10px 26px rgba(0,0,0,.55);
+  }
+  .shop-head { display: flex; align-items: center; justify-content: space-between; color: var(--warning); font-weight: 600; letter-spacing:.08em; margin-bottom: 5px; }
+  .shop-tabs { display: flex; gap: 2px; margin-bottom: 5px; }
+  .shop-tab { flex: 1; text-align: center; padding: 2px 0; border: 1px solid rgba(255,255,255,.1); color: #91a0aa; font-size: clamp(6px,.72vw,9px); }
+  .shop-tab.active { background: rgba(242,204,123,.12); border-color: rgba(242,204,123,.45); color: var(--warning); }
+  .shop-row { display: flex; justify-content: space-between; padding: 2px 0; border-top: 1px solid rgba(255,255,255,.06); color: #b9c6ce; }
+  .shop-row:first-of-type { border-top: 0; }
+  .shop-row b { color: #e9f1f4; font-weight: 500; }
+  .shop-max { margin-top: 6px; padding: 2px 0; text-align: center; border: 1px solid rgba(242,204,123,.35); color: var(--warning); border-radius: 2px; font-size: clamp(6px,.72vw,9px); }
+  .gem-window {
+    position: absolute; left: 50%; top: 16%; width: 37%;
+    border: 1px solid rgba(158,202,255,.42);
+    background: rgba(13,19,23,.94);
+    border-radius: 3px; padding: 8px 9px;
+    color: #d9e2e8; font-size: clamp(7px,.8vw,10px);
+    box-shadow: 0 10px 26px rgba(0,0,0,.55);
+  }
+  .gem-head { display: flex; justify-content: space-between; color: var(--info); font-weight: 600; letter-spacing:.08em; margin-bottom: 6px; }
+  .gem-layout { display: grid; grid-template-columns: 1.1fr .9fr; gap: 8px; }
+  .gem-result {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 96px; gap: 3px;
+    border: 1px solid rgba(52,211,153,.4); border-radius: 3px;
+    background: radial-gradient(circle at 50% 42%, rgba(52,211,153,.16), rgba(52,211,153,.03));
+    color: var(--grade); font-weight: 700; font-size: clamp(16px, 2.2vw, 28px);
+  }
+  .gem-result small { color: #91a0aa; font-size: clamp(6px,.7vw,8.5px); font-weight: 500; letter-spacing: .08em; }
+  .gem-side { display: flex; flex-direction: column; gap: 4px; }
+  .gem-slot { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; border: 1px solid rgba(255,255,255,.1); color: #aebac2; font-size: clamp(6px,.72vw,9px); }
+  .gem-slot b { color: var(--warning); font-weight: 500; }
+  .gem-slot.res { color: var(--info); }
+  .mark.gem-area { left: 50%; top: 16%; width: 37%; height: 46%; border-color: var(--warning); background: rgba(242,204,123,.05); }
+  .mark.gem-point { width: 11px; height: 11px; margin: -5px; border-radius: 50%; background: rgba(59,130,246,.18); border-color: var(--primary); }
+  .mark.gem-point.n { left: 53%; top: 27%; }
+  .mark.gem-point.g { left: 56%; top: 31%; }
+  .mark.gem-point.dg { left: 59%; top: 35%; border-color: var(--warning); background: rgba(242,204,123,.18); }
+  .mark.gem-point.reg { left: 62%; top: 39%; }
+  .mark.gem-point.comb { left: 65%; top: 43%; }
+  .mark.gem-point.res1 { left: 74%; top: 31%; border-color: var(--info); background: rgba(158,202,255,.14); }
+  .mark.gem-point.res2 { left: 74%; top: 37%; border-color: var(--info); background: rgba(158,202,255,.14); }
+  .mark.gem-point.res3 { left: 74%; top: 43%; border-color: var(--info); background: rgba(158,202,255,.14); }
+  .point-mark {
+    position: absolute; width: 8px; height: 8px; margin: -4px;
+    border-radius: 50%;
+    border: 2px solid var(--primary);
+    background: rgba(59,130,246,.2);
+    box-shadow: 0 0 0 4px rgba(59,130,246,.10);
+  }
+
+  .mark {
+    position: absolute;
+    border: 2px solid var(--primary);
+    background: rgba(59,130,246,.10);
+    border-radius: 2px;
+    pointer-events: none;
+  }
+  .mark .mark-label {
+    display: none;
+    position: absolute; left: -2px; bottom: calc(100% + 3px);
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--primary);
+    color: var(--on-primary);
+    font: 600 clamp(6px, .72vw, 9px)/1.45 var(--font);
+    white-space: nowrap;
+  }
+  .mark.active .mark-label { display: block; }
+  .mark.pet-toggle { left: 57%; top: 27%; width: 35%; height: 9%; }
+  .mark.pet-boarding { left: 57%; top: 39%; width: 33%; height: 8%; border-color: var(--info); background: rgba(158,202,255,.07); }
+  .mark.pet-strip { left: 55%; top: 50%; width: 40%; height: 7%; border-color: var(--success); background: rgba(126,226,184,.07); }
+  .mark.pet-grid { left: 8%; top: 65%; width: 25%; height: 20%; border-color: var(--attr); background: rgba(96,165,250,.08); }
+  .mark.tuner-grade { left: 61%; top: 18%; width: 11%; height: 6%; border-color: var(--grade); background: rgba(52,211,153,.1); }
+  .mark.tuner-grade .mark-label { background: var(--grade); color: #052e1c; }
+  .mark.tuner-attr { left: 61%; top: 27%; width: 27%; height: 17%; border-color: var(--attr); background: rgba(96,165,250,.08); }
+  .mark.tuner-attr .mark-label { background: var(--attr); color: #061b33; }
+  .mark.tuner-remaining { left: 61%; top: 48%; width: 12%; height: 7%; border-color: var(--remaining); background: rgba(245,158,11,.08); }
+  .mark.tuner-remaining .mark-label { background: var(--remaining); color: #261500; }
+  .mark.tooltip-panel { left: 51%; top: 27%; width: 28%; height: 31%; border-color: var(--warning); background: rgba(242,204,123,.06); }
+  .mark.tooltip-panel .mark-label { background: var(--warning); color: #261a00; }
+  .mark.shop-baggrid { left: 5%; top: 42%; width: 41%; height: 44%; border-color: var(--attr); background: rgba(96,165,250,.05); }
+  .mark.shop-bagslot { left: 6%; top: 44%; width: 5%; height: 8%; border-color: var(--success); background: rgba(126,226,184,.08); }
+  .mark.shop-list { left: 59%; top: 15%; width: 34%; height: 54%; border-color: var(--primary); background: rgba(59,130,246,.05); }
+  .mark.shop-focus { left: 53%; top: 28%; width: 14px; height: 14px; margin: -7px; border-radius: 50%; border-color: var(--cursor); background: rgba(244,114,182,.14); }
+  .mark.shop-max { left: 74%; top: 63%; width: 16%; height: 8%; border-color: var(--warning); background: rgba(242,204,123,.06); }
+  .cursor-point {
+    position: absolute; left: 47%; top: 38%;
+    width: 14px; height: 14px; margin: -7px;
+    border-radius: 50%;
+    border: 2px solid var(--cursor);
+    background: rgba(244,114,182,.16);
+    pointer-events: none;
+  }
+  .cursor-point::before, .cursor-point::after {
+    content: ""; position: absolute; background: var(--cursor);
+  }
+  .cursor-point::before { left: 5px; top: -6px; width: 2px; height: 7px; }
+  .cursor-point::after { left: 5px; bottom: -6px; width: 2px; height: 7px; }
+  .cursor-point .cursor-label {
+    position: absolute; left: 14px; top: -2px;
+    color: var(--cursor); font: 600 clamp(6px, .7vw, 9px) var(--font);
+    white-space: nowrap;
+  }
+  .frame-chip {
+    position: absolute; left: 8px; top: 8px;
+    display: flex; gap: 6px; align-items: center;
+    padding: 3px 6px;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 4px;
+    background: rgba(5,9,12,.7);
+    color: #aebcc5;
+    font: 9px var(--mono);
+    backdrop-filter: blur(4px);
+  }
+  .frame-chip .live { width: 5px; height: 5px; border-radius: 50%; background: var(--success); }
+  .frame-zoom {
+    position: absolute; right: 8px; bottom: 8px;
+    display: flex; gap: 2px;
+    padding: 2px;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 5px;
+    background: rgba(5,9,12,.72);
+  }
+  .zoom-btn {
+    min-width: 22px; height: 22px;
+    border: 0; border-radius: 3px;
+    background: transparent; color: #b8c6ce;
+    font: 10px var(--mono);
+  }
+  .zoom-btn:hover { background: rgba(255,255,255,.1); }
+  .frame-legend {
+    position: absolute; right: 8px; top: 8px;
+    display: flex; flex-direction: column; gap: 3px;
+    padding: 5px 7px;
+    border-radius: 4px;
+    background: rgba(5,9,12,.7);
+    color: #b8c6ce;
+    font-size: 9px;
+    border: 1px solid rgba(255,255,255,.1);
+  }
+  .legend-row { display: flex; align-items: center; gap: 5px; }
+  .legend-swatch { width: 5px; height: 5px; border-radius: 50%; }
+
+  .inspector-head {
+    display: flex; align-items: center; gap: var(--space-2);
+    height: 38px; padding: 0 var(--space-3);
+    border-bottom: 1px solid var(--line-soft);
+    flex: 0 0 auto;
+  }
+  .inspector-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .chip.success { background: var(--success-bg); color: var(--success); }
+  .chip.warn { background: var(--warning-bg); color: var(--warning); }
+  .chip.muted { background: var(--surface-mid); color: var(--muted); }
+  .inspector-scroll {
+    min-height: 0; overflow: auto;
+    padding: var(--space-3);
+    display: flex; flex-direction: column; gap: var(--space-3);
+  }
+  .source-line {
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    background: var(--surface-low);
+    color: var(--muted);
+    font-size: 10.5px;
+  }
+  .source-line .mono { margin-left: auto; font: 10px var(--mono); color: var(--faint); }
+  .field-group { border: 0; margin: 0; padding: 0; min-width: 0; }
+  .field-label {
+    margin-bottom: var(--space-1);
+    color: var(--faint); font-size: 9.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  }
+  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+  .field { display: flex; flex-direction: column; gap: 3px; }
+  .field span { color: var(--muted); font-size: 10px; }
+  .field input {
+    width: 100%; height: 28px;
+    padding: 0 7px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--surface-low);
+    color: var(--text);
+    font: 12px var(--mono);
+    outline: none;
+  }
+  .field input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(59,130,246,.18); }
+  .hint { color: var(--faint); font-size: 10px; line-height: 1.45; }
+  .formula {
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-mid);
+    color: var(--muted);
+    font: 10px/1.5 var(--mono);
+  }
+  .inspector-actions {
+    display: flex; gap: var(--space-2);
+    padding-top: var(--space-1);
+    border-top: 1px solid var(--line-soft);
+  }
+  .note {
+    display: flex; gap: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    color: var(--muted);
+    font-size: 10.5px;
+    line-height: 1.5;
+  }
+  .note strong { color: var(--text); font-weight: 600; }
+  .note .info-mark {
+    width: 14px; height: 14px; flex: 0 0 14px;
+    border-radius: 50%; border: 1px solid var(--line);
+    display: grid; place-items: center; color: var(--info);
+    font-size: 9px; font-weight: 700;
+  }
+
+  .status-bar {
+    flex: 0 0 auto;
+    min-height: 26px;
+    display: flex; align-items: center; gap: var(--space-3);
+    color: var(--faint);
+    font-size: 10px;
+    padding: 0 var(--space-1);
+  }
+  .status-bar .mono { font-family: var(--mono); }
+  .status-bar .spacer { flex: 1; }
+  .status-ok { color: var(--success); }
+
+  .empty-workspace {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+  }
+  .empty-card { max-width: 390px; text-align: center; padding: var(--space-6); }
+  .empty-icon {
+    width: 44px; height: 44px; margin: 0 auto var(--space-3);
+    border-radius: 12px; border: 1px solid var(--line);
+    background: var(--surface-mid); display: grid; place-items: center;
+    color: var(--muted);
+  }
+  .empty-icon svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+  .empty-card h2 { margin: 0 0 var(--space-2); font-size: 16px; font-weight: 600; }
+  .empty-card p { margin: 0 auto var(--space-4); max-width: 330px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+  .workspace.empty { grid-template-columns: 1fr; }
+  .workspace.empty .targets-panel,
+  .workspace.empty .inspector,
+  .workspace.empty .canvas-panel { display: none; }
+  .workspace.empty .empty-workspace { display: grid; }
+  .empty-workspace { display: none; }
+
+  .toast {
+    position: fixed; right: 24px; bottom: 24px;
+    padding: 9px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-high);
+    color: var(--text);
+    font-size: 11.5px;
+    box-shadow: 0 12px 30px rgba(0,0,0,.35);
+    opacity: 0; transform: translateY(6px); pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .toast.show { opacity: 1; transform: none; }
+
+  @media (max-width: 1240px) {
+    .rail { width: 72px; flex-basis: 72px; padding: var(--space-2); }
+    .brand { justify-content: center; padding-left: 0; padding-right: 0; }
+    .brand-name, .rail-label, .rail-item span:not(.rail-icon) { display: none; }
+    .rail-group { align-items: center; }
+    .rail-item { justify-content: center; width: 40px; padding: 0; }
+    .toolbar-note { display: none; }
+    .workspace { grid-template-columns: 228px minmax(0, 1fr) 300px; }
+  }
+  @media (max-width: 1000px) {
+    html, body { overflow-x: hidden; }
+    .app { height: auto; min-height: calc(100vh - 38px); overflow: visible; }
+    .rail { display: none; }
+    .content { overflow: visible; min-width: 0; }
+    .workspace { grid-template-columns: 1fr; min-width: 0; }
+    .panel { min-width: 0; }
+    .targets-panel { max-height: 300px; }
+    .canvas-panel { min-height: 340px; }
+    .canvas-head { flex-wrap: wrap; height: auto; min-height: 38px; padding: 6px var(--space-3); }
+    .inspector { max-height: 460px; }
+    .capture-tip { display: none; }
+  }
+  @media (max-width: 620px) {
+    body { overflow-x: hidden; }
+    .demo-bar { height: auto; min-height: 38px; flex-wrap: wrap; padding: var(--space-2) var(--space-3); }
+    .demo-bar .spacer { display: none; }
+    .demo-bar .demo-note { display: none; }
+    .content { overflow-x: hidden; width: 100vw; max-width: 100vw; }
+    .page-head, .toolbar, .capture-strip, .workspace, .status-bar { width: 100%; max-width: 100%; min-width: 0; }
+    .page-head { flex-direction: column; min-width: 0; }
+    .page-sub { display: none; }
+    .page-actions { margin-left: 0; }
+    .toolbar { align-items: flex-start; flex-direction: column; min-width: 0; }
+    .tool-tabs { width: 100%; max-width: 100%; overflow-x: auto; }
+    .tool-tab { flex: 0 0 auto; }
+    .capture-strip { align-items: flex-start; flex-wrap: wrap; min-width: 0; }
+    .capture-copy { min-width: 0; flex: 1 1 140px; }
+    .capture-meta { white-space: normal; }
+    .capture-strip .spacer,
+    .capture-strip .capture-tip,
+    .capture-strip .btn-secondary { display: none; }
+    .workspace { gap: var(--space-2); min-width: 0; }
+    .content { padding: var(--space-3); }
+    .canvas-head .mono { display: none; }
+    .status-bar { flex-wrap: wrap; gap: var(--space-1) var(--space-3); }
+    .status-bar .spacer { display: none; }
+    .status-bar span:last-child { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="demo-bar">
+    <strong>Design study</strong>
+    <span class="demo-note">Calibrate · capture once, calibrate many</span>
+    <span class="spacer"></span>
+    <span class="demo-note">demo state</span>
+    <div class="demo-toggle" role="group" aria-label="Demo state">
+      <button id="state-captured" aria-pressed="true">Captured</button>
+      <button id="state-empty" aria-pressed="false">First run</button>
+    </div>
+  </div>
+
+  <div class="app">
+    <aside class="rail" aria-label="Main navigation">
+      <div class="brand"><span class="brand-mark">S</span><span class="brand-name">Seal Tools</span></div>
+      <div class="rail-group">
+        <div class="rail-label">Run</div>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span><span>Cards</span></button>
+      </div>
+      <div class="rail-group">
+        <div class="rail-label">Tools</div>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg></span><span>Skill Spammer</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/><circle cx="12" cy="12" r="8"/></svg></span><span>Magic Tuner</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="m12 3 2.4 6.2L21 12l-6.6 2.8L12 21l-2.4-6.2L3 12z"/></svg></span><span>Gem Composer</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="M6 6h15l-2 9H8z"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/><path d="M6 6 5 3H2"/></svg></span><span>Buy</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h12"/></svg></span><span>Sell</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="M8 6h13v4H8zM8 14h13v4H8z"/><path d="M3 6h.01M3 14h.01M3 18h.01M3 10h.01"/></svg></span><span>Quest Hand-in</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="7" r="3"/><path d="M4 20c0-3 2-5 5-5s5 2 5 5M14 20c0-2 1-3 3-3s3 1 3 3"/></svg></span><span>Pet Feeder</span></button>
+      </div>
+      <div class="rail-group">
+        <div class="rail-label">System</div>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M4 9h16"/></svg></span><span>Attributes</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><path d="m7 8 5-4 5 4v8l-5 4-5-4z"/><path d="M12 4v16"/></svg></span><span>Arduino</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></span><span>Hotkeys</span></button>
+        <button class="rail-item"><span class="rail-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.3 1a7 7 0 0 0-1.7-1L14.5 3h-5l-.4 2.1a7 7 0 0 0-1.7 1l-2.3-1-2 3.4L5.1 11a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 1.7 1l.4 2.1h5l.4-2.1a7 7 0 0 0 1.7-1l2.3 1 2-3.4-2-1.5c.1-.3.1-.7.1-1z"/></svg></span><span>Setup</span></button>
+        <button class="rail-item active"><span class="rail-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></span><span>Calibrate</span></button>
+      </div>
+    </aside>
+
+    <main class="content">
+      <header class="page-head">
+        <div>
+          <h1 class="page-title">Calibrate</h1>
+          <p class="page-sub">One capture per tool. Every target for that tool is drawn on the same game frame — Pet rows, the shared Buy/Sell shop marks, tuner boxes — and saved together, not captured again per target.</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-primary" id="primary-btn">Save Pet</button>
+        </div>
+      </header>
+
+      <div class="toolbar">
+        <div class="tool-tabs" role="tablist" aria-label="Calibration tool">
+          <button class="tool-tab" role="tab" data-tool="pet" aria-selected="true"><span class="tab-dot" id="dot-pet"></span>Pet Feeder</button>
+          <button class="tool-tab" role="tab" data-tool="shop" aria-selected="false"><span class="tab-dot" id="dot-shop"></span>Buy / Sell</button>
+          <button class="tool-tab" role="tab" data-tool="gem" aria-selected="false"><span class="tab-dot" id="dot-gem"></span>Gem Composer</button>
+          <button class="tool-tab" role="tab" data-tool="tuner" aria-selected="false"><span class="tab-dot" id="dot-tuner"></span>Magic Tuner</button>
+          <button class="tool-tab" role="tab" data-tool="tooltip" aria-selected="false"><span class="tab-dot" id="dot-tooltip"></span>Tooltip</button>
+        </div>
+        <span class="toolbar-note" id="toolbar-note">one frame shared by all targets</span>
+      </div>
+
+      <section class="capture-strip" id="capture-strip" aria-label="Active capture"></section>
+
+      <section class="workspace" id="workspace">
+        <aside class="panel targets-panel">
+          <div class="panel-head"><span class="panel-title" id="targets-title">Pet targets</span><span class="panel-count" id="targets-count"></span></div>
+          <div class="target-note"><span class="dot">●</span><span id="targets-note">All targets use capture #2. Draw each one on the same frame; Save writes the whole tool.</span></div>
+          <div class="panel-scroll" id="targets-list"></div>
+        </aside>
+
+        <section class="panel canvas-panel">
+          <div class="canvas-head">
+            <span id="canvas-title">Capture #2 · Pet Feeder</span>
+            <span class="mono" id="canvas-meta">2560×1440 · 150%</span>
+            <span class="spacer"></span>
+            <button class="btn btn-quiet" title="Fit the frame">Fit</button>
+            <button class="btn btn-quiet" title="Show at 1:1">1:1</button>
+          </div>
+          <div class="canvas-body">
+            <div class="frame" id="frame">
+              <div class="game"></div>
+              <div class="hud"><div class="hud-bar"></div><div class="hud-bar bottom"></div></div>
+              <div class="pet-window" id="scene-pet">
+                <div class="win-title"><span>PET</span><span class="win-gear">⚙</span></div>
+                <div class="pet-row"><span>Spring Bunny</span><span class="action">Boarding</span></div>
+                <div class="pet-row"><span class="muted">Growth</span><span>42%</span></div>
+                <div class="pet-row"><span class="muted">EXP</span><span>+52</span></div>
+                <div class="pet-row"><span class="muted">Food</span><span class="action">2 left</span></div>
+              </div>
+              <div class="tuner-window" id="scene-tuner" hidden>
+                <div class="tuner-line"><span class="label">GRADE</span><span class="value hot">DG</span></div>
+                <div class="tuner-line"><span class="label">STR</span><span class="value">10</span></div>
+                <div class="tuner-line"><span class="label">DEX</span><span class="value">10</span></div>
+                <div class="tuner-line"><span class="label">INT</span><span class="value">10</span></div>
+                <div class="tuner-line"><span class="label">REMAIN</span><span class="value">25,000</span></div>
+              </div>
+              <div class="tooltip-window" id="scene-tooltip" hidden>
+                <div class="tooltip-title">Spring Bunny</div>
+                <div class="tooltip-line"><span>Growth</span><b>42%</b></div>
+                <div class="tooltip-line"><span>EXP</span><b>+52</b></div>
+                <div class="tooltip-line"><span>Food</span><b>2 left</b></div>
+              </div>
+              <div id="scene-shop" hidden>
+                <div class="bag-window">
+                  <div class="win-title"><span>BAG</span><span>48 / 64</span></div>
+                  <div class="bag-grid" id="bag-grid"></div>
+                </div>
+                <div class="shop-window">
+                  <div class="shop-head"><span>SHOP</span><span>◆ 1,240</span></div>
+                  <div class="shop-tabs"><span class="shop-tab active">BUY</span><span class="shop-tab">SELL</span></div>
+                  <div class="shop-row"><span>Red Potion</span><b>120</b></div>
+                  <div class="shop-row"><span>Blue Potion</span><b>180</b></div>
+                  <div class="shop-row"><span>Return Scroll</span><b>250</b></div>
+                  <div class="shop-max">MAX</div>
+                </div>
+              </div>
+              <div id="scene-gem" hidden>
+                <div class="gem-window">
+                  <div class="gem-head"><span>GEM COMPOSER</span><span>◆ 1,240</span></div>
+                  <div class="gem-layout">
+                    <div class="gem-result">DG<small>RESULT GEM</small></div>
+                    <div class="gem-side">
+                      <div class="gem-slot"><span>Grade N</span><b>point</b></div>
+                      <div class="gem-slot"><span>Grade G</span><b>point</b></div>
+                      <div class="gem-slot"><span>Grade DG</span><b>point</b></div>
+                      <div class="gem-slot res"><span>Resource 1</span><b>slot</b></div>
+                      <div class="gem-slot res"><span>Resource 2</span><b>slot</b></div>
+                      <div class="gem-slot res"><span>Resource 3</span><b>slot</b></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div id="overlays"></div>
+              <div class="frame-chip"><span class="live"></span><span id="frame-chip-text">capture #2 · in use</span></div>
+              <div class="frame-legend" id="frame-legend"></div>
+              <div class="frame-zoom"><button class="zoom-btn">−</button><button class="zoom-btn">Fit</button><button class="zoom-btn">+</button></div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel inspector">
+          <div class="inspector-head"><span class="inspector-title" id="inspector-title">Row 1 · Toggle row</span><span class="chip warn" id="inspector-chip">unsaved</span></div>
+          <div class="inspector-scroll" id="inspector-scroll"></div>
+        </aside>
+
+        <section class="empty-workspace" id="empty-workspace">
+          <div class="empty-card">
+            <div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M4 7h3l1.5-2h7L17 7h3v13H4z"/><circle cx="12" cy="13" r="4"/></svg></div>
+            <h2 id="empty-title">Capture Pet Feeder once</h2>
+            <p id="empty-copy">Open the pet menu in the game, then capture. Every Pet target — row boxes, bag grid and points — is drawn on this one frame.</p>
+            <button class="btn btn-primary" id="empty-capture">Capture pet</button>
+          </div>
+        </section>
+      </section>
+
+      <footer class="status-bar">
+        <span class="status-ok" id="status-env">● display matches saved environment</span>
+        <span class="mono" id="status-capture">using capture #2 · Pet Feeder</span>
+        <span class="spacer"></span>
+        <span id="status-count">3 of 9 targets saved</span>
+        <span>·</span>
+        <span>Replace capture only when the game screen changed</span>
+      </footer>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+
+<script>
+  // Demo data mirrors the intended controller contract: a tool owns one active frame, and every
+  // target renders from that frame. The empty state hides the target tree and inspector entirely.
+  const TOOLS = {
+    pet: {
+      name: 'Pet Feeder',
+      short: 'Pet',
+      captureNo: 2,
+      captureSub: 'Pet menu open · captured just now',
+      captureBtn: 'Capture pet',
+      saveBtn: 'Save Pet',
+      emptyTitle: 'Capture Pet Feeder once',
+      emptyCopy: 'Open the pet menu in the game, then capture. Every Pet target — row boxes, bag grid and points — is drawn on this one frame.',
+      note: 'All Pet targets use capture #2. Draw each one on this frame; Save writes the whole tool.',
+      targets: [
+        { group: 'Row geometry', id: 'row1', label: 'Row 1 · Toggle row', meta: 'unsaved', status: 'warn', active: true, title: 'Row 1 · Toggle row', chip: 'unsaved', fields: [['x','1440'],['y','780'],['w','460'],['h','92']], hint: 'Drag the toggle box on the frame, or type exact client pixels. This one row is shared by the boarding slot, feeder strip and stacks.' },
+        { group: 'Row geometry', id: 'row2', label: 'Row 2 · Boarding slot', meta: 'saved', status: 'saved', title: 'Row 2 · Boarding slot', chip: 'saved', fields: [['x','1440'],['y','880'],['w','420'],['h','88']], hint: 'A saved target opens with its stored values. Drag to replace them.' },
+        { group: 'Row geometry', id: 'row3', label: 'Row 3 · Feeder strip', meta: 'saved', status: 'saved', title: 'Row 3 · Feeder strip', chip: 'saved', fields: [['x','1380'],['y','990'],['w','560'],['h','64']], hint: 'The strip is the horizontal area the feeder clicks; it is independent of the row boxes.' },
+        { group: 'Row geometry', id: 'row4', label: 'Row 4 · Stacks', meta: 'not set', status: 'empty', title: 'Row 4 · Stacks', chip: 'not set', fields: [['x',''],['y',''],['w',''],['h','']], hint: 'Not set yet. Drag a box on the frame to add it to this capture.' },
+        { group: 'Shared on this frame', id: 'grid', label: 'Bag grid', meta: 'saved', status: 'saved', title: 'Bag grid', chip: 'saved', fields: [['x','120'],['y','1000'],['w','640'],['h','320']], hint: 'One grid serves every bag page; the page point is separate.' },
+        { group: 'Shared on this frame', id: 'menu', label: 'Menu point', meta: 'saved', status: 'saved', title: 'Menu point', chip: 'saved', fields: [['x','2310'],['y','760']], hint: 'A point target takes a click on the frame instead of a drag.' },
+        { group: 'Shared on this frame', id: 'feed', label: 'Feed point', meta: 'saved', status: 'saved', title: 'Feed point', chip: 'saved', fields: [['x','2310'],['y','840']], hint: 'The feed point is captured on the same pet menu as the row boxes.' },
+        { group: 'Shared on this frame', id: 'close', label: 'Boarding X point', meta: 'saved', status: 'saved', title: 'Boarding X point', chip: 'saved', fields: [['x','2010'],['y','560']], hint: 'Used to leave the pet panel without a second capture.' },
+        { group: 'Shared on this frame', id: 'bagtab', label: 'ITEM tab point', meta: 'saved', status: 'saved', title: 'ITEM tab point', chip: 'saved', fields: [['x','360'],['y','1080']], hint: 'The bag tab is the shared entry point for every page.' }
+      ],
+      overlays: [
+        { cls: 'pet-toggle', label: 'Row 1 · Toggle row', id: 'row1' },
+        { cls: 'pet-boarding', label: 'Row 2 · Boarding slot', id: 'row2' },
+        { cls: 'pet-strip', label: 'Row 3 · Feeder strip', id: 'row3' },
+        { cls: 'pet-grid', label: 'Bag grid', id: 'grid' }
+      ],
+      legend: [['var(--primary)', 'active target'], ['var(--success)', 'saved target'], ['var(--info)', 'shared point']],
+      scene: ['pet', 'tuner', 'tooltip']
+    },
+    shop: {
+      name: 'Buy / Sell',
+      short: 'Shop',
+      captureNo: 4,
+      captureSub: 'Bag + shop list open · captured just now',
+      captureBtn: 'Capture shop',
+      saveBtn: 'Save shop',
+      emptyTitle: 'Capture Buy / Sell once',
+      emptyCopy: 'Open the bag and the shop list, then capture once. These five Shop marks calibrate both Buy and Sell — switching tabs never asks for a second capture.',
+      note: 'Buy and Sell share capture #4. The bag grid places Sell cells; the shop list, focus point and MAX drive Buy. One save covers both.',
+      targets: [
+        { group: 'Bag geometry', id: 'baggrid', label: 'Bag grid', meta: 'saved', status: 'saved', title: 'Bag grid', chip: 'saved', fields: [['x','120'],['y','600'],['w','640'],['h','640']], hint: 'The whole 8×8 bag. Sell derives every slot centre from this grid, so it is not re-captured per tab.' },
+        { group: 'Bag geometry', id: 'bagslot', label: 'Bag slot', meta: 'saved', status: 'saved', title: 'Bag slot', chip: 'saved', fields: [['x','120'],['y','600'],['w','80'],['h','80']], hint: 'One slot is the independent pitch check for the bag grid.' },
+        { group: 'Shop list + actions', id: 'shoplist', label: 'Shop list region', meta: 'saved', status: 'saved', title: 'Shop list region', chip: 'saved', fields: [['x','1510'],['y','320'],['w','820'],['h','520']], hint: 'The visible shop rows. Buy derives row tops and bottoms from this region.' },
+        { group: 'Shop list + actions', id: 'focus', label: 'Focus / scroll point', meta: 'saved', status: 'saved', title: 'Focus / scroll point', chip: 'saved', fields: [['x','1390'],['y','560']], hint: 'An inert click that focuses the game and aims the wheel; it must not sit on a row or slot.' },
+        { group: 'Shop list + actions', id: 'max', label: 'MAX button', meta: 'unsaved', status: 'warn', active: true, title: 'MAX button', chip: 'unsaved', fields: [['x','2240'],['y','780']], hint: 'The MAX button used by Buy and the pet count dialog. Click the point on the frame — this is the one unsaved Shop target here.' }
+      ],
+      overlays: [
+        { cls: 'shop-baggrid', label: 'Bag grid', id: 'baggrid' },
+        { cls: 'shop-bagslot', label: 'Bag slot', id: 'bagslot' },
+        { cls: 'shop-list', label: 'Shop list region', id: 'shoplist' },
+        { cls: 'shop-focus', label: 'Focus / scroll point', id: 'focus' },
+        { cls: 'shop-max', label: 'MAX button', id: 'max' }
+      ],
+      legend: [['var(--attr)', 'bag geometry'], ['var(--primary)', 'shop list'], ['var(--cursor)', 'focus point'], ['var(--warning)', 'MAX button']],
+      scene: ['shop']
+    },
+    gem: {
+      name: 'Gem Composer',
+      short: 'Gem',
+      captureNo: 5,
+      captureSub: 'Gem result + inventory open · captured just now',
+      captureBtn: 'Capture gem',
+      saveBtn: 'Save gem',
+      emptyTitle: 'Capture Gem Composer once',
+      emptyCopy: 'Open the result gem and inventory, then capture once. The result area, five grade points and three resource slots all use this frame.',
+      note: 'All nine Gem marks use capture #5. The result area needs the empty-result verdict; the five grade points and three resource slots are drawn on the same frame.',
+      targets: [
+        { group: 'Result gem', id: 'area', label: 'Result gem area', meta: 'saved', status: 'saved', title: 'Result gem area', chip: 'saved', fields: [['x','1460'],['y','360'],['w','640'],['h','520']], hint: 'The result-gem rectangle. Save also records the empty-result verdict, so this target is not only x/y/w/h.' },
+        { group: 'Grade points', id: 'dgm', label: 'Grade · DG', meta: 'unsaved', status: 'warn', active: true, title: 'Grade · DG', chip: 'unsaved', fields: [['x','1830'],['y','520']], hint: 'Click the DG grade point on this frame. All five grade points share the capture; no second screenshot per grade.' },
+        { group: 'Grade points', id: 'nm', label: 'Grade · N', meta: 'saved', status: 'saved', title: 'Grade · N', chip: 'saved', fields: [['x','1650'],['y','460']], hint: 'Grade N is a point target on the same frame.' },
+        { group: 'Grade points', id: 'gm', label: 'Grade · G', meta: 'saved', status: 'saved', title: 'Grade · G', chip: 'saved', fields: [['x','1740'],['y','490']], hint: 'Grade G is a point target on the same frame.' },
+        { group: 'Grade points', id: 'regm', label: 'Grade · Register', meta: 'saved', status: 'saved', title: 'Grade · Register', chip: 'saved', fields: [['x','1920'],['y','550']], hint: 'The Register point is the same kind as the other grade points; the core validates the target.' },
+        { group: 'Grade points', id: 'combm', label: 'Grade · Combine', meta: 'saved', status: 'saved', title: 'Grade · Combine', chip: 'saved', fields: [['x','2010'],['y','580']], hint: 'The Combine point completes the five grade targets.' },
+        { group: 'Resource slots', id: 'res1', label: 'Resource slot 1', meta: 'saved', status: 'saved', title: 'Resource slot 1', chip: 'saved', fields: [['x','2240'],['y','460']], hint: 'Resource slot 1 is a point target; all three slots share this capture.' },
+        { group: 'Resource slots', id: 'res2', label: 'Resource slot 2', meta: 'saved', status: 'saved', title: 'Resource slot 2', chip: 'saved', fields: [['x','2240'],['y','550']], hint: 'Resource slot 2 is a point target; no recapture when switching slots.' },
+        { group: 'Resource slots', id: 'res3', label: 'Resource slot 3', meta: 'saved', status: 'saved', title: 'Resource slot 3', chip: 'saved', fields: [['x','2240'],['y','640']], hint: 'Resource slot 3 completes the Gem set.' }
+      ],
+      overlays: [
+        { cls: 'gem-area', label: 'Result gem area', id: 'area' },
+        { cls: 'gem-point n', label: 'Grade · N', id: 'nm' },
+        { cls: 'gem-point g', label: 'Grade · G', id: 'gm' },
+        { cls: 'gem-point dg', label: 'Grade · DG', id: 'dgm' },
+        { cls: 'gem-point reg', label: 'Grade · Register', id: 'regm' },
+        { cls: 'gem-point comb', label: 'Grade · Combine', id: 'combm' },
+        { cls: 'gem-point res1', label: 'Resource slot 1', id: 'res1' },
+        { cls: 'gem-point res2', label: 'Resource slot 2', id: 'res2' },
+        { cls: 'gem-point res3', label: 'Resource slot 3', id: 'res3' }
+      ],
+      legend: [['var(--warning)', 'result area'], ['var(--primary)', 'grade point'], ['var(--info)', 'resource slot']],
+      scene: ['gem']
+    },
+    tuner: {
+      name: 'Magic Tuner',
+      short: 'Tuner',
+      captureNo: 1,
+      captureSub: 'Tuner status window open · captured just now',
+      captureBtn: 'Capture tuner',
+      saveBtn: 'Save tuner',
+      emptyTitle: 'Capture Magic Tuner once',
+      emptyCopy: 'Open the tuner status window, capture once, then drag the grade, attribute and remaining boxes on the same frame. Check derives the OCR geometry.',
+      note: 'All three OCR boxes use capture #1. Drag each box, then Check and Save once.',
+      targets: [
+        { group: 'OCR boxes', id: 'grade', label: 'Grade letter', meta: 'active', status: 'warn', title: 'Grade letter', chip: 'draw', fields: [['x','1560'],['y','430'],['w','280'],['h','84']], hint: 'Drag a tight box around the grade word (DG here). A drag under 4 px is ignored.' },
+        { group: 'OCR boxes', id: 'attr', label: 'Attribute rows', meta: 'saved', status: 'saved', title: 'Attribute rows', chip: 'saved', fields: [['x','1560'],['y','530'],['w','620'],['h','240']], hint: 'Cover the three attribute lines; Check measures the real row pitch from this box.' },
+        { group: 'OCR boxes', id: 'remaining', label: 'Remaining count', meta: 'saved', status: 'saved', title: 'Remaining count', chip: 'saved', fields: [['x','1560'],['y','810'],['w','300'],['h','100']], hint: 'The remaining count is read from the same status window, not a second capture.' },
+        { group: 'Optional', id: 'spring', label: 'Spring point', meta: 'not set', status: 'empty', title: 'Spring point', chip: 'not set', fields: [['x',''],['y','']], hint: 'Optional point for tuning runs; it does not affect OCR.' }
+      ],
+      overlays: [
+        { cls: 'tuner-grade', label: 'Grade letter', id: 'grade' },
+        { cls: 'tuner-attr', label: 'Attribute rows', id: 'attr' },
+        { cls: 'tuner-remaining', label: 'Remaining count', id: 'remaining' }
+      ],
+      legend: [['var(--grade)', 'grade'], ['var(--attr)', 'attributes'], ['var(--remaining)', 'remaining']],
+      scene: ['tuner']
+    },
+    tooltip: {
+      name: 'Tooltip',
+      short: 'Tooltip',
+      captureNo: 3,
+      captureSub: 'one hover capture · cursor + panel',
+      captureBtn: 'Capture hover',
+      saveBtn: 'Save tooltip',
+      emptyTitle: 'Capture a hover once',
+      emptyCopy: 'The tooltip offset is measured by placing the cursor and capturing the hovered panel once. The panel box and Test read reuse that same hover capture.',
+      note: 'The hover capture is reused for the panel box. Test read still performs one live hover because it reads the game at run time.',
+      targets: [
+        { group: 'Hover panel', id: 'panel', label: 'Panel box', meta: 'unsaved', status: 'warn', title: 'Panel box', chip: 'unsaved', fields: [['x','-8'],['y','-6'],['w','320'],['h','210']], hint: 'Drag the panel box, or type the offset and size. Panel top-left = placed cursor + offset.' },
+        { group: 'Hover panel', id: 'point', label: 'Hover point', meta: 'captured', status: 'saved', title: 'Hover point', chip: 'captured', fields: [['x','300'],['y','400']], hint: 'The core places the cursor here and captures the panel; this point is the offset anchor.' }
+      ],
+      overlays: [
+        { cls: 'tooltip-panel', label: 'Panel box', id: 'panel' }
+      ],
+      cursor: true,
+      legend: [['var(--warning)', 'panel box'], ['var(--cursor)', 'cursor']],
+      scene: ['tooltip']
+    }
+  };
+
+  const state = { mode: 'captured', tool: 'pet', activeTarget: {} };
+  const params = new URLSearchParams(location.search);
+  if (params.get('state') === 'empty') state.mode = 'empty';
+  if (params.get('tool') && TOOLS[params.get('tool')]) state.tool = params.get('tool');
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+  let toastTimer;
+
+  function toast(message) {
+    const el = $('#toast');
+    el.textContent = message;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  }
+
+  function currentTool() { return TOOLS[state.tool]; }
+
+  function activeTarget() {
+    const tool = currentTool();
+    return state.activeTarget[state.tool] || tool.targets.find(t => t.active)?.id || tool.targets[0].id;
+  }
+
+  function renderToolTabs() {
+    $$('.tool-tab').forEach(tab => {
+      tab.setAttribute('aria-selected', String(tab.dataset.tool === state.tool));
+    });
+    $('#toolbar-note').textContent = state.mode === 'captured'
+      ? 'one frame shared by all targets'
+      : 'nothing captured yet';
+  }
+
+  function renderCaptureStrip() {
+    const tool = currentTool();
+    const strip = $('#capture-strip');
+    if (state.mode === 'empty') {
+      strip.innerHTML = `<span class="empty-strip">No capture for ${tool.name} yet. Capture once to enable its targets.</span>`;
+      return;
+    }
+    strip.innerHTML = `
+      <div class="capture-thumb" aria-hidden="true"></div>
+      <div class="capture-copy">
+        <div class="capture-title"><span>Capture #${tool.captureNo}</span><span class="capture-use">in use for all ${tool.short} targets</span></div>
+        <div class="capture-meta">${tool.captureSub} · 2560×1440 · scale 150%</div>
+      </div>
+      <span class="spacer"></span>
+      <span class="capture-tip">${state.tool === 'tooltip' ? 'One hover capture; the box reuses this frame.' : 'One capture for every target — no per-row capture.'}</span>
+      <button class="btn btn-secondary" id="strip-capture">Replace capture</button>`;
+    strip.querySelector('#strip-capture').addEventListener('click', doCapture);
+  }
+
+  function renderTargets() {
+    const tool = currentTool();
+    const active = activeTarget();
+    $('#targets-title').textContent = `${tool.short} targets`;
+    $('#targets-note').textContent = tool.note;
+    const list = $('#targets-list');
+    list.innerHTML = '';
+    let lastGroup = '';
+    for (const target of tool.targets) {
+      if (target.group !== lastGroup) {
+        const group = document.createElement('div');
+        group.className = 'target-group';
+        group.textContent = target.group;
+        list.appendChild(group);
+        lastGroup = target.group;
+      }
+      const btn = document.createElement('button');
+      btn.className = 'target' + (target.id === active ? ' active' : '');
+      btn.dataset.target = target.id;
+      btn.innerHTML = `<span class="status-dot ${target.status}"></span><span class="target-label">${target.label}</span><span class="target-meta">${target.meta}</span>`;
+      btn.addEventListener('click', () => {
+        state.activeTarget[state.tool] = target.id;
+        render();
+      });
+      list.appendChild(btn);
+    }
+    const saved = tool.targets.filter(t => t.status === 'saved').length;
+    $('#targets-count').textContent = `${saved} / ${tool.targets.length} saved`;
+    $('#status-count').textContent = `${saved} of ${tool.targets.length} targets saved`;
+  }
+
+  function renderInspector() {
+    const tool = currentTool();
+    const target = tool.targets.find(t => t.id === activeTarget()) || tool.targets[0];
+    $('#inspector-title').textContent = target.title;
+    const chip = $('#inspector-chip');
+    chip.className = 'chip ' + (target.chip === 'saved' || target.chip === 'captured' ? 'success' : target.chip === 'not set' ? 'muted' : 'warn');
+    chip.textContent = target.chip;
+    const fields = target.fields.map(([label, value]) => `
+      <label class="field"><span>${label}</span><input value="${value}" aria-label="${target.title} ${label}"></label>
+    `).join('');
+    const twoCol = target.fields.length === 2;
+    const formula = state.tool === 'tooltip'
+      ? `<div class="formula" id="formula">cursor (300, 400) + offset (-8, -6) → panel (292, 394) 320×210</div>`
+      : '';
+    const extra = state.tool === 'tuner'
+      ? `<div class="note"><span class="info-mark">i</span><span><strong>Check</strong> runs on this frame, so every box is measured together. The result shows region, row pitch and matched attributes.</span></div>`
+      : state.tool === 'tooltip'
+        ? `<div class="note"><span class="info-mark">i</span><span><strong>One hover capture.</strong> Test read still performs a live hover at run time; it is not a second calibration capture.</span></div>`
+        : state.tool === 'shop'
+          ? `<div class="note"><span class="info-mark">i</span><span><strong>Buy and Sell share this frame.</strong> The bag grid places Sell cells; the shop list, focus point and MAX drive Buy. Switching to Sell never asks for another capture.</span></div>`
+          : state.tool === 'gem'
+            ? `<div class="note"><span class="info-mark">i</span><span><strong>Nine Gem marks, one frame.</strong> The result area carries the empty-result verdict; the grade and resource points are the same capture. Save writes the whole Gem set.</span></div>`
+            : `<div class="note"><span class="info-mark">i</span><span><strong>Same frame.</strong> Row 1, Row 2, the bag grid and every point are edited here; switching targets does not recapture.</span></div>`;
+    $('#inspector-scroll').innerHTML = `
+      <div class="source-line"><span>Source</span><span class="mono">capture #${tool.captureNo} · 2560×1440</span></div>
+      <div class="field-group">
+        <div class="field-label">${state.tool === 'tooltip' ? 'Panel geometry' : 'Target geometry'} (client px)</div>
+        <div class="fields" ${twoCol ? 'style="grid-template-columns:1fr"' : ''}>${fields}</div>
+      </div>
+      ${formula}
+      <div class="hint">${target.hint}</div>
+      ${extra}
+      <div class="inspector-actions">
+        <button class="btn btn-secondary" id="preview-btn">Preview target</button>
+        <button class="btn btn-quiet" id="revert-btn">Revert</button>
+      </div>`;
+    $('#preview-btn').addEventListener('click', () => toast('Design demo: Preview would pulse this target on the frame.'));
+    $('#revert-btn').addEventListener('click', () => toast('Design demo: Revert would restore the stored target.'));
+  }
+
+  function renderCanvas() {
+    const tool = currentTool();
+    $('#canvas-title').textContent = `Capture #${tool.captureNo} · ${tool.name}`;
+    $('#canvas-meta').textContent = state.tool === 'tooltip' ? 'hover frame · cursor + panel' : '2560×1440 · 150%';
+    $('#frame-chip-text').textContent = `capture #${tool.captureNo} · in use`;
+    ['pet','tuner','tooltip','shop','gem'].forEach(name => {
+      const el = $('#scene-' + name);
+      if (el) el.hidden = !tool.scene.includes(name);
+    });
+    const overlays = $('#overlays');
+    overlays.innerHTML = '';
+    const active = activeTarget();
+    for (const overlay of tool.overlays) {
+      const mark = document.createElement('div');
+      mark.className = `mark ${overlay.cls}` + (overlay.id === active ? ' active' : '');
+      if (overlay.id === active) {
+        mark.style.boxShadow = '0 0 0 3px rgba(59,130,246,.24)';
+      }
+      mark.innerHTML = `<span class="mark-label">${overlay.label}</span>`;
+      overlays.appendChild(mark);
+    }
+    if (tool.cursor) {
+      overlays.insertAdjacentHTML('beforeend', '<div class="cursor-point"><span class="cursor-label">cursor</span></div>');
+    }
+    const legend = $('#frame-legend');
+    legend.innerHTML = tool.legend.map(([color, label]) => `<span class="legend-row"><span class="legend-swatch" style="background:${color}"></span>${label}</span>`).join('');
+  }
+
+  function renderEmpty() {
+    const tool = currentTool();
+    $('#empty-title').textContent = tool.emptyTitle;
+    $('#empty-copy').textContent = tool.emptyCopy;
+    $('#empty-capture').textContent = tool.captureBtn;
+    $('#empty-capture').onclick = doCapture;
+  }
+
+  function renderPrimary() {
+    const tool = currentTool();
+    const primary = $('#primary-btn');
+    primary.hidden = state.mode === 'empty';
+    if (state.mode === 'captured') {
+      primary.textContent = tool.saveBtn;
+      primary.onclick = () => toast(`Design demo: ${tool.saveBtn} would write every ${tool.short} target on capture #${tool.captureNo}.`);
+    }
+  }
+
+  function render() {
+    const tool = currentTool();
+    renderToolTabs();
+    renderCaptureStrip();
+    renderPrimary();
+    renderEmpty();
+    if (state.mode === 'empty') {
+      $('#workspace').classList.add('empty');
+      $('#status-env').textContent = '● no capture yet';
+      $('#status-env').className = '';
+      $('#status-capture').textContent = `${tool.name} · waiting for capture`;
+      $('#status-count').textContent = '—';
+      renderCanvas();
+      return;
+    }
+    $('#workspace').classList.remove('empty');
+    renderTargets();
+    renderInspector();
+    renderCanvas();
+    $('#status-env').textContent = '● display matches saved environment';
+    $('#status-env').className = 'status-ok';
+    $('#status-capture').textContent = `using capture #${tool.captureNo} · ${tool.name}`;
+    const saved = tool.targets.filter(t => t.status === 'saved').length;
+    $('#status-count').textContent = `${saved} of ${tool.targets.length} targets saved`;
+  }
+
+  function doCapture() {
+    state.mode = 'captured';
+    document.querySelectorAll('.demo-toggle button').forEach(b => b.setAttribute('aria-pressed', String(b.id === 'state-captured')));
+    toast(`Design demo: ${currentTool().captureBtn} would create one frame for all ${currentTool().short} targets.`);
+    render();
+  }
+
+  document.querySelectorAll('.demo-toggle button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.mode = btn.id === 'state-empty' ? 'empty' : 'captured';
+      document.querySelectorAll('.demo-toggle button').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+      render();
+    });
+  });
+
+  $$('.tool-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      state.tool = tab.dataset.tool;
+      render();
+    });
+  });
+
+  document.querySelectorAll('.demo-toggle button').forEach(btn => {
+    btn.setAttribute('aria-pressed', String((state.mode === 'empty') === (btn.id === 'state-empty')));
+  });
+  const bag = $('#bag-grid');
+  if (bag) for (let i = 0; i < 64; i++) bag.insertAdjacentHTML('beforeend', '<span class="bag-cell"></span>');
+  render();
+</script>
+</body>
+</html>

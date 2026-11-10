@@ -1,0 +1,1349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seal Tools v3 — full UI demo</title>
+<style>
+  /* Tokens: Material 3 dark roles, taken from the running app (ColorScheme.fromSeed(0xFF3B82F6, dark)).
+     Semantic success/warning roles added by the proposal — see PLAN-V3-UI-UX.md §4. */
+  :root{
+    --bg:#111318; --bg-deep:#0c0e13; --surf-low:#1a1b20; --surf:#1e1f25;
+    --surf-high:#282a2f; --surf-highest:#33353a;
+    --on:#e2e2e9; --on-var:#c4c6d0; --on-faint:#9a9ca6;
+    --outline:#8e9099; --outline-var:#44474f;
+    --primary:#adc6ff; --on-primary:#112f60;
+    --primary-container:#2b4678; --on-primary-container:#d8e2ff;
+    --error:#ffb4ab; --error-container:#5c1412; --on-error-container:#ffdad6;
+    --tertiary:#debcdf;
+    --success:#7ee2b8; --success-container:#10382b; --on-success-container:#b9f5da;
+    --warning:#f2cc7b; --warning-container:#3e2f10; --on-warning-container:#ffe2a8;
+    --info:#9ecaff;
+    --radius-s:6px; --radius-m:10px; --radius-l:14px;
+    --s-xs:4px; --s-sm:8px; --s-md:12px; --s-lg:16px; --s-xl:24px; --s-xxl:32px;
+    --mono:"Cascadia Mono","Consolas",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:#07080b; color:var(--on);
+    font:400 14px/1.45 "Segoe UI Variable Text","Segoe UI",Roboto,system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased; overflow:hidden;
+  }
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+  .win{height:100vh;display:grid;grid-template-rows:42px 1fr;background:var(--bg);
+    border:1px solid var(--border);border-radius:0}
+  /* ── title bar ─────────────────────────────────────────────── */
+  .titlebar{display:flex;align-items:center;gap:10px;padding:0 14px;background:var(--bg-deep);
+    border-bottom:1px solid var(--border);font-size:12.5px;color:var(--on-var)}
+  .titlebar .logo{width:18px;height:18px;border-radius:5px;background:linear-gradient(135deg,#8ab4ff,#4d7bd1);
+    display:grid;place-items:center;color:#0b1733;font-size:11px;font-weight:700}
+  .titlebar b{color:var(--on);font-weight:600}
+  .titlebar .spacer{flex:1}
+  .wbtn{width:16px;height:16px;border-radius:50%;background:#2a2c33;display:inline-block;margin-left:8px}
+  /* ── shell ─────────────────────────────────────────────────── */
+  .shell{display:grid;grid-template-columns:216px 1fr;min-height:0}
+  .rail{background:var(--bg-deep);border-right:1px solid var(--border);padding:14px 10px;display:flex;flex-direction:column;gap:18px}
+  .rail .group{display:flex;flex-direction:column;gap:2px}
+  .rail .glabel{font-size:10.5px;font-weight:600;letter-spacing:.09em;color:var(--on-faint);
+    text-transform:uppercase;padding:0 10px 6px}
+  .nav{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;
+    font-size:13.5px;color:var(--on-var);text-align:left;width:100%;position:relative}
+  .nav:hover{background:var(--hover);color:var(--on)}
+  .nav.active{background:var(--primary-container);color:var(--on-primary-container)}
+  .nav svg{width:16px;height:16px;flex:0 0 16px;opacity:.9}
+  .nav .badge{margin-left:auto;font-size:11px;background:var(--success-container);color:var(--on-success-container);
+    border-radius:999px;padding:1px 7px;font-weight:600}
+  .rail .foot{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding:10px;border-top:1px solid var(--border)}
+  .rail .foot .hint{font-size:11.5px;color:var(--on-faint);line-height:1.5}
+  /* ── main ──────────────────────────────────────────────────── */
+  .main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relative;background:var(--bg)}
+  .topbar{display:flex;align-items:center;gap:12px;padding:0 22px;height:50px;border-bottom:1px solid var(--border);
+    background:var(--bg);flex:0 0 50px}
+  .live{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--on-var)}
+  .live .dot{width:8px;height:8px;border-radius:50%;background:var(--success);box-shadow:0 0 0 3px rgba(126,226,184,.14)}
+  .live b{color:var(--on);font-weight:600}
+  .topbar .sp{flex:1}
+  .toolbtn{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;border-radius:8px;
+    border:1px solid var(--border-strong);color:var(--on-var);font-size:12.5px}
+  .toolbtn:hover{background:var(--hover);color:var(--on)}
+  .toolbtn.on{background:var(--success-container);border-color:transparent;color:var(--on-success-container)}
+  .toolbtn.demo-chrome{border-style:dashed;border-color:#3a3e48;color:var(--on-faint);font-size:12px}
+  .toolbtn.demo-chrome:hover{color:var(--on-var);background:var(--hover)}
+  .toolbtn svg{width:14px;height:14px}
+  .viewport{flex:1;min-height:0;overflow:auto;padding:22px 26px 96px;scrollbar-width:thin}
+  .screen{display:none;max-width:1240px;margin:0 auto}
+  .screen.active{display:block}
+  .statusbar{flex:0 0 30px;display:flex;align-items:center;gap:16px;padding:0 22px;
+    background:var(--bg-deep);border-top:1px solid var(--border);font-size:11.5px;color:var(--on-faint)}
+  .statusbar .k{color:var(--on-var)}
+  .statusbar .sp{flex:1}
+  /* ── page header ───────────────────────────────────────────── */
+  .pagehead{display:flex;align-items:flex-start;gap:24px;margin-bottom:22px}
+  .pagehead h1{font-size:22px;font-weight:600;letter-spacing:-.01em;line-height:1.2}
+  .pagehead .sub{max-width:60ch;margin-top:6px;color:var(--on-var);font-size:13px;line-height:1.5}
+  .pagehead .right{margin-left:auto;display:flex;align-items:center;gap:8px;flex:0 0 auto}
+  .chip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:999px;
+    font-size:11.5px;font-weight:600;letter-spacing:.01em;white-space:nowrap}
+  .chip .cdot{width:6px;height:6px;border-radius:50%;background:currentColor}
+  .chip.ok{background:var(--success-container);color:var(--on-success-container)}
+  .chip.warn{background:var(--warning-container);color:var(--on-warning-container)}
+  .chip.bad{background:var(--error-container);color:var(--on-error-container)}
+  .chip.muted{background:var(--surf-highest);color:var(--on-var)}
+  .chip.info{background:var(--primary-container);color:var(--on-primary-container)}
+  /* ── buttons ───────────────────────────────────────────────── */
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;padding:0 14px;
+    border-radius:8px;font-size:13px;font-weight:600;white-space:nowrap;transition:background .12s}
+  .btn svg{width:15px;height:15px}
+  .btn.primary{background:var(--primary);color:var(--on-primary)}
+  .btn.primary:hover{background:#c2d5ff}
+  .btn.tonal{background:var(--surf-high);color:var(--on)}
+  .btn.tonal:hover{background:var(--surf-highest)}
+  .btn.outline{border:1px solid var(--outline-var);color:var(--on-var)}
+  .btn.outline:hover{border-color:var(--outline);color:var(--on)}
+  .btn.ghost{color:var(--on-var);padding:0 10px}
+  .btn.ghost:hover{background:var(--hover);color:var(--on)}
+  .btn.danger{background:var(--error-container);color:var(--on-error-container)}
+  .btn.danger:hover{background:#6d1b18}
+  .btn.small{height:28px;font-size:12px;padding:0 10px;border-radius:7px}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn .spin{width:13px;height:13px;border-radius:50%;border:2px solid rgba(0,0,0,.25);
+    border-top-color:currentColor;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  /* ── panels / cards ────────────────────────────────────────── */
+  .panel{background:var(--surf-low);border:1px solid var(--border);border-radius:var(--radius-l);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.035), 0 1px 2px rgba(0,0,0,.35)}
+  .panel-h{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border)}
+  .panel-h h2{font-size:14px;font-weight:600}
+  .panel-h .desc{font-size:12.5px;color:var(--on-faint);max-width:58ch}
+  .panel-h .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .panel-b{padding:18px}
+  .panel-b.tight{padding:10px 18px 16px}
+  .section-note{font-size:12px;color:var(--on-faint);line-height:1.55;max-width:60ch}
+  .stack{display:flex;flex-direction:column;gap:20px}
+  /* ── running card ──────────────────────────────────────────── */
+  .running{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:26px;align-items:start}
+  .run-card{background:var(--surf-high);border:1px solid var(--border-strong);border-radius:var(--radius-l);
+    padding:0;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 6px 18px rgba(0,0,0,.28)}
+  .run-card .accent{height:3px;background:var(--success)}
+  .run-card .body{padding:16px 18px 14px}
+  .run-card .row1{display:flex;align-items:center;gap:10px}
+  .run-card h3{font-size:16px;font-weight:600}
+  .run-card .msg{margin-top:8px;font-size:13.5px;color:var(--on)}
+  .run-card .meta{margin-top:5px;font-size:12.5px;color:var(--on-faint);display:flex;gap:14px;flex-wrap:wrap}
+  .run-card .meta .mono{font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
+  .run-card .foot{display:flex;align-items:center;gap:10px;padding:10px 18px 14px}
+  .run-card .foot .sp{flex:1}
+  .rows{display:grid;gap:2px;margin-top:14px;border-top:1px solid var(--border-strong);border-radius:8px;overflow:hidden}
+  .rows .rh{display:grid;grid-template-columns:1.4fr 1.2fr 1.6fr auto;gap:10px;font-size:11px;
+    color:var(--on-faint);padding:6px 4px 4px;text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+  .rrow{display:grid;grid-template-columns:1.4fr 1.2fr 1.6fr auto;gap:10px;align-items:baseline;
+    padding:6px 4px;font-size:12.5px;border-top:1px solid rgba(255,255,255,.05)}
+  .rrow .nm{color:var(--on)}
+  .rrow .st{color:var(--on-var)}
+  .rrow .dt{color:var(--on-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rrow .nx{font-family:var(--mono);font-size:11.5px;color:var(--on-var);font-variant-numeric:tabular-nums}
+  .rrow.is-ok .st{color:var(--success)}
+  /* ── idle tiles ────────────────────────────────────────────── */
+  .sec-h{display:flex;align-items:baseline;gap:10px;margin:0 0 12px}
+  .sec-h h2{font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--on-var)}
+  .sec-h .n{font-size:12px;color:var(--on-faint)}
+  .tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+  .tile{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--surf-low);
+    border:1px solid #22242b;border-radius:12px;min-height:66px}
+  .tile .ico{width:34px;height:34px;border-radius:9px;background:var(--surf-high);display:grid;place-items:center;
+    color:var(--on-var);flex:0 0 34px}
+  .tile .ico svg{width:17px;height:17px}
+  .tile .t{min-width:0;flex:1}
+  .tile .t b{display:block;font-size:13.5px;font-weight:600}
+  .tile .t span{display:block;font-size:12px;color:var(--on-faint);margin-top:2px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .tile .act{flex:0 0 auto}
+  .tile:hover{border-color:#2f323a;background:var(--hover-2)}
+  .tile.empty{grid-column:1/-1;justify-content:center;background:transparent;border-style:dashed;
+    border-color:#2c2f37;min-height:96px;color:var(--on-var);flex-direction:column;gap:6px;text-align:center}
+  .rows.five .rh,.rows.five .rrow{grid-template-columns:1.3fr 1fr .8fr .8fr auto}
+  /* ── fields ────────────────────────────────────────────────── */
+  .form{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:22px;align-items:start}
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field > label{font-size:12.5px;font-weight:500;color:var(--on-var)}
+  .field .help{font-size:12px;color:var(--on-faint);max-width:58ch}
+  .control{display:flex;align-items:center;gap:8px;height:36px;padding:0 11px;border-radius:8px;
+    background:var(--bg-deep);border:1px solid var(--border-strong);font-size:13px;color:var(--on);width:100%;text-align:left}
+  .control:focus,.control:focus-visible{outline:none;border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}
+  .control .chev{margin-left:auto;color:var(--on-faint)}
+  .control.mono{font-family:var(--mono);font-size:12.5px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .switch{width:38px;height:22px;border-radius:999px;background:var(--surf-highest);position:relative;flex:0 0 38px}
+  .switch::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--on-var)}
+  .switch.on{background:var(--primary-container)}
+  .switch.on::after{left:19px;background:var(--on-primary-container)}
+  .toggle-row{display:flex;align-items:center;gap:12px;padding:9px 0}
+  .toggle-row .t{flex:1}
+  .toggle-row .t b{font-size:13px;font-weight:500;display:block}
+  .toggle-row .t span{font-size:12px;color:var(--on-faint);display:block;margin-top:2px}
+  /* ── dirty / banners ───────────────────────────────────────── */
+  .banner{display:flex;align-items:flex-start;gap:11px;padding:12px 14px;border-radius:10px;font-size:13px;margin-bottom:16px}
+  .banner svg{width:17px;height:17px;flex:0 0 17px;margin-top:1px}
+  .banner .bt{flex:1}
+  .banner .bt b{display:block;font-weight:600;margin-bottom:2px}
+  .banner .bt span{color:inherit;opacity:.85;font-size:12.5px}
+  .banner.error{background:var(--error-container);color:var(--on-error-container);border:1px solid #7e2a25}
+  .banner.warn{background:var(--warning-container);color:var(--on-warning-container);border:1px solid #5d4719}
+  .banner.ok{background:var(--success-container);color:var(--on-success-container);border:1px solid #1d5540}
+  /* ── save bar ──────────────────────────────────────────────── */
+  .savebar{margin-top:20px;display:flex;align-items:center;gap:12px;
+    padding:12px 16px;background:var(--surf);border:1px solid #2b2e36;border-radius:12px;
+    box-shadow:0 -8px 24px rgba(0,0,0,.28)}
+  .savebar.clean .btn.primary,.savebar.clean .btn.ghost{opacity:.45;pointer-events:none}
+  .savebar .state{font-size:12.5px;color:var(--on-faint);display:flex;align-items:center;gap:8px}
+  .savebar .sp{flex:1}
+  .savebar .state .sdot{width:7px;height:7px;border-radius:50%;background:var(--on-faint)}
+  .savebar.dirty .state{color:var(--on-var)}
+  .savebar.dirty .state .sdot{background:var(--warning);box-shadow:0 0 0 3px rgba(242,204,123,.15)}
+  /* ── read-only aside ───────────────────────────────────────── */
+  .aside-card{position:sticky;top:0}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:6px 14px;font-size:12.5px;padding:2px 0}
+  .kv .k{color:var(--on-faint)}
+  .kv .v{font-family:var(--mono);font-size:12px;color:var(--on-var);font-variant-numeric:tabular-nums;text-align:right}
+  .collapse-h{display:flex;align-items:center;gap:8px;width:100%;padding:12px 16px;font-size:12.5px;
+    font-weight:600;color:var(--on-var)}
+  .collapse-h .chev{margin-left:auto;color:var(--on-faint);transition:transform .15s}
+  .collapse[data-open="1"] .chev{transform:rotate(180deg)}
+  .collapse .cb{display:none;padding:0 16px 14px}
+  .collapse[data-open="1"] .cb{display:block}
+  .link{color:var(--primary);font-size:12.5px;font-weight:500;text-decoration:none}
+  .link:hover{text-decoration:underline}
+  /* ── pet ───────────────────────────────────────────────────── */
+  .rowcard{padding:14px 16px;border-radius:12px;background:var(--surf-low);border:1px solid #24262d;margin-bottom:12px}
+  .rowcard .rh{display:flex;align-items:center;gap:10px}
+  .rowcard .rh h3{font-size:14px;font-weight:600}
+  .rowcard .rh .sp{flex:1}
+  .rowcard .fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:14px}
+  .rowcard .live{margin-top:12px;padding:9px 11px;border-radius:8px;background:var(--bg-deep);
+    border:1px solid var(--border);display:flex;gap:10px;align-items:center;font-size:12.5px;color:var(--on-var)}
+  .rowcard .live .mono{font-family:var(--mono);font-size:12px;color:var(--on)}
+  .rowcard .live .sp{flex:1}
+  .immediate{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;
+    color:var(--on-warning-container);background:var(--warning-container);padding:2px 8px;border-radius:999px}
+  /* ── bag grid ──────────────────────────────────────────────── */
+  .bag{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;max-width:340px}
+  .cell{aspect-ratio:1;border-radius:5px;background:var(--bg-deep);border:1px solid var(--outline-var);
+    display:grid;place-items:center;color:var(--on-primary);position:relative}
+  .cell:hover{border-color:var(--outline);background:#151822}
+  .cell .ck{width:11px;height:11px;opacity:0}
+  .cell.sel{background:var(--primary-container);border:2px solid var(--primary)}
+  .cell.sel .ck{opacity:1;color:var(--on-primary-container)}
+  .cell.sel::after{content:"";position:absolute;inset:0;border-radius:4px;border:2px solid var(--on-primary-container);opacity:.25}
+  .bag-legend{display:flex;gap:16px;margin-top:10px;font-size:12px;color:var(--on-faint);align-items:center}
+  .bag-legend i{width:12px;height:12px;border-radius:3px;display:inline-block;vertical-align:-2px;margin-right:6px}
+  /* ── calibrate ─────────────────────────────────────────────── */
+  .cal{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:22px;align-items:start}
+  .canvas{position:relative;border-radius:10px;overflow:hidden;background:#0d1017;border:1px solid #2b2e36;
+    aspect-ratio:16/10}
+  .canvas .fake{position:absolute;inset:0;background:
+      radial-gradient(120% 90% at 60% 20%,#1a2433 0%,#0d1017 60%),
+      linear-gradient(180deg,#121924 0%,#0b0e14 100%)}
+  .canvas .bar{position:absolute;left:0;right:0;height:26px;background:#141b27;border-bottom:1px solid #1e2735}
+  .canvas .win{position:absolute;left:22%;top:18%;width:56%;height:58%;border-radius:6px;
+    background:linear-gradient(180deg,#1b2434,#131a26);border:1px solid #2b3648;
+    box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  .canvas .win .t{font-size:10px;color:#8fa3c0;padding:6px 8px}
+  .canvas .slot{position:absolute;left:8%;top:46%;width:11%;aspect-ratio:1;border-radius:4px;
+    background:#233047;border:1px solid #3a4b69}
+  .canvas .slot:after{content:"item";position:absolute;inset:0;display:grid;place-items:center;
+    font-size:8px;color:#7f94b3}
+  .canvas .mark{position:absolute;left:22%;top:18%;width:56%;height:58%;border:2px solid var(--primary);
+    border-radius:6px;box-shadow:0 0 0 1px rgba(173,198,255,.25)}
+  .canvas .mark .lab{position:absolute;left:0;top:-22px;font-size:10.5px;background:var(--primary);color:var(--on-primary);
+    padding:1px 7px;border-radius:5px;font-weight:600;white-space:nowrap}
+  .canvas .zoom{position:absolute;right:10px;bottom:10px;display:flex;gap:6px;align-items:center;
+    background:rgba(12,14,19,.85);border:1px solid #2b2e36;border-radius:8px;padding:4px 6px;font-size:11.5px;color:var(--on-var)}
+  /* ── logs drawer ───────────────────────────────────────────── */
+  .drawer{position:absolute;left:216px;right:0;bottom:0;height:0;overflow:hidden;background:var(--bg-deep);
+    border-top:1px solid var(--border);transition:height .18s ease;z-index:20}
+  .drawer.open{height:238px}
+  .drawer .dh{display:flex;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid var(--border)}
+  .drawer .dh b{font-size:13px;font-weight:600}
+  .drawer .dh .cnt{font-size:11.5px;color:var(--on-faint)}
+  .drawer .dh .sp{flex:1}
+  .filters{display:flex;gap:6px}
+  .fchip{font-size:11.5px;padding:3px 9px;border-radius:999px;color:var(--on-faint);border:1px solid transparent}
+  .fchip.active{background:var(--surf-high);color:var(--on)}
+  .loglist{height:178px;overflow:auto;padding:8px 18px 14px;font-family:var(--mono);font-size:11.5px;line-height:1.75}
+  .logline{display:grid;grid-template-columns:64px 74px 1fr;gap:10px;white-space:nowrap}
+  .logline .t{color:var(--on-faint)}
+  .logline .lv{font-weight:600}
+  .logline.info .lv{color:var(--info)} .logline.warn .lv{color:var(--warning)}
+  .logline.error .lv{color:var(--error)} .logline.shell .lv{color:var(--on-var)}
+  .logline .m{color:var(--on-var);overflow:hidden;text-overflow:ellipsis}
+  /* ── notes / pins ──────────────────────────────────────────── */
+  .pin{position:absolute;width:20px;height:20px;border-radius:50%;background:var(--warning);color:#2a1e00;
+    font-size:11px;font-weight:700;display:grid;place-items:center;z-index:30;
+    box-shadow:0 0 0 2px var(--bg),0 2px 8px rgba(0,0,0,.5);transform:translate(-6px,-8px);cursor:help}
+  .notespanel{position:absolute;right:0;top:0;bottom:0;width:360px;background:var(--bg-low, #15171d);
+    background:#15171d;border-left:1px solid #262931;z-index:40;display:none;overflow:auto;padding:18px}
+  .notespanel.open{display:block}
+  .notespanel h3{font-size:13px;font-weight:600;margin-bottom:4px}
+  .notespanel .np-sub{font-size:12px;color:var(--on-faint);margin-bottom:16px}
+  .note{border-top:1px solid var(--border);padding:12px 0;font-size:12.5px;line-height:1.55;color:var(--on-var)}
+  .note b{color:var(--on);font-weight:600}
+  .note .rule{display:inline-block;font-family:var(--mono);font-size:11px;color:var(--warning);
+    background:var(--warning-container);padding:1px 6px;border-radius:4px;margin-right:6px}
+  .notebtn{position:absolute;right:18px;bottom:44px;z-index:25}
+  .compare{position:absolute;inset:0;background:rgba(5,6,9,.86);z-index:50;display:none;padding:30px}
+  .compare.open{display:block}
+  .compare img{max-width:100%;max-height:calc(100vh - 130px);display:block;margin:0 auto;
+    border-radius:10px;border:1px solid #2b2e36;box-shadow:0 24px 80px rgba(0,0,0,.6)}
+  .compare .cap{color:var(--on-var);font-size:12.5px;text-align:center;margin-top:12px}
+  .compare .close{position:absolute;top:18px;right:22px}
+  /* ── calibrate workspace ───────────────────────────────────── */
+  .cal-shell{display:grid;grid-template-columns:250px minmax(0,1fr) 340px;gap:18px;align-items:start}
+  .capitem{display:flex;gap:10px;padding:8px;border-radius:9px;border:1px solid #24262d;background:var(--bg-deep);margin-bottom:8px;cursor:pointer;align-items:center;width:100%;text-align:left}
+  .capitem:hover{border-color:var(--border-strong)}
+  .capitem.active{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}
+  .capthumb{width:52px;height:34px;border-radius:5px;flex:0 0 52px;background:linear-gradient(160deg,#1c283a,#0e131c);border:1px solid #2b3648;position:relative;overflow:hidden}
+  .capthumb::after{content:"";position:absolute;inset:30% 20% 20% 20%;border:1px solid #3a4b69;border-radius:3px}
+  .capitem .ct{min-width:0}
+  .capitem .ct b{display:block;font-size:12px;font-weight:600}
+  .capitem .ct span{display:block;font-size:11px;color:var(--on-faint);font-family:var(--mono)}
+  .tgtgroup{margin-bottom:10px}
+  .tgtgroup-h{display:flex;align-items:center;gap:7px;font-size:10.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--on-faint);padding:4px 2px}
+  .tgtgroup-h .sp{flex:1}
+  .tgtrow{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:7px;font-size:12.5px;color:var(--on-var);cursor:pointer;width:100%;text-align:left}
+  .tgtrow:hover{background:#1b1d23;color:var(--on)}
+  .tgtrow.active{background:var(--primary-container);color:var(--on-primary-container)}
+  .tgtrow .sd{width:7px;height:7px;border-radius:50%;flex:0 0 7px;background:var(--outline)}
+  .tgtrow .sd.ok{background:var(--success)} .tgtrow .sd.warn{background:var(--warning)} .tgtrow .sd.off{background:var(--outline-var)}
+  .tgtrow .meta{margin-left:auto;font-size:10.5px;color:var(--on-faint);font-family:var(--mono)}
+  .tgtrow.active .meta{color:var(--on-primary-container);opacity:.75}
+  .tablewrap{overflow:auto;max-height:340px}
+  table.coord{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.coord th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-faint);font-weight:600;padding:8px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surf-low)}
+  table.coord td{padding:7px 14px;border-bottom:1px solid rgba(255,255,255,.05);color:var(--on-var);white-space:nowrap}
+  table.coord td.mono{font-family:var(--mono);font-size:11.5px;color:var(--on)}
+  table.coord tr:hover td{background:var(--hover-2)}
+  .st-dot{display:inline-flex;align-items:center;gap:6px;font-size:11.5px}
+  .st-dot i{width:6px;height:6px;border-radius:50%;background:var(--outline);display:inline-block}
+  .st-dot.ok i{background:var(--success)} .st-dot.off i{background:var(--outline-var)} .st-dot.warn i{background:var(--warning)}
+  .artifact{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid rgba(255,255,255,.05)}
+  .artifact:first-child{border-top:0}
+  .artifact .thumb{width:64px;height:40px;flex:0 0 64px;border-radius:5px;border:1px solid #2b3648;background:linear-gradient(160deg,#1d2a3d,#0f141d);position:relative;overflow:hidden}
+  .artifact .thumb .lb{position:absolute;inset:auto 0 0 0;font-size:7px;text-align:center;background:rgba(0,0,0,.45);color:#9db3d3}
+  .artifact .ai{min-width:0;flex:1}
+  .artifact .ai b{display:block;font-size:12px;font-weight:600}
+  .artifact .ai span{display:block;font-size:11px;color:var(--on-faint)}
+  .sessionrow{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid rgba(255,255,255,.05)}
+  .sessionrow:first-child{border-top:0}
+  .sessionrow .si{flex:1}
+  .sessionrow .si b{display:block;font-size:12.5px;font-weight:600}
+  .sessionrow .si span{display:block;font-size:11.5px;color:var(--on-faint)}
+  .muted{color:var(--on-faint)}
+  .mono{font-family:var(--mono)}
+  .demo-states{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--on-faint)}
+  .demo-states select{background:var(--surf-high);color:var(--on);border:1px solid var(--border-strong);border-radius:6px;
+    font-size:11.5px;padding:3px 6px}
+
+  /* ── demo: current-shell additions ─────────────────────────── */
+  :root{ --border:#23252c; --border-strong:#34373f; --hover:#17191f; --hover-2:#1c1e24; }
+  body.light{
+    --bg:#f6f7fb; --bg-deep:#eceff6; --surf-low:#ffffff; --surf:#ffffff;
+    --surf-high:#f1f3f8; --surf-highest:#e7eaf1;
+    --on:#15181e; --on-var:#414855; --on-faint:#6c7380;
+    --outline:#7c8492; --outline-var:#d4d8e1;
+    --primary:#245fc4; --on-primary:#ffffff;
+    --primary-container:#dbe7ff; --on-primary-container:#0c2d63;
+    --error:#a12a22; --error-container:#ffdad6; --on-error-container:#410002;
+    --tertiary:#7d4e7e;
+    --success:#0f6b4a; --success-container:#c8f2df; --on-success-container:#002116;
+    --warning:#7a4d00; --warning-container:#ffe8b3; --on-warning-container:#2b1a00;
+    --info:#1d5fa8; --border:#d7dbe3; --border-strong:#c4c9d3; --hover:#eef1f7; --hover-2:#f1f4f9;
+  }
+  body.light .panel,body.light .tile,body.light .control,body.light .run-card,body.light .savebar,
+  body.light .titlebar,body.light .rail,body.light .topbar,body.light .statusbar{box-shadow:none}
+  body.light .canvas{background:#dde3ee}
+  body.light .canvas .fake{background:radial-gradient(120% 90% at 60% 20%,#e8eef9 0%,#cfd8e8 60%),linear-gradient(180deg,#e8eef8,#dce3ef)}
+  body.light .canvas .bar{background:#cdd7e7;border-bottom-color:#bcc7d9}
+  body.light .canvas .win{background:linear-gradient(180deg,#f7f9fe,#e6ebf5);border-color:#b9c6da}
+  body.light .canvas .win .t{color:#60728e}
+  body.light .canvas .slot{background:#d3deef;border-color:#aebdd4}
+  body.light .canvas .slot:after{color:#687c9a}
+  body.light .capthumb,body.light .artifact .thumb{background:linear-gradient(160deg,#e9eef7,#d5deeb);border-color:#bdc9da}
+  body.light .capthumb::after{border-color:#aebdd4}
+  body.light .artifact .thumb .lb{background:rgba(255,255,255,.55);color:#52657f}
+
+  /* ── config-tab grade ladder ───────────────────────────────── */
+  .config-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:22px;align-items:start}
+  .ladder{background:var(--surf-low);border:1px solid var(--border);border-radius:var(--radius-m);padding:var(--s-md)}
+  .ladder-head{display:flex;align-items:center;gap:var(--s-sm);margin-bottom:var(--s-sm)}
+  .ladder-head .cap{font-size:12px;color:var(--on-var)}
+  .ladder-head .static{margin-left:auto;border:1px solid var(--outline-var);border-radius:5px;padding:1px 6px;
+    font:600 9px var(--mono);letter-spacing:.06em;color:var(--on-faint);text-transform:uppercase}
+  .ladder-path{display:flex;align-items:center;gap:var(--s-xs);overflow:auto;padding:2px 0}
+  .gnode{min-width:54px;min-height:34px;padding:0 10px;display:grid;place-items:center;border-radius:6px;
+    background:var(--surf);border:1px solid var(--outline-var);font-size:13px;font-weight:700;color:var(--on)}
+  .gnode.target{background:var(--primary-container);border-color:var(--primary);color:var(--on-primary-container)}
+  .gnode.minimum{background:var(--warning-container);border-color:var(--warning);color:var(--on-warning-container)}
+  .gnode.both{background:var(--primary-container);border:2px solid var(--warning);color:var(--on-primary-container)}
+  .gnode.start{background:var(--primary-container);border-color:var(--primary);color:var(--on-primary-container)}
+  .garrow{color:var(--outline-var);font-size:16px;line-height:1;flex:0 0 auto}
+  .garrow.on{color:var(--primary)}
+  .grade-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s-md);margin-top:var(--s-md)}
+  .grade-fields.one{grid-template-columns:minmax(0,1fr)}
+  .inline-note{font-size:11.5px;color:var(--on-faint)}
+
+  /* ── pet two-column ────────────────────────────────────────── */
+  .pet-summary{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 14px}
+  .pill{border:1px solid var(--outline-var);border-radius:6px;padding:2px 8px;font-size:10.5px;color:var(--on-faint);white-space:nowrap}
+  .pill b{color:var(--on);font-weight:600}
+  .pet-cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+  .pet-cols .stack{gap:16px}
+  .readiness{border:1px solid var(--border);border-radius:var(--radius-m);background:var(--surf-low);overflow:hidden;margin-bottom:14px}
+  .readiness-h{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer}
+  .readiness-h .dot{width:8px;height:8px;border-radius:50%;background:var(--success);flex:0 0 8px}
+  .readiness-h b{font-size:13px;font-weight:600}
+  .readiness-h span{font-size:12px;color:var(--on-faint)}
+  .readiness-h .chev{margin-left:auto;color:var(--on-faint);transition:transform .15s}
+  .readiness.open .chev{transform:rotate(180deg)}
+  .readiness-b{display:none;border-top:1px solid var(--border);padding:8px 14px 10px}
+  .readiness.open .readiness-b{display:block}
+  .chk{display:grid;grid-template-columns:16px 1fr auto;gap:8px;align-items:start;padding:6px 0;font-size:12px}
+  .chk .ic{font-size:11px;line-height:1.4}
+  .chk .txt b{display:block;font-weight:500;color:var(--on)}
+  .chk .txt span{display:block;color:var(--on-faint);font-size:11.5px;margin-top:1px}
+  .chk .ok{color:var(--success)} .chk .bad{color:var(--error)}
+  .chk .tag{font:600 9px var(--mono);color:var(--on-faint);border:1px solid var(--outline-var);border-radius:4px;padding:1px 5px}
+  .rowcard.pet{padding:12px 14px;margin-bottom:10px}
+  .rowcard.pet .rh h3{font-size:13.5px}
+  .rowcard.pet .rh .live{margin:0;font-size:11.5px;padding:0;border:0;background:none}
+  .rowcard.pet .fields{grid-template-columns:auto auto 1fr;align-items:center;gap:12px;margin-top:10px}
+  .rowcard.pet .fields .field{gap:4px}
+  .immediate-tick{display:flex;align-items:center;gap:7px;margin-left:auto;font-size:11.5px;color:var(--on-warning-container);background:var(--warning-container);border-radius:999px;padding:3px 9px}
+  .queue-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--border)}
+  .queue-row:first-child{border-top:0}
+  .queue-row .ico{width:26px;height:26px;border-radius:6px;background:var(--surf-high);display:grid;place-items:center;color:var(--on-var);flex:0 0 26px}
+  .queue-row .ico svg{width:14px;height:14px}
+  .queue-row .q-main{min-width:0;flex:1}
+  .queue-row .q-main b{display:block;font-size:12.5px;font-weight:500}
+  .queue-row .q-main span{display:block;font-size:11px;color:var(--on-faint)}
+  .page-tabs{display:flex;gap:4px;margin:12px 0 8px}
+  .page-tab{font:600 11px var(--mono);color:var(--on-faint);border:1px solid var(--outline-var);border-radius:5px;padding:3px 9px}
+  .page-tab.active{background:var(--primary-container);border-color:var(--primary);color:var(--on-primary-container)}
+  .food-wrap{display:flex;gap:16px;align-items:flex-start}
+  .food-wrap .bag{max-width:300px;flex:1}
+  .food-side{flex:1;min-width:120px;font-size:12px;color:var(--on-var)}
+  .food-side .count{font-size:22px;font-weight:600;color:var(--on);line-height:1.1;margin-bottom:2px}
+  .food-side .count span{font-size:12px;font-weight:400;color:var(--on-faint)}
+  .food-side .mini-kv{display:grid;grid-template-columns:1fr auto;gap:4px;font-size:11.5px;color:var(--on-faint);margin-top:10px;padding-top:8px;border-top:1px solid var(--border)}
+  .food-side .mini-kv b{color:var(--on-var);font-weight:500;text-align:right;font-family:var(--mono)}
+  .empty-line{border:1px dashed var(--outline-var);border-radius:8px;padding:12px;text-align:center;color:var(--on-faint);font-size:12px}
+
+  /* ── calibrate workspace (current) ─────────────────────────── */
+  .tool-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+  .tool-tab{font-size:12px;font-weight:600;color:var(--on-var);padding:6px 11px;border-radius:7px;border:1px solid transparent}
+  .tool-tab:hover{background:var(--hover)}
+  .tool-tab.active{background:var(--primary-container);border-color:var(--primary);color:var(--on-primary-container)}
+  .capture-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:14px;
+    background:var(--surf-low);border:1px solid var(--border);border-radius:var(--radius-m)}
+  .capture-bar .frame{width:48px;height:30px;border-radius:5px;flex:0 0 48px;background:var(--bg-deep);border:1px solid var(--border-strong);position:relative}
+  .capture-bar .frame::after{content:"frame";position:absolute;inset:auto 0 0;font-size:7px;text-align:center;color:var(--on-faint)}
+  .capture-bar .cb-main{min-width:0;flex:1}
+  .capture-bar .cb-main b{display:block;font-size:12px;font-weight:600}
+  .capture-bar .cb-main span{display:block;font-size:11px;color:var(--on-faint);font-family:var(--mono)}
+  .capture-bar .cb-actions{display:flex;gap:6px;flex-wrap:wrap}
+  .cal-fixed{display:grid;grid-template-columns:250px minmax(0,1fr) 340px;gap:16px;align-items:stretch;height:calc(100vh - 430px);min-height:420px}
+  .cal-fixed .panel{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  .cal-pane{min-height:0;overflow:auto}
+  .cal-canvas-wrap{display:flex;flex-direction:column;min-height:0}
+  .cal-canvas-wrap .canvas{flex:1;min-height:260px;aspect-ratio:auto}
+  .mark-toolbar{display:flex;align-items:center;gap:8px;padding:0 0 10px}
+  .mark-toolbar .chip{margin-left:auto}
+  .cal-aside .panel + .panel{margin-top:14px}
+  .inline-actions{display:flex;gap:6px;flex-wrap:wrap}
+  .dialog-backdrop{position:fixed;inset:0;background:rgba(4,6,10,.66);z-index:80;display:none;align-items:center;justify-content:center;padding:30px}
+  .dialog-backdrop.open{display:flex}
+  .dialog{width:min(620px,92vw);max-height:80vh;overflow:auto;background:var(--surf);border:1px solid var(--border-strong);border-radius:14px;box-shadow:0 24px 80px rgba(0,0,0,.5)}
+  .dialog-h{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border)}
+  .dialog-h h2{font-size:14px;font-weight:600}
+  .dialog-h .sp{flex:1}
+  .dialog-b{padding:16px 18px}
+  .dialog-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--border);font-size:12.5px}
+  .dialog-row:first-child{border-top:0}
+  .dialog-row .nm{min-width:0;flex:1}
+  .dialog-row .nm b{display:block;font-weight:500}
+  .dialog-row .nm span{display:block;font-size:11px;color:var(--on-faint)}
+  .dialog-row .mono{font-size:11px;color:var(--on-var)}
+
+  /* ── miscellaneous current screens ─────────────────────────── */
+  .two-col{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:22px;align-items:start}
+  .segmented{display:inline-flex;padding:3px;background:var(--bg-deep);border:1px solid var(--border-strong);border-radius:8px;gap:2px}
+  .seg{font-size:12px;font-weight:600;color:var(--on-var);padding:5px 10px;border-radius:6px}
+  .seg.active{background:var(--primary-container);color:var(--on-primary-container)}
+  .keyfield{display:flex;align-items:center;gap:8px;min-height:36px;padding:0 10px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg-deep);font-size:12.5px}
+  .keyfield .kbd{margin-left:auto;font:600 10.5px var(--mono);color:var(--on-var);border:1px solid var(--outline-var);border-radius:4px;padding:2px 6px;background:var(--surf)}
+  .status-card{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--surf-low);margin-bottom:14px}
+  .status-card .ico{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--success-container);color:var(--on-success-container)}
+  .status-card .ico svg{width:18px;height:18px}
+  .status-card .t{flex:1;min-width:0}
+  .status-card .t b{display:block;font-size:13px}
+  .status-card .t span{display:block;font-size:11.5px;color:var(--on-faint);margin-top:2px}
+  .list-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border);font-size:12.5px}
+  .list-row:first-child{border-top:0}
+  .list-row .nm{flex:1;min-width:0}
+  .list-row .nm b{display:block;font-weight:500}
+  .list-row .nm span{display:block;font-size:11px;color:var(--on-faint);margin-top:1px}
+  .list-row .tag{font:600 9px var(--mono);color:var(--on-faint);border:1px solid var(--outline-var);border-radius:4px;padding:1px 5px}
+  .flow-step{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--bg-deep);font-size:12.5px}
+  .flow-step .n{width:20px;height:20px;border-radius:50%;background:var(--surf-high);display:grid;place-items:center;font:600 10px var(--mono);color:var(--on-var);flex:0 0 20px}
+  .flow-step .grow{flex:1}
+  .flow-step .mono{font-size:11px;color:var(--on-faint)}
+  .step-actions{display:flex;gap:4px;margin-left:auto;color:var(--on-faint);font-size:12px}
+  .attr-table{width:100%;border-collapse:collapse;font-size:12.5px}
+  .attr-table th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-faint);padding:7px 10px;border-bottom:1px solid var(--border);font-weight:600}
+  .attr-table td{padding:7px 10px;border-bottom:1px solid var(--border);color:var(--on-var)}
+  .attr-table td b{color:var(--on);font-weight:500}
+  .attr-table tr:hover td{background:var(--hover)}
+  .search{position:relative;margin-bottom:12px}
+  .search input{width:100%;height:36px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg-deep);color:var(--on);padding:0 12px;font:inherit;font-size:13px;outline:none}
+  .search input:focus{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}
+  .filter-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .fchip{border:1px solid var(--border-strong);border-radius:999px;padding:3px 10px;font-size:11.5px;color:var(--on-var)}
+  .fchip.active{background:var(--primary-container);border-color:var(--primary);color:var(--on-primary-container)}
+  .empty-box{border:1px dashed var(--outline-var);border-radius:10px;padding:28px 16px;text-align:center;color:var(--on-faint);font-size:12.5px}
+  .empty-box b{display:block;color:var(--on);font-size:13px;margin-bottom:3px}
+
+  /* ── responsive ────────────────────────────────────────────── */
+  @media (max-width:1120px){
+    .config-grid,.two-col{grid-template-columns:minmax(0,1fr)}
+    .cal-shell,.cal-fixed{grid-template-columns:220px minmax(0,1fr)}
+    .cal-fixed .cal-aside{grid-column:1/-1;height:auto}
+    .cal-fixed{height:auto;min-height:0}
+    .cal-canvas-wrap .canvas{min-height:320px}
+  }
+  @media (max-width:1060px){
+    .pet-cols{grid-template-columns:1fr}
+    .running{grid-template-columns:1fr}
+    .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .grade-fields{grid-template-columns:1fr}
+  }
+  @media (max-width:820px){
+    .shell{grid-template-columns:64px 1fr}
+    .rail .glabel,.rail .nav span,.rail .nav:not(.active){font-size:0}
+    .rail .nav{justify-content:center;padding:9px}
+    .rail .foot{display:none}
+    .cal-shell,.cal-fixed{grid-template-columns:1fr}
+    .cal-fixed .cal-tree{max-height:200px}
+    .tiles{grid-template-columns:1fr}
+    .viewport{padding:16px 16px 80px}
+    .topbar{padding:0 14px}
+  }
+
+  #selftest{position:fixed;left:12px;bottom:40px;z-index:200;background:var(--bg-deep);border:1px solid var(--border-strong);border-radius:8px;padding:10px 12px;font:11px/1.5 var(--mono);color:var(--on-var);white-space:pre;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+
+  body.light .btn.tonal{background:#eef1f7;color:#15181e}
+  body.light .btn.tonal:hover{background:#e3e8f1}
+  body.light .canvas .zoom{background:rgba(255,255,255,.9);border-color:#c4c9d3;color:#414855}
+
+  .btn{transition:none}
+  body.light .btn.tonal{background:#eef1f7 !important;color:#15181e !important}
+
+  .field > .switch{flex:none;width:38px;height:22px;align-self:flex-start}
+
+  body.light{background:#e9edf5}
+  body.light .titlebar,body.light .rail,body.light .topbar,body.light .statusbar{border-color:var(--border)}
+  .btn.outlined{border:1px solid var(--outline-var);color:var(--on-var)}
+  .btn.outlined:hover{border-color:var(--outline);color:var(--on);background:var(--hover)}
+  .toast{position:fixed;left:50%;bottom:52px;transform:translate(-50%,10px);background:var(--surf-high);color:var(--on);
+    border:1px solid var(--border-strong);border-radius:9px;padding:9px 14px;font-size:12.5px;opacity:0;pointer-events:none;
+    transition:opacity .16s,transform .16s;z-index:100;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+  .cid{font-size:11px;color:var(--on-faint);font-family:var(--mono)}
+</style>
+</head>
+<body class="demo">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path fill="currentColor" d="M13 2 4.5 13.5H11L9.5 22 19 10h-6.5L13 2Z"/></symbol>
+  <symbol id="i-tune" viewBox="0 0 24 24"><path fill="currentColor" d="M3 7h11a3 3 0 1 0 0 2H3V7Zm0 8h5a3 3 0 1 0 0 2H3v-2Zm18 2h-5v-2h5v2Zm0-8h-9V7h9v2Z"/></symbol>
+  <symbol id="i-gem" viewBox="0 0 24 24"><path fill="currentColor" d="m12 2 7 4.5-2.5 13L12 22l-4.5-2.5L5 6.5 12 2Z"/></symbol>
+  <symbol id="i-cart" viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h2l2.2 11h9.6L20 7H7.3L7 5.4A2 2 0 0 0 5 4H4Zm3 14a1.6 1.6 0 1 0 0 3.2A1.6 1.6 0 0 0 7 18Zm9 0a1.6 1.6 0 1 0 0 3.2A1.6 1.6 0 0 0 16 18Z"/></symbol>
+  <symbol id="i-quest" viewBox="0 0 24 24"><path fill="currentColor" d="M6 2h9l4 4v16H6V2Zm8 1.5V7h3.5L14 3.5ZM9 11h7v1.6H9V11Zm0 3.6h7V16H9v-1.4Z"/></symbol>
+  <symbol id="i-paw" viewBox="0 0 24 24"><path fill="currentColor" d="M8 10.5c1.5 0 2.5-1.5 2.5-3.2S9.7 4 8.2 4 5.7 5.6 5.7 7.3 6.5 10.5 8 10.5Zm8-1.6c1.5 0 2.4-1.4 2.4-3S17.5 3 16 3s-2.4 1.3-2.4 2.9 1 3 2.4 3ZM4.4 15.7c1.4 0 2.3-1.3 2.3-2.8S5.8 10 4.4 10 2 11.4 2 12.9s1 2.8 2.4 2.8Zm15.2 0c1.4 0 2.4-1.3 2.4-2.8s-1-2.9-2.4-2.9-2.3 1.4-2.3 2.9.9 2.8 2.3 2.8ZM12 12c-2.7 0-5.5 2.6-5.5 5.2 0 1.6 1.2 2.6 2.8 2.6 1 0 1.7-.4 2.7-.4s1.7.4 2.7.4c1.6 0 2.8-1 2.8-2.6 0-2.6-2.8-5.2-5.5-5.2Z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path fill="currentColor" d="M4 5h16v2H4V5Zm0 6h16v2H4v-2Zm0 6h10v2H4v-2Z"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 24 24"><path fill="currentColor" d="M7 3h10v3h3v10h-3v3H7v-3H4V6h3V3Zm2 5v8h6V8H9Zm-4 2H3v5h2v-5Zm16 0h-2v5h2v-5ZM9 21h5v2H9v-2Zm0-19h5V0H9v2Z"/></symbol>
+  <symbol id="i-keys" viewBox="0 0 24 24"><path fill="currentColor" d="M2 6h20v12H2V6Zm3 2v2h2V8H5Zm4 0v2h2V8H9Zm4 0v2h2V8h-2Zm4 0v2h2V8h-2ZM5 12v2h2v-2H5Zm4 0v2h6v-2H9Zm8 0v2h2v-2h-2ZM5 16v1h10v-1H5Z"/></symbol>
+  <symbol id="i-set" viewBox="0 0 24 24"><path fill="currentColor" d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm9 4-2.1-.8.6-2.2-2-2-2.2.6L14.5 5.5h-5L8.7 7.7 6.5 7.1l-2 2 .6 2.2L3 12l.8 2.1-.6 2.2 2 2 2.2-.6 1.8 2.2h5l1.8-2.2 2.2.6 2-2-.6-2.2L21 12Z"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 3.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13Zm0 2.5a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 2.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7L8 5Z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><path fill="currentColor" d="M6 6h12v12H6V6Z"/></symbol>
+  <symbol id="i-log" viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h16v2H4V4Zm0 5h16v2H4V9Zm0 5h16v2H4v-2Zm0 5h10v2H4v-2Z"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path fill="currentColor" d="M14 3l7 7-3 1-4 4 .5 5-1.5 1.5L8 17 3 22l-1-1 5-5-4.5-5L4 9.5l5 .5 4-4 1-3Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path fill="currentColor" d="m9 16.2-3.5-3.5L4 14.2 9 19l11-11-1.4-1.4L9 16.2Z"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2 1.5 21h21L12 2Zm1 15h-2v2h2v-2Zm0-7h-2v5h2v-5Z"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path fill="currentColor" d="m7 10 5 5 5-5H7Z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path fill="currentColor" d="M12 5V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7Z"/></symbol>
+</defs></svg>
+<div class="win">
+  <div class="titlebar">
+    <span class="logo">S</span><b>Seal Tools v3</b>
+    <span style="opacity:.55">· full UI demo · design review only</span>
+    <span class="spacer"></span>
+    <span class="muted" style="font-size:11.5px">appearance</span>
+    <button class="toolbtn" id="themeBtn" title="Cycle appearance (system / light / dark)">Dark ▾</button>
+    <span class="wbtn"></span><span class="wbtn"></span><span class="wbtn"></span>
+  </div>
+
+  <div class="shell">
+    <aside class="rail">
+      <div class="group">
+        <div class="glabel">Run</div>
+        <button class="nav active" data-go="run"><svg><use href="#i-play"/></svg><span>Cards</span> <span class="badge" id="railBadge">2</span></button>
+      </div>
+      <div class="group">
+        <div class="glabel">Tools</div>
+        <button class="nav" data-go="spammer"><svg><use href="#i-bolt"/></svg><span>Skill Spammer</span></button>
+        <button class="nav" data-go="tuner"><svg><use href="#i-tune"/></svg><span>Magic Tuner</span></button>
+        <button class="nav" data-go="gem"><svg><use href="#i-gem"/></svg><span>Gem Composer</span></button>
+        <button class="nav" data-go="buy"><svg><use href="#i-cart"/></svg><span>Buy</span></button>
+        <button class="nav" data-go="sell"><svg><use href="#i-cart"/></svg><span>Sell</span></button>
+        <button class="nav" data-go="quest"><svg><use href="#i-quest"/></svg><span>Quest Hand-in</span></button>
+        <button class="nav" data-go="pet"><svg><use href="#i-paw"/></svg><span>Pet Feeder</span></button>
+      </div>
+      <div class="group">
+        <div class="glabel">System</div>
+        <button class="nav" data-go="attributes"><svg><use href="#i-list"/></svg><span>Attributes</span></button>
+        <button class="nav" data-go="arduino"><svg><use href="#i-chip"/></svg><span>Arduino</span></button>
+        <button class="nav" data-go="hotkeys"><svg><use href="#i-keys"/></svg><span>Hotkeys</span></button>
+        <button class="nav" data-go="setup"><svg><use href="#i-set"/></svg><span>Setup</span></button>
+        <button class="nav" data-go="calibrate"><svg><use href="#i-target"/></svg><span>Calibrate</span></button>
+      </div>
+      <div class="foot">
+        <div class="hint"><b style="color:var(--on-var)">Full shipped UI</b><br>13 screens · dark / light · key interactions are live.</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div class="live"><span class="dot"></span><b>core ready</b><span>· rev 7 · TW_LIVE</span></div>
+        <span class="sp"></span>
+        <button class="toolbtn" id="logsBtn"><svg><use href="#i-log"/></svg>Logs <span id="logCount">5</span></button>
+        <button class="toolbtn" id="pinBtn" title="Keep on top"><svg><use href="#i-pin"/></svg></button>
+        <span class="muted" style="font-size:11.5px">v3.0.6</span>
+        <span style="width:1px;height:18px;background:var(--border-strong)"></span>
+        <button class="toolbtn" id="demoNotes">Demo notes</button>
+      </div>
+
+      <div class="viewport" id="viewport">
+        <!-- ═══ CARDS / RUN ═══ -->
+        <section class="screen active" data-screen="run">
+          <div class="pagehead">
+            <div><h1>Run</h1><div class="sub">One foreground tool at a time. The resident Pet Feeder keeps working while another tool is up; everything else waits its turn.</div></div>
+            <div class="right"><span class="chip ok"><span class="cdot"></span>2 running</span><button class="btn outline small"><svg><use href="#i-refresh"/></svg>Refresh</button></div>
+          </div>
+          <div class="running">
+            <div class="run-card">
+              <div class="accent"></div>
+              <div class="body">
+                <div class="row1"><h3>Skill Spammer</h3><span class="chip ok"><span class="cdot"></span>running</span><span class="sp" style="flex:1"></span><span class="muted" style="font-size:12px">foreground</span></div>
+                <div class="msg">Pressing 3 keys · rotation “buffs”</div>
+                <div class="meta"><span>next key 4.4 s</span><span>run 00:12:08</span></div>
+              </div>
+              <div class="foot"><span class="sp"></span><button class="btn danger small" data-stop-run>■ Stop</button></div>
+            </div>
+            <div class="run-card">
+              <div class="accent"></div>
+              <div class="body">
+                <div class="row1"><h3>Pet Feeder</h3><span class="chip ok"><span class="cdot"></span>running</span><span class="sp" style="flex:1"></span><span class="muted" style="font-size:12px">resident</span></div>
+                <div class="msg">Resident · row 2: looking</div>
+                <div class="meta"><span>2 rows</span><span>next reload in 12 m</span></div>
+                <div class="rows">
+                  <div class="rh"><span>Row</span><span>Status</span><span>Detail</span><span>Next</span></div>
+                  <div class="rrow is-ok"><span class="nm">Row 1</span><span class="st">Boarding</span><span class="dt">藍天 · 3/min</span><span class="nx">in 30 m</span></div>
+                  <div class="rrow"><span class="nm">Row 2</span><span class="st">Reloading</span><span class="dt">food 38 / 50</span><span class="nx">in 12 m</span></div>
+                  <div class="rrow"><span class="nm">Row 3</span><span class="st">Empty</span><span class="dt">disabled</span><span class="nx">—</span></div>
+                </div>
+              </div>
+              <div class="foot"><span class="sp"></span><button class="btn danger small" data-stop-run>■ Stop</button></div>
+            </div>
+          </div>
+          <div class="sec-h"><h2>Available tools</h2><span class="n">6 idle</span><span class="sp" style="flex:1"></span><span class="n">A tool starts from its card; setup lives on its tab.</span></div>
+          <div class="tiles">
+            <div class="tile"><span class="ico"><svg><use href="#i-tune"/></svg></span><div class="t"><b>Magic Tuner</b><span>Ready · target DG · 5 retries</span></div><button class="btn outline small" data-start-tool>Start</button></div>
+            <div class="tile"><span class="ico"><svg><use href="#i-gem"/></svg></span><div class="t"><b>Gem Composer</b><span>Ready · N → G → DG</span></div><button class="btn outline small" data-start-tool>Start</button></div>
+            <div class="tile"><span class="ico"><svg><use href="#i-cart"/></svg></span><div class="t"><b>Buy</b><span>Ready · preset “potion” · 3 per run</span></div><button class="btn outline small" data-start-tool>Start</button></div>
+            <div class="tile"><span class="ico"><svg><use href="#i-cart"/></svg></span><div class="t"><b>Sell</b><span>Ready · 12 slots armed</span></div><button class="btn outline small" data-start-tool>Start</button></div>
+            <div class="tile"><span class="ico"><svg><use href="#i-quest"/></svg></span><div class="t"><b>Quest Hand-in</b><span>Ready · flow “run1”</span></div><button class="btn outline small" data-start-tool>Start</button></div>
+            <div class="tile"><span class="ico"><svg><use href="#i-keys"/></svg></span><div class="t"><b>Hold Space</b><span>Off · spacebar auto-pickup</span></div><button class="btn outline small" data-start-tool>Start</button></div>
+          </div>
+        </section>
+
+        <!-- ═══ SKILL SPAMMER ═══ -->
+        <section class="screen" data-screen="spammer">
+          <div class="pagehead"><div><h1>Skill Spammer</h1><div class="sub">Presets, keys and the combo rotation. The active preset is what the card runs; setup is saved as one portable block.</div></div><div class="right"><span class="chip muted"><span class="cdot"></span>All changes saved</span></div></div>
+          <div class="form">
+            <div class="stack">
+              <div class="panel">
+                <div class="panel-h"><h2>Presets</h2><div class="right"><button class="btn tonal small">＋ Add preset</button></div></div>
+                <div class="panel-b tight">
+                  <div class="list-row"><span class="ico" style="width:24px;height:24px;border-radius:6px;background:var(--primary-container);display:grid;place-items:center;color:var(--on-primary-container)">✓</span><div class="nm"><b>buffs</b><span>opening 3 keys · rotation 2 combos</span></div><span class="chip info"><span class="cdot"></span>active</span><button class="btn ghost small">Rename</button></div>
+                  <div class="list-row"><span class="ico" style="width:24px;height:24px;border-radius:6px;background:var(--surf-high);display:grid;place-items:center;color:var(--on-var)">·</span><div class="nm"><b>farm</b><span>opening 1 key · rotation 1 combo</span></div><button class="btn ghost small">Use</button><button class="btn ghost small">Duplicate</button><button class="btn ghost small">Delete</button></div>
+                  <div class="list-row"><span class="ico" style="width:24px;height:24px;border-radius:6px;background:var(--surf-high);display:grid;place-items:center;color:var(--on-var)">·</span><div class="nm"><b>boss</b><span>opening 5 keys · no rotation</span></div><button class="btn ghost small">Use</button><button class="btn ghost small">Duplicate</button><button class="btn ghost small">Delete</button></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h"><h2>Keys &amp; cooldowns</h2><div class="desc">Priority keys fire before the rotation; global cooldown gates every key.</div></div>
+                <div class="panel-b">
+                  <div class="grid3">
+                    <div class="field"><label>Opening key</label><div class="control"><span class="kbd">F1</span><span class="chev">▾</span></div></div>
+                    <div class="field"><label>Priority key</label><div class="control"><span class="kbd">F2</span><span class="chev">▾</span></div></div>
+                    <div class="field"><label>Global cooldown (ms)</label><div class="control mono">80</div></div>
+                  </div>
+                  <div class="list-row" style="margin-top:12px"><div class="nm"><b>Rotation “buffs”</b><span>3 steps · each step must be atomic</span></div><span class="tag">3</span><button class="btn ghost small">Edit</button></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h"><h2>Rotation</h2><div class="desc">Combos execute left to right; a step holds its keys for the configured duration.</div><div class="right"><button class="btn tonal small">＋ Add step</button></div></div>
+                <div class="panel-b">
+                  <div class="flow-step"><span class="n">1</span><span class="grow">F1 → F3 → F5</span><span class="mono">hold 120 ms</span><span class="step-actions">⋮</span></div>
+                  <div class="flow-step"><span class="n">2</span><span class="grow">F1 → F4</span><span class="mono">hold 80 ms</span><span class="step-actions">⋮</span></div>
+                  <div class="flow-step"><span class="n">3</span><span class="grow">F2 → F6 → F7</span><span class="mono">hold 160 ms</span><span class="step-actions">⋮</span></div>
+                </div>
+              </div>
+              <div class="panel"><div class="collapse" data-open="0"><button class="collapse-h" data-collapse>Advanced <svg class="chev" width="16" height="16"><use href="#i-chev"/></svg></button><div class="cb"><div class="toggle-row"><span class="switch" data-toggle></span><div class="t"><b>Cursor guard</b><span>Stop when the pointer leaves the game window.</span></div></div></div></div></div>
+              <div class="savebar clean"><div class="state"><span class="sdot"></span><span>All changes saved · rev 7</span></div><span class="sp"></span><button class="btn ghost" data-reset>Discard</button><button class="btn primary" data-save>Save</button></div>
+            </div>
+            <div class="stack">
+              <div class="panel"><div class="panel-h"><h2>Run card</h2><span class="chip muted" style="margin-left:auto"><span class="cdot"></span>idle</span></div><div class="panel-b" style="font-size:12.5px;color:var(--on-var);line-height:1.7">Active preset: <b style="color:var(--on)">buffs</b><br>Starts from the Run screen; no saved state to reload.<div style="display:flex;gap:8px;margin-top:14px"><button class="btn outlined" style="flex:1">Open Cards</button><button class="btn primary" style="flex:1">Start</button></div></div></div>
+              <div class="panel"><div class="panel-h"><h2>Last run</h2></div><div class="panel-b" style="font-size:12.5px;color:var(--on-var);line-height:1.7">00:12:08 · 148 keys<br><span class="muted">stopped by you at 14:02</span></div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══ MAGIC TUNER ═══ -->
+        <section class="screen" data-screen="tuner">
+          <div class="pagehead"><div><h1>Magic Tuner</h1><div class="sub">The tuner’s portable settings: target and minimum grade, retries, springs and the attribute filter. Calibrated geometry stays on Calibrate.</div></div><div class="right"><span class="chip muted"><span class="cdot"></span>All changes saved</span></div></div>
+          <div class="form">
+            <div class="stack">
+              <div class="panel">
+                <div class="panel-h"><h2>Grades</h2><div class="desc">The fixed grade order is read-only. Colour marks the target and the minimum; both selectors sit directly under it.</div></div>
+                <div class="panel-b">
+                  <div class="ladder">
+                    <div class="ladder-head"><span class="cap">Fixed grade order</span><span class="static">read-only</span></div>
+                    <div class="ladder-path" id="tunerLadder">
+                      <span class="gnode" data-grade="N">N</span><span class="garrow">→</span>
+                      <span class="gnode" data-grade="G">G</span><span class="garrow">→</span>
+                      <span class="gnode" data-grade="DG">DG</span><span class="garrow">→</span>
+                      <span class="gnode" data-grade="XG">XG</span><span class="garrow">→</span>
+                      <span class="gnode" data-grade="SG">SG</span>
+                    </div>
+                    <div class="grade-fields">
+                      <div class="field"><label>Target grade</label><select class="control" data-tuner="target"><option value="">(none — use the shipped default)</option><option>N</option><option>G</option><option selected>DG</option><option>XG</option><option>SG</option></select><div class="help">The run stops when it reaches this grade.</div></div>
+                      <div class="field"><label>Minimum grade (filter)</label><select class="control" data-tuner="minimum"><option>N</option><option selected>G</option><option>DG</option><option>XG</option><option>SG</option></select><div class="help">Lower grades are skipped by the filter.</div></div>
+                    </div>
+                  </div>
+                  <div class="section-note" style="margin-top:10px">Target uses the primary fill; minimum uses the warning border. When they are the same grade, one node carries both colours.</div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h"><h2>Retries and timing</h2></div>
+                <div class="panel-b"><div class="grid3">
+                  <div class="field"><label>Max retries</label><div class="control mono">5</div><div class="help">0 means until stopped.</div></div>
+                  <div class="field"><label>Click/enter delay (s)</label><div class="control mono">0.4</div></div>
+                  <div class="field"><label>OCR delay (s)</label><div class="control mono">0.8</div></div>
+                </div></div>
+              </div>
+              <div class="panel">
+                <div class="panel-h"><h2>Springs</h2></div>
+                <div class="panel-b"><div class="grid3">
+                  <div class="field"><label>Spring mode</label><div class="control">HID spring mode<span class="chev">▾</span></div></div>
+                  <div class="field"><label>Mouse guard</label><div class="control">stop<span class="chev">▾</span></div></div>
+                  <div class="field"><label>Guard distance (px)</label><div class="control mono">8</div></div>
+                </div></div>
+              </div>
+              <div class="panel">
+                <div class="panel-h"><h2>Filter</h2><div class="desc">Matches the OCR’d attribute list after each roll.</div><div class="right"><button class="btn tonal small" data-addrule>＋ Add rule</button></div></div>
+                <div class="panel-b tight">
+                  <div class="toggle-row"><span class="switch on" data-toggle></span><div class="t"><b>Filter enabled</b><span>When off, only the target grade counts.</span></div></div>
+                  <div class="grid2" style="margin:8px 0 12px"><div class="field"><label>Match mode</label><div class="control">any<span class="chev">▾</span></div></div></div>
+                  <div class="rows" style="margin-top:0;border-top:0">
+                    <div class="rh"><span>Attribute</span><span>Count</span><span>Min</span><span>Max</span></div>
+                    <div class="rrow"><span class="nm">減少傷害</span><span class="dt mono">2</span><span class="dt mono">1</span><span class="dt mono">1</span></div>
+                    <div class="rrow"><span class="nm">攻擊力</span><span class="dt mono">1</span><span class="dt mono">1</span><span class="dt mono">2</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="panel"><div class="collapse" data-open="0"><button class="collapse-h" data-collapse>Advanced <svg class="chev" width="16" height="16"><use href="#i-chev"/></svg></button><div class="cb"><div class="grid2"><div class="field"><label>OCR retries</label><div class="control mono">2</div></div><div class="field"><label>Save captures</label><div class="toggle-row"><span class="switch" data-toggle></span><div class="t"><span>Write every roll’s screenshot under logs/reads.</span></div></div></div></div><div class="field" style="margin-top:12px"><label>Capture cleanup</label><div class="inline-note">Deletes old captures older than 7 days.</div></div></div></div></div>
+              <div class="savebar clean"><div class="state"><span class="sdot"></span><span>All changes saved · rev 7</span></div><span class="sp"></span><button class="btn ghost" data-reset>Discard</button><button class="btn primary" data-save>Save</button></div>
+            </div>
+            <div class="stack">
+              <div class="panel aside-card"><div class="collapse" data-open="0"><button class="collapse-h" data-collapse>Calibrated geometry <svg class="chev" width="16" height="16"><use href="#i-chev"/></svg></button><div class="cb"><div class="kv"><span class="k">OCR region</span><span class="v">1140, 840 · 300×320</span></div><div class="kv"><span class="k">Grade area</span><span class="v">232 × 44</span></div><div class="kv"><span class="k">Spring point</span><span class="v">800, 900</span></div><a class="link" href="#" data-go="calibrate">Open Calibrate →</a></div></div></div>
+              <div class="panel"><div class="panel-h"><h2>Last run</h2></div><div class="panel-b" style="font-size:12.5px;color:var(--on-var);line-height:1.7">Grade DG · 3 retries<br>Stopped by you at 14:02<br><span class="muted">2 captures saved</span></div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══ GEM COMPOSER ═══ -->
+        <section class="screen" data-screen="gem">
+          <div class="pagehead"><div><h1>Gem Composer</h1><div class="sub">Grades, empty-slot behaviour and movement, saved as the portable settings. Calibrated positions stay read-only.</div></div><div class="right"><span class="chip muted"><span class="cdot"></span>All changes saved</span></div></div>
+          <div class="form">
+            <div class="stack">
+              <div class="panel">
+                <div class="panel-h"><h2>Grades</h2><div class="desc">The fixed grade ladder is read-only; the start grade uses the primary fill.</div></div>
+                <div class="panel-b">
+                  <div class="ladder">
+                    <div class="ladder-head"><span class="cap">Fixed grade ladder</span><span class="static">read-only</span></div>
+                    <div class="ladder-path" id="gemLadder">
+                      <span class="gnode start" data-grade="N">N</span><span class="garrow on">→</span>
+                      <span class="gnode" data-grade="G">G</span><span class="garrow">→</span>
+                      <span class="gnode" data-grade="DG">DG</span>
+                    </div>
+                    <div class="grade-fields one">
+                      <div class="field"><label>Start grade</label><select class="control" data-gem-start><option selected>N</option><option>G</option><option>DG</option></select><div class="help">The run starts here and advances right.</div></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h"><h2>Empty result</h2><div class="desc">What happens after consecutive unreadable results.</div></div>
+                <div class="panel-b"><div class="grid3">
+                  <div class="field"><label>Empty mode</label><div class="control">Advance + clear<span class="chev">▾</span></div></div>
+                  <div class="field"><label>Empty streak</label><div class="control mono">2</div></div>
+                  <div class="field"><label>Colored gap min</label><div class="control mono">40</div></div>
+                </div><div class="toggle-row" style="margin-top:8px"><span class="switch" data-toggle></span><div class="t"><b>Save empty captures</b><span>Keep the reference crops used for empty-slot detection.</span></div></div></div>
+              </div>
+              <div class="panel">
+                <div class="panel-h"><h2>Movement</h2></div>
+                <div class="panel-b"><div class="grid2"><div class="field"><label>Move mode</label><div class="control">arduino<span class="chev">▾</span></div></div></div><div class="section-note" style="margin-top:10px">tuned sends hand-tuned relative moves; arduino places the cursor on each route’s calibrated destination point.</div></div>
+              </div>
+              <div class="panel"><div class="collapse" data-open="0"><button class="collapse-h" data-collapse>Advanced <svg class="chev" width="16" height="16"><use href="#i-chev"/></svg></button><div class="cb"><div class="field"><label>Save empty captures</label><div class="inline-note">Stored with the calibrated empty reference.</div></div></div></div></div>
+              <div class="savebar clean"><div class="state"><span class="sdot"></span><span>All changes saved · rev 7</span></div><span class="sp"></span><button class="btn ghost" data-reset>Discard</button><button class="btn primary" data-save>Save</button></div>
+            </div>
+            <div class="stack">
+              <div class="panel aside-card"><div class="collapse" data-open="0"><button class="collapse-h" data-collapse>Calibrated geometry <svg class="chev" width="16" height="16"><use href="#i-chev"/></svg></button><div class="cb"><div class="kv"><span class="k">Grade positions</span><span class="v">N 727,696 · G 777,696</span></div><div class="kv"><span class="k">Resource slots</span><span class="v">3 configured</span></div><div class="kv"><span class="k">Result gem area</span><span class="v">610, 800 · 220×60</span></div><a class="link" href="#" data-go="calibrate">Open Calibrate →</a></div></div></div>
+              <div class="panel"><div class="panel-h"><h2>Last run</h2></div><div class="panel-b" style="font-size:12.5px;color:var(--on-var);line-height:1.7">N → G → DG · 3 combines<br>Finished cleanly at 13:48<br><span class="muted">12 gems produced</span></div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══ BUY ═══ -->
+        <section class="screen" data-screen="buy">
+          <div class="pagehead"><div><h1>Buy</h1><div class="sub">Saved presets: one item, one shop row, a usual count. The run choice — which preset, how many — stays on the card.</div></div><div class="right"><span class="chip muted"><span class="cdot"></span>All changes saved</span></div></div>
+          <div class="two-col">
+            <div class="stack">
+              <div class="panel"><div class="panel-h"><h2>Buy presets</h2><div class="desc">One preset per item you re-buy.</div><div class="right"><button class="btn tonal small">＋ Add preset</button></div></div><div class="panel-b tight"><div class="rows five" style="margin-top:0;border-top:0"><div class="rh"><span>Item</span><span>Shop row</span><span>Scroll</span><span>Count</span><span></span></div><div class="rrow"><span class="nm">potion</span><span class="st mono">row 2</span><span class="dt mono">1</span><span class="dt mono">3</span><span class="mono muted">⋮</span></div><div class="rrow"><span class="nm">scroll</span><span class="st mono">row 5</span><span class="dt mono">0</span><span class="dt mono">1</span><span class="mono muted">⋮</span></div></div></div></div>
+              <div class="panel"><div class="panel-h"><h2>How the run uses it</h2></div><div class="panel-b" style="font-size:12.5px;color:var(--on-var);line-height:1.7">Pick a preset on the Buy card, set how many, press Start.<div class="section-note" style="margin-top:6px">The card reads the same presets saved here — no second copy.</div></div></div>
+              <div class="savebar clean"><div class="state"><span class="sdot"></span><span>All changes saved · rev 7</span></div><span class="sp"></span><button class="btn ghost" data-reset>Discard</button><button class="btn primary" data-save>Save</button></div>
+            </div>
+            <div class="stack">
+              <div class="panel"><div class="panel-h"><h2>Run card</h2><span class="chip muted" style="margin-left:auto"><span class="cdot"></span>idle</span></div><div class="panel-b"><div class="kv" style="grid-template-columns:1fr auto;margin-bottom:8px"><span class="k">Preset</span><span class="v">potion</span></div><div class="kv" style="grid-template-columns:1fr auto"><span class="k">Count</span><span class="v">3</span></div><div style="display:flex;gap:8px;margin-top:16px"><button class="btn outlined" style="flex:1">Cards</button><button class="btn primary" style="flex:1">Start</button></div></div></div>
+              <div class="panel"><div class="collapse" data-open="0"><button class="collapse-h" data-collapse>Calibrated geometry <svg class="chev" width="16" height="16"><use href="#i-chev"/></svg></button><div class="cb"><div class="kv"><span class="k">Bag grid</span><span class="v">100, 200 · 300×400</span></div><div class="kv"><span class="k">Shop region</span><span class="v">500, 300 · 320×480</span></div><div class="kv"><span class="k">MAX button</span><span class="v">400, 500</span></div></div></div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══ SELL ═══ -->
+        <section class="screen" data-screen="sell">
+          <div class="pagehead"><div><h1>Sell</h1><div class="sub">Arms bag slots for the next sell run. The selection is checked against the cap and is never saved to config.</div></div><div class="right"><span class="chip info" id="sellChip"><span class="cdot"></span>12 of 64 selected</span></div></div>
+          <div class="two-col">
+            <div class="panel"><div class="panel-h"><h2>Sell selection</h2><div class="desc">Click a bag slot to arm it; the card sells exactly this selection.</div><div class="right"><button class="btn ghost small" id="clearSell">Clear</button></div></div><div class="panel-b"><div class="bag" id="sellBag"></div><div class="bag-legend"><span><i style="background:var(--primary-container);border:2px solid var(--primary)"></i>Armed — sells this run</span><span><i style="background:var(--bg-deep);border:1px solid var(--outline-var)"></i>Kept</span></div><div class="banner warn" style="margin:14px 0 0"><svg><use href="#i-warn"/></svg><div class="bt"><b>3 slots over the cap</b><span>Cap is 20. Selling pauses at the cap; the extra selection is ignored.</span></div></div></div></div>
+            <div class="stack">
+              <div class="panel"><div class="panel-h"><h2>Run</h2></div><div class="panel-b"><div class="kv" style="grid-template-columns:1fr auto;margin-bottom:8px"><span class="k">Armed</span><span class="v" id="sellArmed">12</span></div><div class="kv" style="grid-template-columns:1fr auto;margin-bottom:8px"><span class="k">Cap</span><span class="v">20</span></div><div class="kv" style="grid-template-columns:1fr auto"><span class="k">Saved to config</span><span class="v">never</span></div><div style="display:flex;gap:8px;margin-top:16px"><button class="btn ghost" style="flex:1" id="clearSell2">Clear</button><button class="btn primary" style="flex:1"><svg><use href="#i-play"/></svg>Sell 12 slots</button></div><p class="section-note" style="margin-top:10px">Selling removes items from the game; the shell asks once before starting.</p></div></div>
+              <div class="panel"><div class="collapse" data-open="0"><button class="collapse-h" data-collapse>Calibrated geometry <svg class="chev" width="16" height="16"><use href="#i-chev"/></svg></button><div class="cb"><div class="kv"><span class="k">Bag grid</span><span class="v">100, 200 · 300×400</span></div><div class="kv"><span class="k">Bag slot</span><span class="v">40×40</span></div></div></div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══ QUEST HAND-IN ═══ -->
+        <section class="screen" data-screen="quest">
+          <div class="pagehead"><div><h1>Quest Hand-in</h1><div class="sub">Pick the flow the card runs, then edit its ordered steps. Sequences can be reused across flows.</div></div><div class="right"><span class="chip muted"><span class="cdot"></span>All changes saved</span></div></div>
+          <div class="two-col">
+            <div class="stack">
+              <div class="panel"><div class="panel-h"><h2>Flows</h2><div class="right"><button class="btn tonal small">＋ New flow</button></div></div><div class="panel-b tight"><div class="list-row"><span class="chip info"><span class="cdot"></span>active</span><div class="nm"><b>run1</b><span>3 steps · 1 sequence</span></div><button class="btn ghost small">Edit</button></div><div class="list-row"><div class="nm"><b>daily</b><span>5 steps · no sequence</span></div><button class="btn ghost small">Use</button><button class="btn ghost small">Delete</button></div></div></div>
+              <div class="panel"><div class="panel-h"><h2>Selected flow: run1</h2><div class="right"><button class="btn tonal small">＋ Add step</button></div></div><div class="panel-b"><div class="flow-step"><span class="n">1</span><span class="grow">Open quest window</span><span class="mono">key Q</span><span class="step-actions">⋮</span></div><div class="flow-step"><span class="n">2</span><span class="grow">Click “Hand in”</span><span class="mono">mark · 2 clicks</span><span class="step-actions">⋮</span></div><div class="flow-step"><span class="n">3</span><span class="grow">Sequence: confirm × 2</span><span class="mono">1.2 s gap</span><span class="step-actions">⋮</span></div><div class="field" style="margin-top:12px"><label>Run mode</label><div class="control">Repeat until Stop<span class="chev">▾</span></div></div></div></div>
+              <div class="savebar clean"><div class="state"><span class="sdot"></span><span>All changes saved · rev 7</span></div><span class="sp"></span><button class="btn ghost" data-reset>Discard</button><button class="btn primary" data-save>Save</button></div>
+            </div>
+            <div class="stack">
+              <div class="panel"><div class="panel-h"><h2>Run card</h2><span class="chip muted" style="margin-left:auto"><span class="cdot"></span>idle</span></div><div class="panel-b" style="font-size:12.5px;line-height:1.7;color:var(--on-var)">Flow: <b style="color:var(--on)">run1</b><br>Steps: 3<br>Last run: 14:10 · 7 hand-ins<div style="display:flex;gap:8px;margin-top:14px"><button class="btn ghost" style="flex:1">Cards</button><button class="btn primary" style="flex:1">Start</button></div></div></div>
+              <div class="panel"><div class="collapse" data-open="0"><button class="collapse-h" data-collapse>Cursor guard <svg class="chev" width="16" height="16"><use href="#i-chev"/></svg></button><div class="cb"><div class="toggle-row"><span class="switch" data-toggle></span><div class="t"><b>Stop on pointer leave</b><span>Prevents clicks outside the game window.</span></div></div></div></div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══ PET FEEDER ═══ -->
+        <section class="screen" data-screen="pet">
+          <div class="pagehead"><div><h1>Pet Feeder</h1><div class="sub">Rows, queue, food plan and run behaviour. Calibrated marks and crops stay read-only here; fix those in Calibrate.</div></div><div class="right"><span class="chip muted" id="petChip"><span class="cdot"></span>All changes saved</span></div></div>
+          <div class="readiness" id="petReadiness"><div class="readiness-h" data-readiness><span class="dot"></span><b>Ready to run</b><span>· 2 rows · next reload in 12 minutes</span><span class="chev">▾</span></div><div class="readiness-b">
+            <div class="chk"><span class="ic ok">✓</span><div class="txt"><b>Calibration</b><span>Boarding bag grid, empty-slot crops and page tabs are saved.</span></div><span class="tag">start gate</span></div>
+            <div class="chk"><span class="ic ok">✓</span><div class="txt"><b>Setup so far</b><span>Both rows are enabled and have stacks &gt; 0.</span></div><span class="tag">saved</span></div>
+            <div class="chk"><span class="ic ok">✓</span><div class="txt"><b>Food loading</b><span>right_click mode; the food strip is not required.</span></div><span class="tag">saved</span></div>
+            <div class="chk"><span class="ic" style="color:var(--on-faint)">ℹ</span><div class="txt"><b>Board firmware</b><span>Not checked by preflight — normal.</span></div><span class="tag">info</span></div>
+            <div class="section-note" style="margin-top:4px">The checklists describe the saved config; while anything is edited they show “based on saved config”. <a class="link" href="#">Refresh checklists</a></div>
+          </div></div>
+          <div class="pet-summary"><span class="pill">rows <b>2</b></span><span class="pill">queued <b>2</b></span><span class="pill">food cells <b>18 / 64</b></span><span class="pill">next <b>藍天</b></span></div>
+
+          <div class="pet-cols">
+            <div class="stack">
+              <div class="panel">
+                <div class="panel-h"><h2>Boarding rows</h2><div class="desc">A row’s live boarding state writes immediately; enabled and stacks save with the tab’s Save.</div></div>
+                <div class="panel-b">
+                  <div class="rowcard pet">
+                    <div class="rh"><h3>Row 1</h3><span class="chip ok"><span class="cdot"></span>boarding</span><span class="sp" style="flex:1"></span><span class="live">Live · row 1 · next reload in 30 m</span></div>
+                    <div class="fields"><div class="field"><label>Enabled</label><span class="switch on" data-toggle></span></div><div class="field"><label>Stacks per reload</label><div class="control mono" style="width:80px">3</div></div><div class="immediate-tick"><span class="switch on" data-toggle></span>Boarding now · applies immediately</div></div>
+                    <div class="section-note" style="margin-top:8px">start/end x 10 · y 20 · 100×30 · empty crop saved</div>
+                  </div>
+                  <div class="rowcard pet">
+                    <div class="rh"><h3>Row 2</h3><span class="chip warn"><span class="cdot"></span>reloading</span><span class="sp" style="flex:1"></span><span class="live">Live · row 2 · food 38 / 50</span></div>
+                    <div class="fields"><div class="field"><label>Enabled</label><span class="switch on" data-toggle></span></div><div class="field"><label>Stacks per reload</label><div class="control mono" style="width:80px">2</div></div><div class="immediate-tick"><span class="switch" data-toggle></span>Boarding now · applies immediately</div></div>
+                    <div class="section-note" style="margin-top:8px">start/end x 110 · y 20 · 200×80 · empty crop saved</div>
+                  </div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h"><h2>Queue</h2><div class="desc">Pets board in this order when a row frees up.</div><div class="right"><button class="btn tonal small">＋ Add pet</button></div></div>
+                <div class="panel-b tight" id="petQueue">
+                  <div class="queue-row"><span class="ico"><svg><use href="#i-paw"/></svg></span><div class="q-main"><b>藍天</b><span>Knight · captured icon 32×32</span></div><button class="btn ghost small" data-remove-pet>Remove</button></div>
+                  <div class="queue-row"><span class="ico"><svg><use href="#i-paw"/></svg></span><div class="q-main"><b>小雪</b><span>Mage · captured icon 32×32</span></div><button class="btn ghost small" data-remove-pet>Remove</button></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="collapse" data-open="0"><button class="collapse-h" data-collapse>Add a pet by icon <svg class="chev" width="16" height="16"><use href="#i-chev"/></svg></button><div class="cb"><div class="page-tabs"><span class="page-tab active">ITEM1</span><span class="page-tab">ITEM2</span><span class="page-tab">ITEM3</span></div><div class="food-wrap"><div style="width:120px;height:120px;border:1px dashed var(--outline-var);border-radius:8px;display:grid;place-items:center;color:var(--on-faint);font-size:11px;text-align:center">click a bag cell<br>then capture</div><div class="food-side"><div class="inline-note">Choose the page, click the pet’s cell, then capture. The page is not clicked for you.</div><button class="btn tonal small" style="margin-top:10px">Capture pet icon</button></div></div></div></div>
+              </div>
+            </div>
+
+            <div class="stack">
+              <div class="panel">
+                <div class="panel-h"><h2>Food plan</h2><div class="desc">Mark the boarding-bag cells that hold food. The grid needs the Boarding bag grid mark from Calibrate.</div></div>
+                <div class="panel-b">
+                  <div class="page-tabs"><span class="page-tab active">ITEM1</span><span class="page-tab">ITEM2</span><span class="page-tab">ITEM3</span><span class="sp" style="flex:1"></span><span class="muted" style="font-size:11.5px;align-self:center">read-only scan</span></div>
+                  <div class="food-wrap"><div class="bag" id="petFoodBag"></div><div class="food-side"><div class="count">18 <span>/ 64 cells</span></div><div class="inline-note">Marked cells are right-clicked — the game picks the box.</div><div class="mini-kv"><span>Page</span><b>ITEM1</b><span>Return</span><b>page 1 · cell 12</b><span>Load mode</span><b>right_click</b></div><div class="inline-actions" style="margin-top:12px"><button class="btn outline small">Scan bag</button><button class="btn ghost small">Clear page</button></div></div></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h"><h2>Return slot</h2><div class="desc">Fallback slot the run right-clicks when the queue is empty.</div></div>
+                <div class="panel-b"><div class="grid2"><div class="field"><label>Bag page</label><div class="control mono">1</div></div><div class="field"><label>Cell (0–63)</label><div class="control mono">12</div></div></div></div>
+              </div>
+              <div class="panel">
+                <div class="panel-h"><h2>Food loading</h2></div>
+                <div class="panel-b"><div class="grid2"><div class="field"><label>Food load mode</label><div class="control">right_click<span class="chev">▾</span></div></div><div class="field"><label>Reload on start</label><div class="toggle-row"><span class="switch on" data-toggle></span><div class="t"><span>Open and close the boarding window once.</span></div></div></div></div></div>
+              </div>
+              <div class="panel"><div class="collapse" data-open="0"><button class="collapse-h" data-collapse>Timing &amp; thresholds <svg class="chev" width="16" height="16"><use href="#i-chev"/></svg></button><div class="cb"><div class="grid2"><div class="field"><label>Action wait (ms)</label><div class="control mono">450</div></div><div class="field"><label>Wait after empty (min)</label><div class="control mono">5</div></div><div class="field"><label>Count read — left fraction</label><div class="control mono">0.12</div></div><div class="field"><label>Count read — min score</label><div class="control mono">0.55</div></div><div class="field"><label>Items per minute (fallback)</label><div class="control mono">3</div></div><div class="field"><label>Occupied above</label><div class="control mono">0.05</div></div></div></div></div></div>
+            </div>
+          </div>
+          <div class="panel" style="margin-top:16px"><div class="collapse" data-open="0"><button class="collapse-h" data-collapse>Calibrated marks &amp; reference crops <svg class="chev" width="16" height="16"><use href="#i-chev"/></svg></button><div class="cb"><div class="grid2"><div><div class="kv"><span class="k">Menu point</span><span class="v">1, 2</span></div><div class="kv"><span class="k">Pet feed icon</span><span class="v">3, 4</span></div><div class="kv"><span class="k">Boarding bag grid</span><span class="v">100,200 · 300×400</span></div></div><div><div class="kv"><span class="k">Page tab points</span><span class="v">10,10 · 20,10</span></div><div class="kv"><span class="k">Empty-slot crop</span><span class="v">saved · 32×32</span></div><div class="kv"><span class="k">Food icon crop</span><span class="v">— not configured</span></div></div></div><a class="link" href="#" data-go="calibrate" style="display:inline-block;margin-top:8px">Open Calibrate →</a></div></div></div>
+          <div class="savebar clean" id="petSave"><div class="state"><span class="sdot"></span><span>All changes saved · rev 7</span></div><span class="sp"></span><button class="btn ghost" data-reset>Discard</button><button class="btn primary" data-save>Save setup</button></div>
+        </section>
+
+        <!-- ═══ ATTRIBUTES ═══ -->
+        <section class="screen" data-screen="attributes">
+          <div class="pagehead"><div><h1>Attributes</h1><div class="sub">Read-only attribute dictionary from attributes.yaml. Search by name, category or variant; unknown names stay in the list.</div></div><div class="right"><span class="chip info"><span class="cdot"></span>128 names</span><span class="chip muted">TW</span></div></div>
+          <div class="panel"><div class="panel-h"><h2>Dictionary</h2><div class="desc">The tuner’s filter rules are picked from this list, not typed.</div><div class="right"><button class="btn outline small"><svg><use href="#i-refresh"/></svg>Reload</button></div></div><div class="panel-b"><div class="search"><input id="attrSearch" placeholder="Search attributes…" autocomplete="off"></div><div class="filter-chips"><button class="fchip active">All</button><button class="fchip">Attack</button><button class="fchip">Defence</button><button class="fchip">Support</button></div><table class="attr-table"><thead><tr><th>Name</th><th>Category</th><th>Variants</th><th>Levels</th><th>Source</th></tr></thead><tbody id="attrBody">
+            <tr><td><b>減少傷害</b></td><td>defence</td><td>減少傷害 · 傷害減免</td><td>1–10</td><td class="mono">attributes.yaml</td></tr>
+            <tr><td><b>攻擊力</b></td><td>attack</td><td>攻擊力 · 物攻</td><td>1–10</td><td class="mono">attributes.yaml</td></tr>
+            <tr><td><b>命中率</b></td><td>attack</td><td>命中率 · 命中</td><td>1–10</td><td class="mono">attributes.yaml</td></tr>
+            <tr><td><b>致命機率</b></td><td>attack</td><td>致命機率 · 爆擊</td><td>1–10</td><td class="mono">attributes.yaml</td></tr>
+            <tr><td><b>魔法力</b></td><td>support</td><td>魔法力 · 魔攻</td><td>1–10</td><td class="mono">attributes.yaml</td></tr>
+            <tr><td><b>防禦力</b></td><td>defence</td><td>防禦力 · 物防</td><td>1–10</td><td class="mono">attributes.yaml</td></tr>
+            <tr><td><b>迴避率</b></td><td>defence</td><td>迴避率 · 閃避</td><td>1–10</td><td class="mono">attributes.yaml</td></tr>
+            <tr><td><b>攻擊速度</b></td><td>support</td><td>攻擊速度 · 攻速</td><td>1–10</td><td class="mono">attributes.yaml</td></tr>
+          </tbody></table><div class="empty-box" id="attrEmpty" style="display:none"><b>No names match that search</b>Clear the search or switch category.</div></div></div>
+        </section>
+
+        <!-- ═══ ARDUINO ═══ -->
+        <section class="screen" data-screen="arduino">
+          <div class="pagehead"><div><h1>Arduino</h1><div class="sub">Board connection first; test actions below it. Cursor-moving actions are labelled and separated.</div></div><div class="right"><span class="chip ok"><span class="cdot"></span>connected</span></div></div>
+          <div class="two-col">
+            <div class="stack">
+              <div class="status-card"><span class="ico"><svg><use href="#i-chip"/></svg></span><div class="t"><b>Pro Micro · COM5</b><span>Firmware v3 · protocol 3 · 115200 baud</span></div><button class="btn outline small">Disconnect</button></div>
+              <div class="panel"><div class="panel-h"><h2>Ports</h2><div class="right"><button class="btn ghost small"><svg><use href="#i-refresh"/></svg>Rescan</button></div></div><div class="panel-b tight"><div class="list-row"><span class="ico" style="width:26px;height:26px;border-radius:7px;background:var(--success-container);display:grid;place-items:center;color:var(--on-success-container)"><svg style="width:14px;height:14px"><use href="#i-chip"/></svg></span><div class="nm"><b>COM5 — SparkFun Pro Micro</b><span>USB VID:PID 2341:8036 · firmware 3</span></div><span class="chip ok"><span class="cdot"></span>connected</span></div><div class="list-row"><span class="ico" style="width:26px;height:26px;border-radius:7px;background:var(--surf-high);display:grid;place-items:center;color:var(--on-var)"><svg style="width:14px;height:14px"><use href="#i-chip"/></svg></span><div class="nm"><b>COM3 — USB Serial Device</b><span>No board handshake; not usable.</span></div><button class="btn ghost small">Connect</button></div></div></div>
+              <div class="panel"><div class="panel-h"><h2>Test actions</h2><div class="desc">These do not move the game cursor unless marked.</div></div><div class="panel-b"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn outline small">Test keypress</button><button class="btn outline small">Test click</button><button class="btn outline small">Read firmware</button></div><div class="banner warn" style="margin:14px 0 0"><svg><use href="#i-warn"/></svg><div class="bt"><b>Cursor-moving test</b><span>“Move cursor to spring point” moves the game cursor to 800, 900. Make sure the game is in front.</span></div></div><button class="btn outline small" style="margin-top:10px">Move cursor to spring point</button></div></div>
+            </div>
+            <div class="stack">
+              <div class="panel"><div class="panel-h"><h2>Last board log</h2></div><div class="panel-b mono" style="font-size:11.5px;line-height:1.8;color:var(--on-var)">14:02:11 ok   ping fw=3 proto=3<br>14:02:12 ok   key_down F1<br>14:02:12 ok   key_up F1<br>14:02:13 warn spring point not set<br>14:02:14 ok   click 800,900</div></div>
+              <div class="panel"><div class="panel-h"><h2>Firmware</h2></div><div class="panel-b" style="font-size:12.5px;line-height:1.7;color:var(--on-var)">Protocol level <b style="color:var(--on)">3</b><br>Required for drag food loading and HID spring mode.<div class="section-note" style="margin-top:6px">The app and firmware are versioned together; reflash when the release notes ask.</div></div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══ HOTKEYS ═══ -->
+        <section class="screen" data-screen="hotkeys">
+          <div class="pagehead"><div><h1>Hotkeys</h1><div class="sub">Global keys are captured as names, not raw codes. Press a field, then press the key.</div></div><div class="right"><span class="chip muted"><span class="cdot"></span>All changes saved</span></div></div>
+          <div class="two-col">
+            <div class="stack">
+              <div class="panel"><div class="panel-h"><h2>Global hotkeys</h2><div class="desc">Ctrl/Alt/Shift are accepted modifiers; the key name is shown next to the field.</div></div><div class="panel-b">
+                <div class="grid2"><div class="field"><label>Start / stop foreground tool</label><div class="keyfield">Press to capture…<span class="kbd">F8</span></div></div><div class="field"><label>Open / close shell</label><div class="keyfield">Press to capture…<span class="kbd">Ctrl+L</span></div></div><div class="field"><label>Toggle quick dock</label><div class="keyfield">Press to capture…<span class="kbd">Ctrl+Shift+D</span></div></div><div class="field"><label>Panic stop</label><div class="keyfield">Press to capture…<span class="kbd">Ctrl+Alt+S</span></div></div></div>
+                <div class="section-note" style="margin-top:12px">Accepted names: F1–F12, letters, digits and the four arrow keys. Function keys do not require a modifier; letters do.</div>
+                <div class="inline-actions" style="margin-top:14px"><button class="btn outline small">Reset to defaults</button><button class="btn primary small">Save hotkeys</button></div>
+              </div></div>
+              <div class="panel"><div class="panel-h"><h2>Hold Space</h2><div class="desc">The resident auto-pickup toggle has its own key.</div></div><div class="panel-b"><div class="grid2"><div class="field"><label>Toggle Hold Space</label><div class="keyfield">Press to capture…<span class="kbd">Space</span></div></div><div class="field"><label>Hold interval (ms)</label><div class="control mono">120</div></div></div></div></div>
+            </div>
+            <div class="stack">
+              <div class="panel"><div class="panel-h"><h2>How capture works</h2></div><div class="panel-b" style="font-size:12.5px;line-height:1.7;color:var(--on-var)">Click a field, press one key combination, and the shell stores its name. The core registers the global shortcut; the game does not need focus for Start/Stop.<div class="section-note" style="margin-top:8px">A duplicate combination is refused with the field that owns it.</div></div></div>
+              <div class="panel"><div class="panel-h"><h2>Reserved</h2></div><div class="panel-b"><div class="kv"><span class="k">Ctrl+L</span><span class="v">Logs</span></div><div class="kv"><span class="k">Ctrl+B</span><span class="v">Rail</span></div><div class="kv"><span class="k">Esc</span><span class="v">Close dialog</span></div></div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══ SETUP ═══ -->
+        <section class="screen" data-screen="setup">
+          <div class="pagehead"><div><h1>Setup</h1><div class="sub">Display environment, client title and appearance. Probes are read-only; the last action writes config.</div></div><div class="right"><span class="chip muted"><span class="cdot"></span>All changes saved</span></div></div>
+          <div class="two-col">
+            <div class="stack">
+              <div class="panel"><div class="panel-h"><h2>Appearance</h2><div class="desc">The choice is portable (`settings.ui.theme`) and follows Windows in system mode.</div></div><div class="panel-b"><div class="segmented" id="themeSeg"><button class="seg" data-theme-choice="system">System</button><button class="seg" data-theme-choice="light">Light</button><button class="seg active" data-theme-choice="dark">Dark</button></div><div class="section-note" style="margin-top:10px">The native title bar follows the same choice. The quick menu in the top bar cycles it without opening Setup.</div></div></div>
+              <div class="panel"><div class="panel-h"><h2>Display environment</h2><div class="desc">Captured frames and marks are stored against this environment; a change is detected instead of silently mis-clicking.</div></div><div class="panel-b"><div class="grid3"><div class="field"><label>Display scale</label><div class="control mono">1.5×</div></div><div class="field"><label>Client size</label><div class="control mono">1920 × 1080</div></div><div class="field"><label>State</label><div class="control">Matches stored calibration<span class="chev">▾</span></div></div></div><div class="inline-actions" style="margin-top:12px"><button class="btn outline small">Detect</button><button class="btn outline small">Measure</button><button class="btn outline small">Probe client</button></div></div></div>
+              <div class="panel"><div class="panel-h"><h2>Game client</h2><div class="desc">The window title the shell focuses before a run.</div></div><div class="panel-b"><div class="grid2"><div class="field"><label>Window title</label><div class="control mono">TW_LIVE</div></div><div class="field"><label>Detected title</label><div class="control mono">TW_LIVE</div></div></div><div style="margin-top:10px"><button class="btn primary small">Use detected title</button></div></div></div>
+              <div class="savebar clean"><div class="state"><span class="sdot"></span><span>All changes saved · rev 7</span></div><span class="sp"></span><button class="btn ghost" data-reset>Discard</button><button class="btn primary" data-save>Save</button></div>
+            </div>
+            <div class="stack">
+              <div class="panel"><div class="panel-h"><h2>Diagnostics</h2></div><div class="panel-b"><div class="list-row"><div class="nm"><b>Core connection</b><span>WebSocket · localhost:7878</span></div><span class="chip ok"><span class="cdot"></span>ready</span></div><div class="list-row"><div class="nm"><b>Core version</b><span>0.1.0 · protocol 1</span></div><span class="muted mono">rev 7</span></div><div class="list-row"><div class="nm"><b>Config root</b><span>C:\SealTools</span></div><span class="muted mono">local.yaml</span></div><div class="list-row"><div class="nm"><b>Theme</b><span>Portable · settings.ui.theme</span></div><span class="muted mono" id="themeSetting">dark</span></div></div></div>
+              <div class="panel"><div class="panel-h"><h2>Quick dock</h2></div><div class="panel-b" style="font-size:12.5px;line-height:1.7;color:var(--on-var)">Persisted placement, collapsed state and tile order. The dock is edited in its own window; the full shell remains the source of truth.<div style="margin-top:12px"><button class="btn outline small">Reset dock layout</button></div></div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══ CALIBRATE ═══ -->
+        <section class="screen" data-screen="calibrate">
+          <div class="pagehead"><div><h1>Calibrate</h1><div class="sub">Capture the game once per display setup, then mark every surface the tools read. Marks store the display environment, so a client-size change is detected instead of silently mis-clicking.</div></div><div class="right"><span class="chip info" id="calDisplay"><span class="cdot"></span>1.5× · 1920×1080</span><span class="chip ok" id="calMatch"><span class="cdot"></span>Matches stored</span></div></div>
+          <div class="tool-tabs" id="calToolTabs"><button class="tool-tab active" data-cal-tool="shop">Buy / Sell</button><button class="tool-tab" data-cal-tool="gem">Gem Composer</button><button class="tool-tab" data-cal-tool="tuner">Magic Tuner</button><button class="tool-tab" data-cal-tool="pet">Pet Feeder</button><button class="tool-tab" data-cal-tool="tooltip">Tooltip</button></div>
+          <div class="capture-bar"><div class="frame"></div><div class="cb-main"><b id="capTitle">Frame 3 · TW_LIVE · 2865×1789 physical</b><span id="capSub">LIVE frame · display matches stored calibration · grade/empty crops available</span></div><div class="cb-actions"><button class="btn outline small" data-dialog="captures">Captures</button><button class="btn ghost small" data-dialog="details">Details</button><button class="btn ghost small" data-dialog="stored">Stored marks</button></div></div>
+          <div class="cal-fixed">
+            <div class="panel cal-tree" style="grid-column:1"><div class="panel-h"><h2 id="calTreeTitle">Buy / Sell targets</h2><span class="muted" style="margin-left:auto;font-size:11px">8 surfaces</span></div><div class="cal-pane" id="calTree" style="padding:8px 10px 14px"></div><div style="padding:10px;border-top:1px solid var(--border);display:flex;gap:6px"><button class="btn outline small" style="flex:1">Capture</button><button class="btn ghost small">Refresh</button></div></div>
+            <div class="panel cal-canvas-wrap" style="grid-column:2"><div style="padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px"><button class="btn ghost small" id="zoomOut">−</button><span class="muted" id="zoomPct" style="font-size:11.5px">fit 18%</span><button class="btn ghost small" id="zoomIn">＋</button><button class="btn ghost small" id="zoomOne">1:1</button><span class="sp" style="flex:1"></span><span class="muted" style="font-size:11.5px">click–drag to mark · arrow keys nudge</span></div><div class="cal-pane" style="padding:12px"><div class="canvas" id="calCanvas"><div class="fake"></div><div class="bar"></div><div class="win"><div class="t">TW_LIVE</div></div><div class="slot" style="left:8%;top:62%"></div><div class="slot" style="left:24%;top:46%"></div><div class="slot" style="left:38%;top:46%"></div><div class="mark" id="calMark" style="left:24%;top:18%;width:40%;height:46%"><span class="lab" id="calMarkLabel">Shop grid</span></div><div class="zoom"><button class="btn ghost small" id="zoomOut2">−</button><span id="zoomPct2">fit 18%</span><button class="btn ghost small" id="zoomIn2">＋</button></div></div><div class="bag-legend" style="margin-top:10px"><span class="mono muted">2865×1789 physical · 1 display px = 5.6 physical px</span><span class="sp" style="flex:1"></span><span class="cid">Saved marks are relative to this frame</span></div></div></div>
+            <div class="panel cal-aside" style="grid-column:3"><div class="panel-h"><h2>Mark</h2><span class="chip muted" id="markStatus"><span class="cdot"></span>not saved</span></div><div class="cal-pane" style="padding:14px"><div class="field"><label>Surface</label><div class="control" id="markSurface">Shop grid<span class="chev">▾</span></div><div class="help" id="markShape">Shop · rectangle (x, y, w, h)</div></div><div class="grid2" style="margin-top:12px"><div class="field"><label>X</label><div class="control mono" id="mkX">100</div></div><div class="field"><label>Y</label><div class="control mono" id="mkY">200</div></div><div class="field"><label>W</label><div class="control mono" id="mkW">300</div></div><div class="field"><label>H</label><div class="control mono" id="mkH">400</div></div></div><div class="inline-actions" style="margin-top:12px"><button class="btn outline small">Pick on frame</button><button class="btn ghost small">Revert</button></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn ghost" style="flex:1" data-dialog="stored">Stored</button><button class="btn primary" style="flex:1" id="markSave">Save mark</button></div><div style="margin-top:18px"><div class="panel-h" style="padding:0 0 8px;border:0"><h2 style="font-size:12.5px">Reference crops</h2></div><div class="artifact"><span class="thumb"><span class="lb">shop_grid</span></span><div class="ai"><b>Shop grid</b><span>300 × 400 physical</span></div></div><div class="artifact"><span class="thumb"><span class="lb">empty_slot</span></span><div class="ai"><b>Empty slot</b><span>32 × 32 physical</span></div></div><div class="artifact"><span class="thumb"><span class="lb">food_icon</span></span><div class="ai"><b>Food icon</b><span>— not configured</span></div></div></div></div></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="drawer" id="drawer"><div class="dh"><b>Logs</b><span class="cnt" id="drawerCount">5 lines · newest first</span><span class="sp"></span><div class="filters"><button class="fchip active">All</button><button class="fchip">Errors</button></div><button class="btn ghost small" id="closeLogs">Close</button></div><div class="loglist"><div class="logline info"><span class="t">14:02:14</span><span class="lv">info</span><span class="m">ui: pet preflight ok · 2 rows · ready</span></div><div class="logline info"><span class="t">14:02:13</span><span class="lv">info</span><span class="m">board: COM5 handshake ok · firmware 3</span></div><div class="logline shell"><span class="t">14:02:12</span><span class="lv">shell</span><span class="m">run: Skill Spammer started · preset buffs</span></div><div class="logline warn"><span class="t">14:02:13</span><span class="lv">warn</span><span class="m">tuner: spring point is not configured</span></div><div class="logline info"><span class="t">14:02:11</span><span class="lv">info</span><span class="m">core: ready · rev 7 · TW_LIVE</span></div></div></div>
+      <div class="dialog-backdrop" id="dialogBackdrop"><div class="dialog"><div class="dialog-h"><h2 id="dialogTitle">Captures</h2><span class="sp"></span><button class="btn ghost small" data-dialog-close>Close</button></div><div class="dialog-b" id="dialogBody"></div></div></div>
+      <div class="toast" id="toast"></div>
+
+      <div class="statusbar"><span><span class="k">core</span> 0.1.0 · <span class="k">rev</span> 7</span><span class="muted">root C:\SealTools</span><span class="sp"></span><span><span class="k">Ctrl+L</span> logs · <span class="k">Esc</span> close</span></div>
+    </main>
+  </div>
+</div>
+
+<script>
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => [...r.querySelectorAll(s)];
+
+/* ── navigation ─────────────────────────────────────────────── */
+const screens = $$('.screen');
+function go(name){
+  screens.forEach(s => s.classList.toggle('active', s.dataset.screen === name));
+  $$('.nav').forEach(n => n.classList.toggle('active', n.dataset.go === name));
+  $('#viewport').scrollTop = 0;
+}
+document.addEventListener('click', (e) => {
+  const nav = e.target.closest('[data-go]');
+  if(nav){ e.preventDefault(); go(nav.dataset.go); }
+});
+
+/* ── theme ──────────────────────────────────────────────────── */
+const themeChoices = ['dark','light','system'];
+let theme = 'dark';
+const themeName = () => theme === 'system'
+  ? (matchMedia('(prefers-color-scheme: light)').matches ? 'System · light' : 'System · dark')
+  : (theme === 'light' ? 'Light' : 'Dark');
+function applyTheme(next, announce=true){
+  theme = next;
+  const resolved = next === 'system'
+    ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+    : next;
+  document.body.classList.toggle('light', resolved === 'light');
+  $('#themeBtn').textContent = themeName() + ' ▾';
+  $$('#themeSeg .seg').forEach(b => b.classList.toggle('active', b.dataset.themeChoice === next));
+  const setting = $('#themeSetting'); if(setting) setting.textContent = next;
+  if(announce) toast('Appearance: ' + themeName());
+}
+$('#themeBtn').addEventListener('click', () => {
+  const i = themeChoices.indexOf(theme);
+  applyTheme(themeChoices[(i + 1) % themeChoices.length]);
+});
+$$('#themeSeg [data-theme-choice]').forEach(b => b.addEventListener('click', () => applyTheme(b.dataset.themeChoice)));
+matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { if(theme === 'system') applyTheme('system', false); });
+
+/* ── toast ──────────────────────────────────────────────────── */
+let toastTimer;
+function toast(msg){
+  const el = $('#toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 1700);
+}
+
+/* ── collapsibles, switches, dirty/save ─────────────────────── */
+document.addEventListener('click', (e) => {
+  const collapse = e.target.closest('[data-collapse]');
+  if(collapse){
+    const box = collapse.closest('.collapse');
+    box.dataset.open = box.dataset.open === '1' ? '0' : '1';
+  }
+  const toggle = e.target.closest('[data-toggle]');
+  if(toggle){ toggle.classList.toggle('on'); }
+  const readiness = e.target.closest('[data-readiness]');
+  if(readiness){ $('#petReadiness').classList.toggle('open'); }
+});
+function screenOf(el){ return el.closest('.screen'); }
+function markDirty(el){
+  const screen = screenOf(el) || document;
+  const bar = screen.querySelector('.savebar');
+  if(!bar) return;
+  bar.classList.remove('clean'); bar.classList.add('dirty');
+  bar.querySelector('.state span:last-child').textContent = 'Unsaved changes';
+}
+document.addEventListener('input', (e) => { if(e.target.matches('input, select')) markDirty(e.target); });
+document.addEventListener('change', (e) => { if(e.target.matches('input, select')) markDirty(e.target); });
+document.addEventListener('click', (e) => {
+  const save = e.target.closest('[data-save]');
+  if(save){
+    const bar = save.closest('.savebar');
+    bar.classList.remove('dirty'); bar.classList.add('clean');
+    bar.querySelector('.state span:last-child').textContent = 'All changes saved · rev 8';
+    toast('Saved · config.apply ok · rev 8');
+  }
+  const reset = e.target.closest('[data-reset]');
+  if(reset){
+    const bar = reset.closest('.savebar');
+    bar.classList.remove('dirty'); bar.classList.add('clean');
+    bar.querySelector('.state span:last-child').textContent = 'All changes saved · rev 7';
+    toast('Reverted to the saved draft');
+  }
+});
+
+/* ── tuner & gem ladders ────────────────────────────────────── */
+function paintLadder(path, {target=null, minimum=null, start=null} = {}){
+  const nodes = $$('.gnode', path);
+  const arrows = $$('.garrow', path);
+  const order = nodes.map(n => n.dataset.grade);
+  const ti = target ? order.indexOf(target) : -1;
+  const mi = minimum ? order.indexOf(minimum) : -1;
+  const si = start ? order.indexOf(start) : -1;
+  nodes.forEach((n, i) => {
+    n.classList.toggle('target', i === ti && i !== mi);
+    n.classList.toggle('minimum', i === mi && i !== ti);
+    n.classList.toggle('both', i === ti && i === mi);
+    n.classList.toggle('start', i === si && i !== ti && i !== mi);
+  });
+  arrows.forEach((a, idx) => {
+    const next = idx + 1;
+    let active = false;
+    if(si >= 0) active = next > si;
+    else if(ti >= 0) active = next <= ti;
+    a.classList.toggle('on', active);
+  });
+}
+function updateTuner(){
+  paintLadder($('#tunerLadder'), {
+    target: $('[data-tuner="target"]').value || null,
+    minimum: $('[data-tuner="minimum"]').value || null,
+  });
+}
+function updateGem(){
+  paintLadder($('#gemLadder'), {start: $('[data-gem-start]').value});
+}
+$('[data-tuner="target"]').addEventListener('change', updateTuner);
+$('[data-tuner="minimum"]').addEventListener('change', updateTuner);
+$('[data-gem-start]').addEventListener('change', updateGem);
+updateTuner(); updateGem();
+
+/* ── sell bag ───────────────────────────────────────────────── */
+function fillBag(el, armedCount, interactive=true){
+  el.innerHTML = '';
+  for(let i=0;i<64;i++){
+    const b = document.createElement('button');
+    b.className = 'cell' + (i < armedCount ? ' sel' : '');
+    b.dataset.idx = i;
+    b.setAttribute('aria-label', 'Bag slot ' + (i+1));
+    b.innerHTML = '<svg class="ck" viewBox="0 0 24 24"><path fill="currentColor" d="m9 16.2-3.5-3.5L4 14.2 9 19l11-11-1.4-1.4L9 16.2Z"/></svg>';
+    if(!interactive) b.style.cursor = 'default';
+    el.appendChild(b);
+  }
+}
+fillBag($('#sellBag'), 12);
+fillBag($('#petFoodBag'), 18);
+$('#sellBag').addEventListener('click', (e) => {
+  const cell = e.target.closest('.cell'); if(!cell) return;
+  cell.classList.toggle('sel');
+  const n = $$('#sellBag .cell.sel').length;
+  $('#sellChip').innerHTML = '<span class="cdot"></span>' + n + ' of 64 selected';
+  $('#sellArmed').textContent = n;
+});
+function clearSell(){
+  $$('#sellBag .cell.sel').forEach(c => c.classList.remove('sel'));
+  $('#sellChip').innerHTML = '<span class="cdot"></span>0 of 64 selected';
+  $('#sellArmed').textContent = '0';
+}
+$('#clearSell').addEventListener('click', clearSell);
+$('#clearSell2').addEventListener('click', clearSell);
+
+/* ── pet ────────────────────────────────────────────────────── */
+$('#petQueue').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-remove-pet]'); if(!btn) return;
+  btn.closest('.queue-row').remove();
+  markDirty(btn);
+  toast('Pet removed from the draft');
+});
+$('#petFoodBag').addEventListener('click', (e) => {
+  const cell = e.target.closest('.cell'); if(!cell) return;
+  cell.classList.toggle('sel');
+  const n = $$('#petFoodBag .cell.sel').length;
+  $('.food-side .count').innerHTML = n + ' <span>/ 64 cells</span>';
+  markDirty(cell);
+});
+$$('.page-tab').forEach(t => t.addEventListener('click', () => {
+  const tabs = t.parentElement;
+  $$('.page-tab', tabs).forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+}));
+
+/* ── attributes ─────────────────────────────────────────────── */
+const attrRows = () => $$('#attrBody tr');
+$('#attrSearch').addEventListener('input', (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  let shown = 0;
+  attrRows().forEach(r => {
+    const visible = !q || r.textContent.toLowerCase().includes(q);
+    r.style.display = visible ? '' : 'none';
+    if(visible) shown++;
+  });
+  $('#attrEmpty').style.display = shown ? 'none' : 'block';
+});
+$$('.filter-chips .fchip').forEach(c => c.addEventListener('click', () => {
+  $$('.filter-chips .fchip').forEach(x => x.classList.remove('active'));
+  c.classList.add('active');
+}));
+
+/* ── calibrate ──────────────────────────────────────────────── */
+const calTools = {
+  shop: { title: 'Buy / Sell targets', surfaces: ['Shop grid', 'Shop slot', 'MAX button', 'Bag grid', 'Bag slot', 'Confirm button'] },
+  gem: { title: 'Gem Composer targets', surfaces: ['Grade positions', 'Resource slots', 'Result gem area', 'Empty-slot crop'] },
+  tuner: { title: 'Magic Tuner targets', surfaces: ['OCR region', 'Grade area', 'Spring point'] },
+  pet: { title: 'Pet Feeder targets', surfaces: ['Menu point', 'Pet feed icon', 'Boarding bag grid', 'Bag page tabs', 'Empty-slot crop', 'Food icon crop'] },
+  tooltip: { title: 'Tooltip targets', surfaces: ['Hover point', 'Panel crop', 'Offset anchor'] },
+};
+function ensureCalTree(tool){
+  const conf = calTools[tool] || calTools.shop;
+  $('#calTreeTitle').textContent = conf.title;
+  $('#calTree').innerHTML = conf.surfaces.map((s, i) => {
+    const status = i === 2 ? 'warn' : (i === 4 ? 'off' : 'ok');
+    return '<button class="tgtrow' + (i === 0 ? ' active' : '') + '" data-surface="' + s + '"><span class="sd ' + status + '"></span>' + s + '<span class="meta">' + (i % 3 === 0 ? 'saved' : (i % 3 === 1 ? '2 marks' : 'not set')) + '</span></button>';
+  }).join('');
+  $('#markSurface').childNodes[0].nodeValue = conf.surfaces[0];
+  $('#markShape').textContent = tool + ' · ' + (tool === 'shop' ? 'rectangle (x, y, w, h)' : tool === 'pet' ? 'point / rectangle' : 'rectangle');
+  $('#calMarkLabel').textContent = conf.surfaces[0];
+}
+$$('#calToolTabs [data-cal-tool]').forEach(t => t.addEventListener('click', () => {
+  $$('#calToolTabs .tool-tab').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  ensureCalTree(t.dataset.calTool);
+}));
+$('#calTree').addEventListener('click', (e) => {
+  const row = e.target.closest('.tgtrow'); if(!row) return;
+  $$('#calTree .tgtrow').forEach(x => x.classList.remove('active'));
+  row.classList.add('active');
+  $('#calMarkLabel').textContent = row.dataset.surface;
+  $('#markSurface').childNodes[0].nodeValue = row.dataset.surface;
+});
+$('#markSave').addEventListener('click', () => {
+  $('#markStatus').innerHTML = '<span class="cdot"></span>saved';
+  $('#markStatus').className = 'chip ok';
+  toast('Mark saved · local.yaml rev 8');
+});
+let zoom = 18;
+function setZoom(v){
+  zoom = Math.max(6, Math.min(100, v));
+  $('#zoomPct').textContent = 'fit ' + zoom + '%';
+  $('#zoomPct2').textContent = 'fit ' + zoom + '%';
+}
+$('#zoomOut').addEventListener('click', () => setZoom(zoom - 4));
+$('#zoomIn').addEventListener('click', () => setZoom(zoom + 4));
+$('#zoomOne').addEventListener('click', () => setZoom(100));
+$('#zoomOut2').addEventListener('click', () => setZoom(zoom - 4));
+$('#zoomIn2').addEventListener('click', () => setZoom(zoom + 4));
+
+/* ── dialogs ────────────────────────────────────────────────── */
+const dialogs = {
+  captures: { title: 'Captures', body: '<div class="dialog-row"><div class="nm"><b>Frame 3 · LIVE</b><span>14:02 · TW_LIVE · 2865×1789 physical</span></div><span class="chip info"><span class="cdot"></span>active</span><button class="btn ghost small">Use</button></div><div class="dialog-row"><div class="nm"><b>Frame 2 · LIVE</b><span>13:58 · TW_LIVE · 2865×1789 physical</span></div><span class="mono">18 marks</span><button class="btn ghost small">Use</button></div><div class="dialog-row"><div class="nm"><b>Frame 1 · LIVE</b><span>13:44 · TW_LIVE · 2865×1789 physical</span></div><span class="mono">12 marks</span><button class="btn ghost small">Use</button></div><div class="section-note" style="margin-top:10px">The core keeps the last four frames; a save needs a LIVE frame id, never a stale one.</div>' },
+  details: { title: 'Frame details', body: '<div class="kv"><span class="k">Frame id</span><span class="v">3 · LIVE</span></div><div class="kv"><span class="k">Captured</span><span class="v">14:02:11</span></div><div class="kv"><span class="k">Window</span><span class="v">TW_LIVE</span></div><div class="kv"><span class="k">Physical size</span><span class="v">2865 × 1789</span></div><div class="kv"><span class="k">Display scale</span><span class="v">1.5×</span></div><div class="kv"><span class="k">Client size</span><span class="v">1920 × 1080</span></div><div class="kv"><span class="k">Stored environment</span><span class="v">matches</span></div><div class="section-note" style="margin-top:10px">Marks are relative to this frame; the stored display environment is what detects a monitor or client-size change.</div>' },
+  stored: { title: 'Stored marks', body: '<div class="dialog-row"><div class="nm"><b>Shop grid</b><span>Shop · rectangle</span></div><span class="mono">100, 200 · 300×400</span><span class="st-dot ok"><i></i>saved</span></div><div class="dialog-row"><div class="nm"><b>Shop slot</b><span>Shop · rectangle</span></div><span class="mono">110, 260 · 40×40</span><span class="st-dot ok"><i></i>saved</span></div><div class="dialog-row"><div class="nm"><b>MAX button</b><span>Shop · point</span></div><span class="mono">580, 720</span><span class="st-dot ok"><i></i>saved</span></div><div class="dialog-row"><div class="nm"><b>Bag grid</b><span>Sell · rectangle</span></div><span class="mono">100, 200 · 300×400</span><span class="st-dot off"><i></i>not set</span></div><div class="dialog-row"><div class="nm"><b>Empty-slot crop</b><span>Pet · 32×32</span></div><span class="mono">sample saved</span><span class="st-dot ok"><i></i>saved</span></div>' },
+};
+function openDialog(name){
+  const d = dialogs[name];
+  if(!d) return;
+  $('#dialogTitle').textContent = d.title;
+  $('#dialogBody').innerHTML = d.body;
+  $('#dialogBackdrop').classList.add('open');
+}
+document.addEventListener('click', (e) => {
+  const db = e.target.closest('[data-dialog]'); if(db){ openDialog(db.dataset.dialog); }
+  if(e.target.closest('[data-dialog-close]') || e.target.id === 'dialogBackdrop') $('#dialogBackdrop').classList.remove('open');
+});
+$('#dialogBackdrop').addEventListener('click', (e) => { if(e.target === $('#dialogBackdrop')) $('#dialogBackdrop').classList.remove('open'); });
+
+/* ── logs drawer / demo notes ──────────────────────────────── */
+$('#logsBtn').addEventListener('click', () => $('#drawer').classList.toggle('open'));
+$('#closeLogs').addEventListener('click', () => $('#drawer').classList.remove('open'));
+$('#demoNotes').addEventListener('click', () => toast('Full UI demo · generated from the shipped shell'));
+$('#pinBtn').addEventListener('click', () => { $('#pinBtn').classList.toggle('on'); toast('Always on top ' + ($('#pinBtn').classList.contains('on') ? 'on' : 'off')); });
+
+/* ── run cards: Start / Stop feedback ─────────────────────── */
+document.addEventListener('click', (e) => {
+  if(e.target.closest('[data-stop-run]')){
+    toast('Stop requested · tool.finished will follow');
+  }
+  if(e.target.closest('[data-start-tool]')){
+    toast('Start requested · one foreground tool at a time');
+  }
+});
+
+/* ── keyboard ───────────────────────────────────────────────── */
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'Escape'){
+    $('#dialogBackdrop').classList.remove('open');
+    $('#drawer').classList.remove('open');
+  }
+  if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l'){
+    e.preventDefault(); $('#drawer').classList.toggle('open');
+  }
+});
+
+/* ── deep-link support for review screenshots ───────────────── */
+ensureCalTree('shop');
+const params = new URLSearchParams(location.search);
+const initialScreen = params.get('screen');
+if(initialScreen) go(initialScreen);
+const initialTheme = params.get('theme');
+if(initialTheme) applyTheme(initialTheme, false);
+if(params.get('debug') === '1'){
+  const b = $('[data-addrule]'); const cs = getComputedStyle(b);
+  const box = document.createElement('pre'); box.id='selftest';
+  box.textContent = 'DEBUG body=' + document.body.className + '\naddrule bg=' + cs.backgroundColor + ' color=' + cs.color + '\nsurf=' + getComputedStyle(document.body).getPropertyValue('--surf-high');
+  document.body.appendChild(box);
+}
+
+/* ── optional self-test for the demo build ─────────────────── */
+if(params.get('selftest') === '1'){
+  const results = [];
+  const check = (name, fn) => { try { results.push([name, !!fn()]); } catch { results.push([name, false]); } };
+  check('nav to tuner', () => { go('tuner'); return $('.screen.active').dataset.screen === 'tuner'; });
+  check('ladder colours', () => { $('[data-tuner="target"]').value = 'G'; $('[data-tuner="minimum"]').value = 'DG'; updateTuner(); return $('#tunerLadder .gnode.target')?.dataset.grade === 'G' && $('#tunerLadder .gnode.minimum')?.dataset.grade === 'DG'; });
+  check('advanced opens', () => { const c = $('[data-screen="tuner"] .collapse'); c.dataset.open='1'; return c.dataset.open === '1'; });
+  check('nav to pet', () => { go('pet'); return $('.screen.active').dataset.screen === 'pet'; });
+  check('readiness expands', () => { const r = $('#petReadiness'); r.classList.add('open'); return r.classList.contains('open'); });
+  check('food cell toggles', () => { const c = $('#petFoodBag .cell'); c.click(); return !c.classList.contains('sel'); });
+  check('queue removes', () => { const n = $$('#petQueue .queue-row').length; $('#petQueue [data-remove-pet]').click(); return $$('#petQueue .queue-row').length === n - 1; });
+  check('save clears dirty', () => { const bar = $('#petSave'); bar.classList.add('dirty'); bar.querySelector('[data-save]').click(); return bar.classList.contains('clean'); });
+  check('nav to calibrate', () => { go('calibrate'); return $('.screen.active').dataset.screen === 'calibrate'; });
+  check('cal tool tabs', () => { $$('#calToolTabs [data-cal-tool]')[2].click(); return $('#calTreeTitle').textContent.includes('Magic Tuner'); });
+  check('capture dialog', () => { $$('[data-dialog="captures"]')[0].click(); return $('#dialogBackdrop').classList.contains('open'); });
+  check('dialog closes', () => { $$('[data-dialog-close]')[0].click(); return !$('#dialogBackdrop').classList.contains('open'); });
+  check('theme light', () => { applyTheme('light', false); return document.body.classList.contains('light'); });
+  check('theme dark', () => { applyTheme('dark', false); return !document.body.classList.contains('light'); });
+  const passed = results.filter(r => r[1]).length;
+  document.title = `SELFTEST ${passed}/${results.length}`;
+  const box = document.createElement('pre'); box.id='selftest'; box.textContent = `SELFTEST ${passed}/${results.length}\n` + results.map(r => (r[1]?'PASS ':'FAIL ')+r[0]).join('\n'); document.body.appendChild(box);
+}
+</script>
+
+</body>
+</html>

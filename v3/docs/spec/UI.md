@@ -83,7 +83,7 @@ fall when that surface is rebuilt in Phases 2–4 (recorded in the plan §7.1).
 
 A foreground run (every tool except the resident Pet Feeder) collapses the whole window to a
 **460 × 168 borderless, always-on-top bar** (`MiniRunningCard`, `lib/ui/mini_mode.dart`). Approved
-design demos: `v3/.scratch/ui-audit/ui-demo-mini.html` and `mini-bar-text.html`; real-build evidence
+design demos: `v3/.scratch/ui-audit/ui-demo-mini.html` and `v3/docs/design/finished/mini-bar-text.html`; real-build evidence
 `v3/.scratch/ui-audit/mini-real-*.png`. The core and protocol are unchanged: every bar value is an
 existing `state` / `tool.finished` fact.
 

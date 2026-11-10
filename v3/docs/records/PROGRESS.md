@@ -19,6 +19,21 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-10 (57) — finished design studies live in the docs
+
+The interactive prototypes were only in the gitignored `.scratch/ui-audit` folder, so they could not be
+reviewed from a fresh checkout. They now have a versioned home:
+
+- `v3/docs/design/finished/` — the implemented studies: **full UI**, **quick dock sizes**, **mini-bar
+  text**, **Pet Feeder redesign** and **Calibration capture once**, plus their design notes.
+- `finished/index.html` and `finished/README.md` — browsable cards with the implemented status and the
+  relevant commits; `design/README.md` points at them.
+- The old proposal demos stay under `docs/diagrams/demos/`, now linked from the finished index and the
+  demos index.
+
+The design references in the mini-bar and quick-dock records now point at the versioned files. No app
+behaviour changed.
+
 ## 2026-11-10 (56) — the mini bar reads in four bands
 
 The enlarged 460 × 168 bar still rendered the primary action and every OCR fact as one ` · `-joined
@@ -36,7 +51,7 @@ Filter and competed with the action sentence.
 - Updated the mini-bar widget tests for the structured facts and the 460 × 168 spec/guide wording.
 
 Verification: mini-bar tests **7/7**, full shell gate **393/393**, analyze `--fatal-infos` clean, format
-clean, Windows debug build green. Design study: `.scratch/ui-audit/mini-bar-text.html`.
+clean, Windows debug build green. Design study: `v3/docs/design/finished/mini-bar-text.html`.
 
 ## 2026-11-10 (55) — PP-OCRv6 small trial loads its own dictionary
 
@@ -120,7 +135,7 @@ the Standard 13 px title, 12 px Start label and 28 px button, so the controls fl
 Verification: quick-dock tests **26/26** (large/compact metrics, size menu, keep-open, resize timer,
 hover/click), model tests **49/49**, full shell gate **389/389**, analyze `--fatal-infos` clean, format
 clean, Windows debug build green; `seal-config` 24/24 and `cargo fmt --check` green. Design study:
-`.scratch/ui-audit/quick-dock-sizes.html` + `.md`; spec and both guides updated.
+`v3/docs/design/finished/quick-dock-sizes.html` + `.md`; spec and both guides updated.
 
 ## 2026-11-09 (51) — the quick dock gets Compact / Standard / Large
 

@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seal Tools v3 — mini bar text design</title>
+<style>
+  :root{
+    --bg:#0b0d12; --soft:#11141b; --panel:#171a22; --panel2:#1d212a;
+    --border:#2b303b; --on:#e7eaf1; --onvar:#b9c0cc; --faint:#7f8998;
+    --primary:#adc6ff; --onprimary:#0f2a55; --pcontainer:#243a63; --onpcontainer:#dbe6ff;
+    --success:#7ee2b8; --scontainer:#10382b; --onscontainer:#b9f5da;
+    --warning:#f2cc7b; --wcontainer:#3e2f10; --onwcontainer:#ffe2a8;
+    --error:#ffb4ab; --econtainer:#5c1412; --onecontainer:#ffdad6;
+    --muted-container:#282a2f;
+    --mono:"Cascadia Mono","Consolas",ui-monospace,monospace;
+    --sans:"Segoe UI Variable Text","Segoe UI",Roboto,system-ui,sans-serif;
+  }
+  body.light{
+    --bg:#f3f5fa; --soft:#eef1f7; --panel:#fff; --panel2:#f7f9fc;
+    --border:#d5dae3; --on:#17202e; --onvar:#465163; --faint:#738094;
+    --primary:#245fc4; --onprimary:#fff; --pcontainer:#dbe7ff; --onpcontainer:#0c2d63;
+    --success:#0f6b4a; --scontainer:#c8f2df; --onscontainer:#002116;
+    --warning:#7a4d00; --wcontainer:#ffe8b3; --onwcontainer:#2b1a00;
+    --error:#a12a22; --econtainer:#ffdad6; --onecontainer:#410002;
+    --muted-container:#e8ebf2;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--on);font:400 14px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+  .page{max-width:1240px;margin:0 auto;padding:30px 32px 70px}
+  .top{display:flex;align-items:center;gap:10px;margin-bottom:28px}
+  .brand{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--onvar)}
+  .logo{width:21px;height:21px;border-radius:6px;background:linear-gradient(135deg,#8ab4ff,#4d7bd1);display:grid;place-items:center;color:#0b1733;font-weight:800;font-size:11px}
+  .top .sp{flex:1}
+  .toggle{height:30px;padding:0 11px;border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--onvar);background:var(--soft)}
+  .toggle:hover{color:var(--on)}
+  .kicker{display:inline-flex;align-items:center;gap:7px;padding:4px 9px;border:1px solid var(--border);border-radius:999px;background:var(--soft);
+    font-size:9.5px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--primary);margin-bottom:14px}
+  .kicker i{width:5px;height:5px;border-radius:50%;background:currentColor}
+  h1{font-size:clamp(30px,3.7vw,44px);line-height:1.08;letter-spacing:-.025em;font-weight:680;max-width:760px}
+  h1 em{font-style:normal;color:var(--primary)}
+  .lead{margin-top:13px;max-width:68ch;color:var(--onvar);font-size:14.5px;line-height:1.65}
+  .hero{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:40px;align-items:end;margin-bottom:28px}
+  .rule-list{border-left:1px solid var(--border);padding-left:22px;display:flex;flex-direction:column;gap:9px}
+  .rule-list .h{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:700}
+  .rule-list .r{display:flex;justify-content:space-between;gap:18px;font-size:12px;color:var(--onvar)}
+  .rule-list .r b{font:600 10.5px var(--mono);color:var(--on)}
+
+  .sec-head{display:flex;align-items:flex-end;gap:12px;margin:38px 0 14px}
+  .sec-head .n{font:600 10px var(--mono);color:var(--primary);border:1px solid var(--border);border-radius:5px;padding:2px 6px;align-self:flex-start;margin-top:2px}
+  .sec-head h2{font-size:19px;letter-spacing:-.01em;font-weight:650}
+  .sec-head .note{margin-left:auto;max-width:44ch;text-align:right;font-size:11.5px;color:var(--faint)}
+  .compare{display:grid;grid-template-columns:repeat(2,460px);gap:32px;justify-content:center;align-items:start}
+  .card{display:flex;flex-direction:column;gap:8px}
+  .card-h{display:flex;align-items:center;gap:8px;font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--onvar)}
+  .tag{font-size:9px;letter-spacing:.05em;padding:2px 6px;border:1px solid var(--border);border-radius:4px}
+  .tag.before{color:var(--warning);background:var(--wcontainer);border-color:transparent}
+  .tag.after{color:var(--primary);background:var(--pcontainer);border-color:transparent}
+  .card-h .sp{flex:1}
+  .card-h .meta{font:9.5px var(--mono);color:var(--faint);text-transform:none;letter-spacing:0}
+  .card-note{font-size:11.5px;line-height:1.5;color:var(--faint)}
+  .card-note b{color:var(--onvar);font-weight:600}
+
+  /* ── bar ───────────────────────────────────────────────────── */
+  .bar{width:460px;height:168px;border:1px solid var(--border);border-radius:14px;background:linear-gradient(180deg,var(--panel2),var(--panel));
+    padding:12px;display:flex;flex-direction:column;box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden;color:var(--on)}
+  body.light .bar{box-shadow:0 16px 40px rgba(20,32,52,.12)}
+  .bar-head{display:flex;align-items:center;gap:6px;min-height:28px}
+  .grip{color:var(--faint);font-size:14px;letter-spacing:-2px;opacity:.7;cursor:grab}
+  .tico{width:28px;height:28px;border-radius:7px;background:var(--muted-container);display:grid;place-items:center;color:var(--onvar);flex:0 0 28px}
+  .tico svg{width:16px;height:16px;fill:currentColor}
+  .tname{font-size:14px;font-weight:650;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+  .chip{display:inline-flex;align-items:center;gap:4px;height:19px;padding:0 7px;border-radius:999px;
+    font-size:10px;font-weight:700;white-space:nowrap}
+  .chip i{width:5px;height:5px;border-radius:50%;background:currentColor}
+  .chip.ok{background:var(--scontainer);color:var(--onscontainer)}
+  .chip.warn{background:var(--wcontainer);color:var(--onwcontainer)}
+  .chip.bad{background:var(--econtainer);color:var(--onecontainer)}
+  .iconbtn{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;color:var(--faint);flex:0 0 26px}
+  .iconbtn:hover{background:var(--soft);color:var(--on)}
+  .iconbtn svg{width:14px;height:14px;fill:currentColor}
+  .paw{width:22px;height:22px;display:grid;place-items:center;color:var(--faint)}
+  .paw svg{width:13px;height:13px;fill:currentColor}
+
+  .before-body{flex:1;min-height:0;display:flex;flex-direction:column;padding-top:4px}
+  .before-text{font-size:12.5px;line-height:1.35;color:var(--onvar);overflow:hidden}
+  .before-foot,.after-foot{display:flex;align-items:center;gap:6px;height:32px;flex:0 0 32px}
+  .when{display:inline-flex;align-items:center;gap:4px;font:10.5px var(--mono);color:var(--faint)}
+  .when svg{width:12px;height:12px;fill:currentColor}
+  .sp{flex:1}
+  .stop{height:30px;min-width:88px;padding:0 13px;border-radius:7px;background:var(--econtainer);color:var(--onecontainer);
+    font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+  .finish{height:30px;padding:0 11px;border-radius:7px;background:var(--pcontainer);color:var(--onpcontainer);font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;gap:5px}
+  .finish svg{width:13px;height:13px;fill:currentColor}
+
+  .prim{margin-top:4px;font-size:13.2px;font-weight:600;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--on)}
+  .facts{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-height:23px}
+  .fact{display:inline-flex;align-items:center;gap:4px;height:21px;padding:0 6px;border-radius:5px;
+    background:color-mix(in srgb,var(--muted-container) 70%,transparent);border:1px solid var(--border)}
+  .fact b{font:600 7.5px var(--mono);letter-spacing:.04em;color:var(--faint);text-transform:uppercase}
+  .fact span{font:500 10.5px var(--mono);color:var(--on)}
+  .filter{display:flex;align-items:center;gap:6px;margin-top:4px;min-height:16px}
+  .filter b{font:600 7.5px var(--mono);letter-spacing:.04em;color:var(--faint);text-transform:uppercase;flex:0 0 auto}
+  .filter span{font-size:10.5px;color:var(--onvar);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .after-body{flex:1;min-height:0;display:flex;flex-direction:column;padding-top:2px}
+
+  .state-grid{display:grid;grid-template-columns:repeat(2,460px);gap:22px;justify-content:center}
+  .state-card .bar{height:auto;min-height:132px}
+  .state-card .bar-head{margin-bottom:5px}
+  .state-card .prim{margin-top:2px}
+  .state-card .after-foot{margin-top:auto}
+  .state-card .card-h{margin-bottom:2px}
+
+  .rules{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}
+  .rule{border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:14px 16px}
+  .rule .n{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;background:var(--soft);border:1px solid var(--border);
+    font:700 10px var(--mono);color:var(--primary);margin-bottom:8px}
+  .rule b{display:block;font-size:13px;margin-bottom:4px}
+  .rule p{font-size:12px;line-height:1.55;color:var(--onvar)}
+  .rule code{font:10.5px var(--mono);color:var(--primary);background:var(--soft);border:1px solid var(--border);border-radius:4px;padding:1px 4px}
+  .type-table{width:100%;border-collapse:collapse;border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-top:12px}
+  .type-table th,.type-table td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);font-size:11.5px}
+  .type-table th{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);background:var(--soft)}
+  .type-table tr:last-child td{border-bottom:0}
+  .type-table td:first-child{color:var(--onvar)}
+  .type-table td:nth-child(2){font-family:var(--mono);color:var(--primary)}
+  .type-table td:nth-child(3){color:var(--faint)}
+  .footer{margin-top:42px;padding-top:16px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:center;color:var(--faint);font-size:11px}
+  .footer .sp{flex:1}
+  .notes{display:none;margin-top:12px;font:10.5px/1.55 var(--mono);color:var(--faint);border:1px dashed var(--border);border-radius:8px;padding:8px 10px}
+  body.notes .notes{display:block}
+  @media (max-width:1060px){
+    .hero{grid-template-columns:1fr}.rule-list{border-left:0;border-top:1px solid var(--border);padding:14px 0 0}
+    .compare,.state-grid{grid-template-columns:1fr;justify-items:center}.bar{max-width:100%}
+  }
+  @media (max-width:540px){
+    .page{padding:20px 14px 50px}.bar{width:100%;height:auto;min-height:168px}
+    .before-text,.filter span{white-space:normal}.facts{max-height:48px;overflow:hidden}
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-tune" viewBox="0 0 24 24"><path d="M3 7h11a3 3 0 1 0 0 2H3V7Zm0 8h5a3 3 0 1 0 0 2H3v-2Zm18 2h-5v-2h5v2Zm0-8h-9V7h9v2Z"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M5 6h4V4H5a2 2 0 0 0-2 2v4h2V6Zm14 0v4h2V6a2 2 0 0 0-2-2h-4v2h4ZM5 14H3v4a2 2 0 0 0 2 2h4v-2H5v-4Zm14 4h-4v2h4a2 2 0 0 0 2-2v-4h-2v4Z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 5v5.6l3.7 2.2-1 1.7L11 13.9V7h2Z"/></symbol>
+  <symbol id="i-paw" viewBox="0 0 24 24"><circle cx="6.5" cy="14.5" r="2.1"/><circle cx="12" cy="9" r="2.1"/><circle cx="17.5" cy="14.5" r="2.1"/><path d="M12 15.5c2.2 0 4.2 1.5 4.2 3.2 0 1.1-.9 1.8-2 1.8h-4.4c-1.1 0-2-.7-2-1.8 0-1.7 2-3.2 4.2-3.2z"/></symbol>
+  <symbol id="i-dock" viewBox="0 0 24 24"><path d="M3 3h8v8H3V3Zm10 0h8v8h-8V3ZM3 13h8v8H3v-8Zm10 0h8v8h-8v-8Z"/></symbol>
+</defs></svg>
+
+<div class="page">
+  <div class="top">
+    <span class="brand"><span class="logo">S</span>Seal Tools v3</span>
+    <span class="kicker" style="margin:0 0 0 8px"><i style="width:5px;height:5px;border-radius:50%;background:currentColor"></i>Mini bar · text design</span>
+    <span class="sp"></span>
+    <button class="toggle" id="theme">Dark</button>
+    <button class="toggle" id="notes">Hierarchy guides</button>
+  </div>
+
+  <div class="hero">
+    <div>
+      <h1>Read the run.<br><em>Not a log line.</em></h1>
+      <p class="lead">The old 460 × 168 bar devoted five lines to one ` · `-joined sentence: grade, count, attempt,
+        attributes and filter ran together with the action message. The redesign keeps the action sentence as
+        the primary line, turns live facts into labelled chips, and gives a long Filter its own line. The countdown
+        and one primary action anchor the bottom.</p>
+    </div>
+    <div class="rule-list">
+      <div class="h">Hierarchy</div>
+      <div class="r">Identity &amp; state <b>row 1</b></div>
+      <div class="r">Current action <b>row 2</b></div>
+      <div class="r">Live facts <b>row 3</b></div>
+      <div class="r">Next + action <b>row 4</b></div>
+    </div>
+  </div>
+
+  <div class="sec-head"><span class="n">01</span><h2>Before / after — same bar, same facts</h2><div class="note">Both previews are 460 × 168. The current bar is real; the proposed bar is the implementation in <code>mini_mode.dart</code>.</div></div>
+  <div class="compare">
+    <div class="card">
+      <div class="card-h"><span class="tag before">Before</span><span>one dense sentence</span><span class="sp"></span><span class="meta">message · 5 lines</span></div>
+      <div class="bar">
+        <div class="bar-head"><span class="grip">⠿</span><span class="tico"><svg><use href="#i-tune"/></svg></span><span class="tname">Magic Tuner</span><span class="chip ok"><i></i>running</span><span class="iconbtn"><svg><use href="#i-expand"/></svg></span></div>
+        <div class="before-body">
+          <div class="before-text">N · 284 left · attempt 2 · 魔法力=22 · 攻擊速度=4 · filter '減少傷害' matched 0 attrs, need 2 · Reading the grade line · in 12 s</div>
+        </div>
+        <div class="before-foot"><span class="sp"></span><span class="stop">Stop</span></div>
+      </div>
+      <div class="card-note"><b>Problem:</b> the primary action and the facts compete for the same paragraph. Labels are implicit, the Filter tail is invisible, and a long message can bury the countdown.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><span class="tag after">After</span><span>primary line + facts</span><span class="sp"></span><span class="meta">4 bands</span></div>
+      <div class="bar">
+        <div class="bar-head"><span class="grip">⠿</span><span class="tico"><svg><use href="#i-tune"/></svg></span><span class="tname">Magic Tuner</span><span class="chip ok"><i></i>running</span><span class="paw"><svg><use href="#i-paw"/></svg></span><span class="iconbtn"><svg><use href="#i-expand"/></svg></span></div>
+        <div class="after-body">
+          <div class="prim">Reading the grade line</div>
+          <div class="facts"><span class="fact"><b>grade</b><span>N</span></span><span class="fact"><b>left</b><span>284</span></span><span class="fact"><b>try</b><span>2</span></span><span class="fact"><b>魔法力</b><span>22</span></span><span class="fact"><b>攻擊速度</b><span>4</span></span></div>
+          <div class="filter"><b>filter</b><span>'減少傷害' matched 0 attrs, need 2</span></div>
+        </div>
+        <div class="after-foot"><span class="when"><svg><use href="#i-clock"/></svg>in 12 s</span><span class="sp"></span><span class="stop">Stop</span></div>
+      </div>
+      <div class="card-note"><b>Result:</b> the eye reads tool → phase → action → facts → next. The Filter is one ellipsized line with the full set in the hover tooltip; the primary button never moves.</div>
+    </div>
+  </div>
+
+  <div class="sec-head"><span class="n">02</span><h2>State variants</h2><div class="note">The same four bands adapt without reflowing the window.</div></div>
+  <div class="state-grid">
+    <div class="state-card">
+      <div class="card-h"><span class="tag after">running</span><span>facts and countdown present</span></div>
+      <div class="bar"><div class="bar-head"><span class="grip">⠿</span><span class="tico"><svg><use href="#i-tune"/></svg></span><span class="tname">Magic Tuner</span><span class="chip ok"><i></i>running</span><span class="iconbtn"><svg><use href="#i-expand"/></svg></span></div><div class="after-body"><div class="prim">Reading the grade line</div><div class="facts"><span class="fact"><b>grade</b><span>DG</span></span><span class="fact"><b>left</b><span>9</span></span><span class="fact"><b>try</b><span>4</span></span></div><div class="filter"><b>filter</b><span>any · 2 rules</span></div></div><div class="after-foot"><span class="when"><svg><use href="#i-clock"/></svg>in 12 s</span><span class="sp"></span><span class="stop">Stop</span></div></div>
+    </div>
+    <div class="state-card">
+      <div class="card-h"><span class="tag after">finished</span><span>outcome, then escape</span></div>
+      <div class="bar"><div class="bar-head"><span class="grip">⠿</span><span class="tico"><svg><use href="#i-tune"/></svg></span><span class="tname">Magic Tuner</span><span class="chip ok"><i></i>finished</span><span class="iconbtn"><svg><use href="#i-expand"/></svg></span></div><div class="after-body"><div class="prim">Reached DG after 7 attempts</div><div class="facts"><span class="fact"><b>grade</b><span>DG</span></span><span class="fact"><b>attempts</b><span>7</span></span></div></div><div class="after-foot"><span class="sp"></span><button class="iconbtn" title="Quick dock"><svg><use href="#i-dock"/></svg></button><span class="finish"><svg><use href="#i-expand"/></svg>Full window</span></div></div>
+    </div>
+    <div class="state-card">
+      <div class="card-h"><span class="tag after">stopping</span><span>busy action</span></div>
+      <div class="bar"><div class="bar-head"><span class="grip">⠿</span><span class="tico"><svg><use href="#i-tune"/></svg></span><span class="tname">Magic Tuner</span><span class="chip warn"><i></i>stopping</span><span class="iconbtn"><svg><use href="#i-expand"/></svg></span></div><div class="after-body"><div class="prim">Stopping this run…</div><div class="facts"><span class="fact"><b>grade</b><span>DG</span></span></div></div><div class="after-foot"><span class="when"><svg><use href="#i-clock"/></svg>waiting</span><span class="sp"></span><span class="stop" style="opacity:.55">Stopping…</span></div></div>
+    </div>
+    <div class="state-card">
+      <div class="card-h"><span class="tag after">core lost</span><span>error takes the accent</span></div>
+      <div class="bar"><div class="bar-head"><span class="grip">⠿</span><span class="tico"><svg><use href="#i-tune"/></svg></span><span class="tname">Magic Tuner</span><span class="chip bad"><i></i>core lost</span><span class="iconbtn"><svg><use href="#i-expand"/></svg></span></div><div class="after-body"><div class="prim" style="color:var(--error)">The core stopped — reconnect in the full window</div></div><div class="after-foot"><span class="sp"></span><span class="finish"><svg><use href="#i-expand"/></svg>Full window</span></div></div>
+    </div>
+  </div>
+
+  <div class="sec-head"><span class="n">03</span><h2>Text rules and type scale</h2><div class="note">The bar is a status surface: one primary sentence, scannable facts, one action.</div></div>
+  <div class="rules">
+    <div class="rule"><span class="n">1</span><b>Primary line is the action/outcome</b><p>Tool name 14 px · action line 13 px semibold. The core’s <code>message</code> is never replaced by the fact summary; with no facts it may wrap to two lines.</p></div>
+    <div class="rule"><span class="n">2</span><b>Facts are labelled chips</b><p>Label 7.5 px uppercase mono, value 10.5 px mono. Grade/left/try and OCR attributes become scannable; take at most five compact facts, then the full set in the tooltip.</p></div>
+    <div class="rule"><span class="n">3</span><b>Long Filter gets its own line</b><p>The filter result can be a sentence, so it is a full-width, one-line ellipsized row with a <code>FILTER</code> label and the full text in the tooltip.</p></div>
+    <div class="rule"><span class="n">4</span><b>Footer is stable</b><p>Clock icon + countdown on the left, one fixed-size primary action on the right: Stop while active, Quick dock + Full window when finished.</p></div>
+  </div>
+  <table class="type-table">
+    <thead><tr><th>Element</th><th>Size / style</th><th>Rule</th></tr></thead>
+    <tbody>
+      <tr><td>Tool name</td><td>14 px · 650</td><td>one line, ellipsize</td></tr>
+      <tr><td>Action / outcome</td><td>13 px · 600</td><td>1–2 lines; never joins facts</td></tr>
+      <tr><td>Fact chip</td><td>7.5 / 10.5 px mono</td><td>label muted, value on-surface</td></tr>
+      <tr><td>Filter line</td><td>10.5 px · 8.5 label</td><td>full width, one line + tooltip</td></tr>
+      <tr><td>Countdown</td><td>11 px mono + clock</td><td>only for a live run</td></tr>
+      <tr><td>Primary action</td><td>88 × 32 · 12 px</td><td>Stop or Full window; fixed slot</td></tr>
+    </tbody>
+  </table>
+
+  <div class="notes">guides: identity row · primary action line · facts row · footer</div>
+  <div class="footer"><span>Design study · mini bar text hierarchy</span><span class="sp"></span><span>460 × 168 · 1:1</span></div>
+</div>
+<script>
+let light=false;
+document.getElementById('theme').addEventListener('click',()=>{light=!light;document.body.classList.toggle('light',light);document.getElementById('theme').textContent=light?'Light':'Dark';});
+document.getElementById('notes').addEventListener('click',()=>document.body.classList.toggle('notes'));
+</script>
+</body>
+</html>
