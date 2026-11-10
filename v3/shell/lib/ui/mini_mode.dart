@@ -14,6 +14,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import '../app/app.dart';
@@ -45,6 +46,7 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
 
   WindowRect? _dragOrigin;
   Offset _dragDelta = Offset.zero;
+  String? _loggedState;
 
   @override
   void initState() {
@@ -52,14 +54,51 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
     widget.model.tools.addListener(_onToolModelChanged);
     widget.model.config.addListener(_onConfigModelChanged);
     _ticker = Timer.periodic(const Duration(seconds: 1), _onTick);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _logMiniState());
   }
 
   /// SHELL-F5: mini/dock content renders tool/config facts directly, so it listens to those two
   /// sub-models instead of the whole shell rebuilding on every event.
   void _onToolModelChanged() {
     if (mounted) {
+      _logMiniState();
       setState(() {});
     }
+  }
+
+  /// A temporary diagnostic for the collapsed bar: it records exactly the facts the bar received
+  /// (phase/message/detail), so a blank Tuner line can be told apart from a rendering problem.
+  void _logMiniState() {
+    if (!kDebugMode || !widget.model.miniMode) {
+      return;
+    }
+    final tool = widget.model.miniTool;
+    if (tool == null) {
+      return;
+    }
+    final snapshot = widget.model.tools.snapshot(tool);
+    final signature = [
+      tool.wire,
+      snapshot?.phase.name ?? 'none',
+      snapshot?.message ?? '',
+      for (final line in snapshot?.detail ?? const <ToolDetail>[])
+        '${line.label ?? ''}=${line.value}',
+    ].join('|');
+    if (signature == _loggedState) {
+      return;
+    }
+    _loggedState = signature;
+    final detail =
+        snapshot?.detail
+            .map((line) => '${line.label ?? ''}=${line.value}')
+            .join('; ') ??
+        '';
+    widget.model.logs.addShellNote(
+      'mini bar state: ${tool.wire} '
+      'phase=${snapshot?.phase.name ?? 'none'} '
+      'message="${snapshot?.message ?? ''}" '
+      'detail=[$detail]',
+    );
   }
 
   void _onConfigModelChanged() {
