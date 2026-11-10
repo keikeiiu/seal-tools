@@ -125,8 +125,9 @@ is the OCR read: tool name + phase, the core's current action or finished outcom
 attributes as one `name=value` line each. Normal attributes stay bright; only attributes matching an
 enabled filter rule (name and min/max) use the primary colour. The long Filter has its own line; below
 it, Grade/Left/Try sit as compact metric chips in the footer next to the countdown and **Stop**.
-Hovering the fact area shows the full OCR detail. When the run finishes the primary action switches to
-**Full window** instead of popping back over the game. The bar stays on top, remembers the screen edge
+Hovering the fact area shows the full OCR detail. When the run finishes the result bar keeps the last
+OCR attributes so you can inspect what was found, drops the live metrics/Filter, and switches the
+primary action to **Full window** instead of popping back over the game. The bar stays on top, remembers the screen edge
 you dragged it to for the next run, and the resident Pet Feeder keeps the full window (it is shown as a
 paw badge beside the foreground tool). Press **Full window** to return for the rest of this run; the
 next run collapses again. While a tool runs, the app bar's picture-in-picture button collapses manually.

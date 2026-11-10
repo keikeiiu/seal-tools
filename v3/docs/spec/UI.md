@@ -109,8 +109,10 @@ existing `state` / `tool.finished` fact.
   flight, so the bar never invents a phase). A finished/error/lost bar shows **Full window**
   (112 × 32); the expand icon is always present.
 - **States** — `running`, `starting`, `stopping`, `finished`, `stopped` (cancelled), `error`, and
-  `core lost`; colour is always paired with the chip word. The bar stays on Finished/Error until
-  "Full window"; it never pops the shell over the game on its own. Expanding restores the exact full
+  `core lost`; colour is always paired with the chip word. The finished/stopped/error result bar keeps
+  the last live OCR attribute lines for inspection but drops the live metrics and Filter line, matching
+  the approved result design. The bar stays on Finished/Error until "Full window"; it never pops the
+  shell over the game on its own. Expanding restores the exact full
   rect; the full shell stays mounted offstage behind the bar, so the current tab and its draft survive
   the collapse.
 - **Resident Pet Feeder** — Pet never collapses the window; it is the resident feeder and keeps the

@@ -291,6 +291,17 @@ void main() {
     final harness = await _pumpBar(tester);
     harness.emitState(
       tool: ToolId.tuner,
+      message: 'reading the attributes',
+      countdown: 12,
+      detail: const [
+        {'value': '魔法力=22'},
+        {'value': '攻擊速度=4'},
+        {'value': 'STR=1'},
+      ],
+    );
+    await _flush(tester);
+    harness.emitState(
+      tool: ToolId.tuner,
       phase: ToolPhase.idle,
       message: 'DONE',
     );
@@ -304,6 +315,13 @@ void main() {
 
     expect(find.text('Reached DG after 7 attempts'), findsOneWidget);
     expect(find.text('finished'), findsOneWidget);
+    // The result bar keeps the last live OCR read for inspection, but drops the live-only
+    // metrics and Filter line.
+    expect(find.byKey(const ValueKey('mini-attributes')), findsOneWidget);
+    expect(find.text('魔法力=22'), findsOneWidget);
+    expect(find.text('STR=1'), findsOneWidget);
+    expect(find.byKey(const ValueKey('mini-fact-0')), findsNothing);
+    expect(find.byKey(const ValueKey('mini-wide-fact-0')), findsNothing);
     expect(find.byKey(const ValueKey('mini-stop')), findsNothing);
     expect(find.byKey(const ValueKey('mini-full')), findsOneWidget);
 

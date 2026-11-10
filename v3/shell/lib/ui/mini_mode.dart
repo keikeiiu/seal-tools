@@ -48,21 +48,57 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
   Offset _dragDelta = Offset.zero;
   String? _loggedState;
 
+  /// The last live OCR read, kept so the finished/result bar can still show what the run found after
+  /// the core has moved to its terminal `state` (which no longer carries the live detail).
+  List<_MiniFact> _lastReadFacts = const <_MiniFact>[];
+  ToolId? _lastReadTool;
+
   @override
   void initState() {
     super.initState();
     widget.model.tools.addListener(_onToolModelChanged);
     widget.model.config.addListener(_onConfigModelChanged);
     _ticker = Timer.periodic(const Duration(seconds: 1), _onTick);
+    _captureReadFacts();
     WidgetsBinding.instance.addPostFrameCallback((_) => _logMiniState());
   }
 
   /// SHELL-F5: mini/dock content renders tool/config facts directly, so it listens to those two
   /// sub-models instead of the whole shell rebuilding on every event.
   void _onToolModelChanged() {
+    _captureReadFacts();
     if (mounted) {
       _logMiniState();
       setState(() {});
+    }
+  }
+
+  /// Keep the latest live OCR facts for the terminal (finished/error) bar. A new run starting clears
+  /// the previous run's read before its first capture, so the result never mixes two attempts.
+  void _captureReadFacts() {
+    final tool = widget.model.miniTool;
+    if (tool == null) {
+      _lastReadFacts = const <_MiniFact>[];
+      _lastReadTool = null;
+      return;
+    }
+    if (tool != _lastReadTool) {
+      _lastReadFacts = const <_MiniFact>[];
+      _lastReadTool = tool;
+    }
+    final snapshot = widget.model.tools.snapshot(tool);
+    if (snapshot == null) {
+      return;
+    }
+    if (snapshot.phase == ToolPhase.starting && snapshot.detail.isEmpty) {
+      _lastReadFacts = const <_MiniFact>[];
+      return;
+    }
+    if (snapshot.phase != ToolPhase.idle && snapshot.detail.isNotEmpty) {
+      final facts = _detailFacts(tool, snapshot);
+      if (facts.any((fact) => fact.inline || fact.wide)) {
+        _lastReadFacts = facts;
+      }
     }
   }
 
@@ -328,13 +364,16 @@ class _MiniRunningCardState extends State<MiniRunningCard> {
         : (finished?.message ?? 'Run ended');
     // The core's action/outcome sentence stays the primary line; the live read facts are
     // structured chips below it instead of being glued into one ` · ` sentence.
-    final facts = active ? _detailFacts(tool, snapshot) : const <_MiniFact>[];
-    final compactFacts = facts
-        .where((fact) => !fact.wide && !fact.inline)
-        .take(3)
-        .toList();
+    final facts = active
+        ? _detailFacts(tool, snapshot)
+        : (_lastReadTool == tool ? _lastReadFacts : const <_MiniFact>[]);
+    final compactFacts = active
+        ? facts.where((fact) => !fact.wide && !fact.inline).take(3).toList()
+        : const <_MiniFact>[];
     final inlineFacts = facts.where((fact) => fact.inline).toList();
-    final wideFacts = facts.where((fact) => fact.wide).toList();
+    final wideFacts = active
+        ? facts.where((fact) => fact.wide).toList()
+        : const <_MiniFact>[];
     // The "next moment" belongs to a live run. The bar is 360 px wide, so drop the full window's
     // "next action " prefix ("in 11 s" instead of "next action in 11 s"); a stopped bar shows the
     // outcome sentence only.

@@ -30,8 +30,12 @@ the previous layout put the Grade/Left/Try chips beside them and squeezed the re
 - **Metrics move to the footer:** Grade/Left/Try are compact chips to the left of the countdown and
   Stop. The footer is fixed height, so the one-action rule and Stop position do not move; finished and
   error bars fall back to the dock/full-window actions.
+- **Result bar keeps the read:** the last live OCR facts are cached and reused after `tool.finished`,
+  so the finished/stopped/error bar still shows the three attribute lines for inspection while the
+  live metrics and Filter line are dropped, matching the approved result card.
 - **Tested hierarchy:** the mini-bar widget test asserts `mini-fact-0` starts below the last OCR
-  attribute and that three OCR attributes occupy three distinct rows.
+  attribute, that three OCR attributes occupy three distinct rows, and that the finished bar keeps the
+  OCR lines but not the live metrics/Filter.
 
 Verification: mini-bar tests **8/8**, full shell gate **394/394**, analyze `--fatal-infos` clean,
 format clean, Windows debug build green. Design study (reviewed before implementation):
