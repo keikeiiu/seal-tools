@@ -37,7 +37,7 @@ jobs:
       run:
         working-directory: v3/core
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # rust-toolchain.toml pins the channel; the components are added on top of it.
       - uses: dtolnay/rust-toolchain@stable
@@ -66,7 +66,7 @@ jobs:
     name: Flutter shell (format, analyze, test, build)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: subosito/flutter-action@v2
         with:
@@ -81,7 +81,7 @@ jobs:
     name: Release packaging guards
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Guard the tracked v3 config seed list
         # Developer runs migrate v3/config/local.yaml into player state under setup/machine; those
