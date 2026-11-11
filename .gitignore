@@ -65,5 +65,9 @@ reference/
 
 # ── Misc cruft ─────────────────────────────────────────
 
+# Local Claude Code skills: machine-specific tooling, not project source. DSH instructions
+# live in AGENTS.md instead.
+.claude/
+
 # v3 dev/install OCR models: large binaries, copied locally; never committed
 v3/models/
