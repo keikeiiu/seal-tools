@@ -1,98 +1,95 @@
-# Seal Tools v2.16 (C# / .NET 8 WPF)
+# Seal Tools v3.0.11
 
-A full C#/.NET 8 rebuild of the Seal Online automation tools — a **native Windows desktop app**
-(WPF + WPF-UI) that ships as a **single self-contained `.exe`**. No Python, no pip, no runtime install.
+Windows automation for Seal Online. A Rust core drives an Arduino Pro Micro as a real USB
+mouse/keyboard; a Flutter shell provides the UI. OCR reads the game screen where needed.
 
-> The original Python build lives under [`v1/`](v1) — its launcher, tools, docs and tests — and is
-> documented in [v1/README.md](v1/README.md). v2 lives entirely under [`v2/`](v2).
+**v3 is the current baseline.** v2 (C#/.NET) is the previous stable fallback; v1 is legacy.
 
 ## Download
 
-**Take the latest — [SealTools-v2.16.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.16/SealTools-v2.16.zip).**
-Self-contained (exe + OCR models + config templates + the pet feeding table) — unzip and run.
-Installation, including flashing the board, is in **[v2/docs/spec/INSTALL.md](v2/docs/spec/INSTALL.md)**.
+- **[SealTools-v3.0.11.zip](https://github.com/keikeiiu/seal-tools/releases/download/v3.0.11/SealTools-v3.0.11.zip)** — unzip and run `SealTools.exe`.
+- **[SealTools-v3.0.11-firmware.zip](https://github.com/keikeiiu/seal-tools/releases/download/v3.0.11/SealTools-v3.0.11-firmware.zip)** — only for a new board; the firmware is unchanged since v2.15.
 
-Older releases are kept only when they are a useful fallback:
+No installer, no .NET runtime, no administrator elevation. The app starts `seal-core.exe` itself.
 
-| Version | File | |
-|---|---|---|
-| **v2.15** | [SealTools-v2.15.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.15/SealTools-v2.15.zip) | The pet feeder's visit flow, rebuilt from its own log |
-| **v2.14** | [SealTools-v2.14.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.14/SealTools-v2.14.zip) | The spammer's rotation model, and the pet feeder yielding to it |
-| **v2.13** | [SealTools-v2.13.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.13/SealTools-v2.13.zip) | Quest Hand-in — a new tool that reads nothing from the screen |
-| **v2.12** | [SealTools-v2.12.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.12/SealTools-v2.12.zip) | The pet feeder finished, and the food scan |
-| v2.11 | [SealTools-v2.11.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.11/SealTools-v2.11.zip) | The Pet Feeder's four rows, and its first schedule |
-| v2.10 | [SealTools-v2.10.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.10/SealTools-v2.10.zip) | The Pet Feeder's first build |
-| v2.9.1 | [SealTools-v2.9.1.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.9.1/SealTools-v2.9.1.zip) | The last build before the Pet Feeder |
-| v2.3 | [SealTools-v2.3.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.3/SealTools-v2.3.zip) | The last build before buy/sell |
+Previous generation: [v2.16](https://github.com/keikeiiu/seal-tools/releases/download/v2.16/SealTools-v2.16.zip).
 
-**Firmware.** The Arduino sketch ships alongside the app, not inside it:
-[SealTools-v2.16-firmware.zip](https://github.com/keikeiiu/seal-tools/releases/download/v2.16/SealTools-v2.16-firmware.zip).
-Unzip it and open `seal_mouse\seal_mouse.ino` in the Arduino IDE. From v2.9 on this is published with
-every release — before that it was only in the repo, so a downloaded zip had no way to flash a board.
+## Requirements
 
-> The zips are built from `v2/publish.bat` (~144 MB of binaries), so they're published as
-> **GitHub Release assets** rather than committed to the repo. To build from source, see [v2/README.md](v2/README.md).
-
-## Version history
-
-What went into each build. **Not every version has a download** — older release assets are removed
-once they stop being useful, and v2.4 and v2.6 were never published as releases at all. Every version
-is a git tag, so `git show v2.6` still works, and the full reasoning behind each is in
-[v2/docs/records/PROGRESS.md](v2/docs/records/PROGRESS.md).
-
-| Version | Date | What it added |
-|---|---|---|
-| **v2.16** | 2026-10-17 | **An update can no longer cover your config, and a flow can be copied.** The zip now carries **program files only**: the shipped template goes out as `config\defaults.yaml.example` (the base the app reads), your portable settings live in `local.yaml`'s `settings:` block, and an existing `defaults.yaml` is **folded into it once** on the first launch — carrying only the values you changed, so untouched defaults keep tracking the template. Every config write goes through **one gated read-modify-write**, and `publish.bat` now **actually checks the zip against an allow-list** (the old check silently passed everything). Plus **Duplicate** for a quest flow, a quest sequence and a spammer preset — named `(copy)`, built from the rows **on screen**, and made active — and **one Save quest** for the whole tab: Flow/Sequence pickers that answer every Create/Rename/Duplicate/Delete in a bar, a rename that re-points sequence entries, a Save that **refuses an entry naming a missing flow** and lists it instead of silently re-pointing, repaired null YAML bodies, and the Quest card's loop count following a Save only when the card targets that item. The Gem Composer now counts **cycles per grade** on the card and in `logs\gem.log`. |
-| **v2.15** | 2026-10-13 | **The pet feeder's visit flow, rebuilt from its own log.** The four steps of [PLAN-PET-FLOW.md](v2/docs/archive/PLAN-PET-FLOW.md): the close **retries** and a window left open is **probed** before the next open clicks blind; a due row's reload can be **cancelled by the visit's own reading** when it shows food still in the tray (the margin is measured — 30 min sits inside an empty gap in the log's readings); the bag is swept **once per visit** and every stored cell is **re-read before it is clicked**; and the look and the first visit **share one window**. Most of what changed was not in the plan: mining three weeks of `pet.log` found that the feeder's biggest row-killer — 57 of the 90 strikes that dropped a row — was the **slot read answering from a covered window**, the one screen read without the foreground gate its siblings had, and that 77 of 131 in-visit failures were **silent**. So: every screen read is gated, a run waits for the game rather than clicking into whatever is in front, a visit that finds the window covered **defers instead of pressing buttons at the world**, a read that finds a second row due now **joins the visit**, and **every failure writes its reason**. The feeder's card now **lists every breeding row** — pet, stage, the `→ +N` the game's line counts to, the row's own rate read from the game's sentence, and its own countdown. The count read walks a **3×/9×/24× ladder** when a slot comes back empty, because the reader is knife-edge on those digits. And the **US client** gets its switch: **Setup → Game client**, one button per client, with the English dictionary shipping empty and saying why. |
-| **v2.14** | 2026-10-02 | **The spammer grows up, and the pet feeder stops waiting.** A spammer preset gains an **order** (named keys outrank the rest, so fillers run only in the gaps), **combos** — keys cast in sequence with a pause between them, ready only when *all* of them are off cooldown so the second half can never go out alone — a **lead-in** and an opening **step**, and a **rotation picker on its card**. **Start now casts**, instead of waiting out each key's first cooldown, which is what makes a 20-minute buff possible at all. The **pet feeder stops being blocked by a spammer that never ends**: the spammer hands the game over when a reload is due and takes it back when the feeder is done, pausing for the length of the *action* rather than a timer. The **food cells re-mark themselves** during the pet scan the tool already runs, so a moving food supply needs no hand-marking. **Hold Space's toggle** no longer swallows a press during its cold start — the bug that made it "freeze and not switch off" — and says **"Starting…"** while it waits. Plus the **US client frame** (`game.variant`; the English dictionary is still to come) and **quest sequences**. |
-| **v2.13** | 2026-09-28 | **Quest Hand-in — a new tool.** It replays a flow you author at the quest NPC, as many times as you ask: clicks, digits, Enter and waits, each with its own delay. **It reads nothing from the screen**, so it has no calibration at all — you put the mouse where the clicks must land during the initial wait, and the run **stops if it moves** (a guard that needs no game window, so unlike the tuner's it can fail *closed*). Flows are named presets in `local.yaml`, one per quest, and **Test one loop** runs the tool itself so a flow the test refuses is one the run would refuse. It also exposed and fixed a launcher bug: **a tool that ends by itself was left "running" forever** — it is the first tool in the suite that finishes without being stopped. Runs now leave a record in `logs/quest.log`, and two UI fixes came with it, one of which also corrects the Tuner tab's rule and override grids. |
-| **v2.12** | 2026-09-23 | **The pet feeder, finished.** The reload becomes **one window visit** for every row that is due, instead of one open per row. The next check now comes from **whichever runs out first** — the food, the **game's own time line** (`代養完成預計所需時間`, which was measured agreeing to the minute), or the **pet's own need** read from its hover panel against the feeding table. The **return slot is tried first and hovered to decide**, which reverses the old queue-first order now that the slot is known to hold the pet that just came back. And the **food cells are found instead of clicked**: photograph one food item and a scan matches it across the bag grid, so a moving food supply is one press rather than nineteen careful clicks. Also: an empty feeder reads as a real zero, a tray at zero reloads now, "nothing in the bag can be fed" is a wait rather than a failure, the feeding line is settable **per queue entry** (it was capture-time only, and invisible), and the time-line read region is **drawn on the capture** so a mis-aimed one can be seen. |
-| **v2.11** | 2026-09-21 | **The Pet Feeder grows up.** One boarding row becomes **four**, each with its own schedule — the free row holds two food stacks and a paid one five, so one clock for both would reload a paid row half full or leave the free row dry for five hours. It **reads how much food is left** in the feeder and schedules the reload from that number rather than from arithmetic, and it finds a pet by **its icon** across the bag rather than by the cell it used to sit in. It is now **resident**: starting another tool no longer kills it, and it waits for the game if a reload comes due mid-run. Two items wait on an optional firmware reflash, and both fall back to today's behaviour until you flash. |
-| v2.10 | 2026-09-17 | **The Pet Feeder** — a new tool that keeps a boarded pet fed while you are not watching. It is the first thing in the suite that acts on a timer rather than on a button press. Two tabs come with it: **Calibrate Pet** (the 目錄 button, the feed icon, the start/end toggle, the feeder slots and the boarding bag's *own* 8×8 grid) and **Pet** (which cells hold food, marked per run because the selection changes with what the character has been doing). |
-| **v2.9.1** | 2026-09-15 | Hot fix on v2.9, driven by setting it up on a second PC. **`▸ Tools` hides the tool cards**, so the capture canvas gets the whole window on a screen too small to show both. Three layout defects fixed, all found by looking at a narrow window: the Spammer tab's **Save Preset** sat above the cards it saves, its **Delete** button was clipped mid-word, and the key row's **Fast** tick box drew with no right border. Also corrects the Buy/Sell calibration hint, which still described two row clicks from a design replaced by one dragged region. |
-| v2.9 | 2026-09-14 | **Buy and Sell.** Bulk-buy the items you re-buy constantly and bulk-sell what you don't keep, both verified on a live game. Buy items are presets (row, scroll, usual count) kept in `local.yaml`; the sell selection is deliberately never saved. **First release to ship the Arduino firmware** — before this the sketch was only in the repo, so a downloaded zip had no way to flash a board. |
-| v2.6 | 2026-09-13 | Safety and correctness pass, none of it visible: one tool start at a time, a stop during a cold start honoured, a failed config save reported instead of leaving the click looking inert, and the tuner stopping on a failed OCR read rather than below the target grade. Spammer presets left in `defaults.yaml` are now adopted into `local.yaml` instead of being deleted by the next save from any other tab. Hold Space releases the spacebar on stop; the firmware releases held keys when the host disappears. *(No release published; tag only.)* |
-| v2.4 | 2026-09-12 | Tuner cursor placement (`spring_mode: hid`) and the mouse guard (`off` / `stop` / `recenter`). OCR fixes: `DG`/`XG`/`SG` no longer parsed as a bare `G`, and attribute lines the matcher used to drop are restored. *(No release published; tag only.)* |
-| v2.3 | 2026-09-11 | The WPF-UI launcher: card-based tabs, pin-on-top, shrinking to the running tool's card, and placement remembered across restarts. Arduino closed-loop cursor placement. Pixel-based empty-result detection, comparing only the box's interior so a moved window can't stall the composer. A run ends after the last grade. Spammer presets moved to `local.yaml` so they stop shipping in the public zip. |
-| v2.1 | 2026-09-10 | Capture actually worked: `PrintWindow` returned a black frame for this game and was replaced by `CopyFromScreen`, which also fixed a silently cropped OCR region. Coordinates became physical pixels with the display environment recorded beside them (the **Setup** tab). Spammer presets and the first [user guide](v2/docs/spec/USER_GUIDE.md). |
-| v2.0 | 2026-09-06 | First C#/.NET release — a full native rebuild of the Python tools under [`v1/`](v1). |
-
+| | |
+|---|---|
+| PC | Windows 10/11, 64-bit |
+| Board | Arduino Pro Micro (ATmega32U4, 5 V / 16 MHz) |
+| Cable | USB **data** cable |
+| Game | Seal Online TW or US, windowed |
 
 ## Quick start
 
-1. Unzip `SealTools-v2.16.zip`.
-2. Run `SealTools.Launcher.exe` — **as Administrator** is recommended (serial access; on some setups the in-game hotkeys need it too). On first run it auto-creates `config\local.yaml` from the example.
-3. Use the in-app calibration tabs — **Calibrate Tuner**, **Calibrate Gem**, **Buy / Sell**, **Calibrate
-   Pet**, **Calibrate Tooltip** — to set your machine's coordinates once. You only calibrate the tools
-   you actually use.
+1. Unzip the app zip and run `SealTools.exe`.
+2. New board only: flash `seal_mouse/seal_mouse.ino` from the firmware zip.
+3. Open **Setup** and find the game window; choose the client variant and board port.
+4. Open **Calibrate** and save the marks the tools you use need.
+5. Pick the OCR model in **Setup** — v4 is the default; v6 small is an optional trial.
+6. Start a tool from its card.
 
-> **Hotkeys need the launcher focused:** the game's anti-cheat blocks background key reads, so
-> F11/F12/CapsLock do nothing while you are in-game — click the launcher first, then the key.
+Full walkthrough: [Install guide](v3/docs/INSTALL.md).
 
-## What's inside
-
-Seven tools, driven by an Arduino Pro Micro (USB HID mouse/keyboard) over a COM port, plus OCR:
+## Tools
 
 | Tool | What it does |
-|------|--------------|
-| **Magic Tuner** | Rolls the 發條 UI — Arduino click+Enter, OCR reads grade + attributes, auto-stops at the target grade / filter match. |
-| **Gem Composer** | Clicks the gem-combine UI (N/G/DG radio + Register + Combine) at calibrated points; combines each grade until the result box reads empty, then advances, and ends after the last grade. |
-| **Skill Spammer** | Presses configured keys, each on its own cooldown. |
-| **Buy** | Re-buys the items you go through constantly: right-click the shop row, MAX, Enter, Enter, for the count set on the card. |
-| **Sell** | Sells the bag slots you click on an 8×8 grid, highest slot first, with a per-run cap and a dry run that clicks nothing. |
-| **Pet Feeder** | Keeps a boarded pet fed while you are not watching. It reloads the feeder on a per-row schedule worked out from how much food is left, and it is **resident** — starting another tool leaves it running. |
-| **Quest Hand-in** | Replays a flow you author — clicks, digits, Enter, waits — at the quest NPC, N times. It **reads nothing from the screen**, so it needs no calibration at all: you put the mouse in place during the initial wait, and the run stops if it moves. |
+|---|---|
+| **Magic Tuner** | Clicks the tuner UI and OCRs grade/attributes until the target or filter matches. |
+| **Gem Composer** | Combines gems grade by grade until the result box is empty. |
+| **Skill Spammer** | Presses a cooldown-governed key rotation. |
+| **Buy** | Re-buys configured shop items in one counted pass. |
+| **Sell** | Sells the slots selected for that run, highest first, under a cap. |
+| **Pet Feeder** | Resident feeder that reloads each boarding row on schedule. |
+| **Quest Hand-in** | Replays authored click/key flows at the quest NPC. |
 
-## Full docs
+Also on the Cards screen: **Hold Space**, a toggle for holding the spacebar.
 
-- **[v2/docs/INSTALL.md](v2/docs/spec/INSTALL.md)** — board, app, first calibration, updating.
-- **[v2/docs/USER_GUIDE.md](v2/docs/spec/USER_GUIDE.md)** — every card, tab and button explained.
-- **[v2/docs/DESIGN.md](v2/docs/spec/DESIGN.md)** — how it works and why, in one place.
-- **[v2/docs/CALIBRATION.md](v2/docs/spec/CALIBRATION.md)** — per-machine calibration walkthrough.
-- **[v2/docs/MOVE-SETS.md](v2/docs/spec/MOVE-SETS.md)** — the composer's two move sets and how the closed-loop move works.
-- **[v2/docs/records/PROGRESS.md](v2/docs/records/PROGRESS.md)** — dated log of what was done and why.
-- **[v2/README.md](v2/README.md)** — architecture, config files, logging and build instructions.
+## Files and updates
+
+Everything stays inside the app folder:
+
+```text
+SealTools.exe / seal-core.exe
+models/            OCR model sets (v4 and v6 small)
+config/setup/      portable settings and presets
+config/machine/    this PC's calibration
+config/artifacts/  calibration images
+logs/              run logs and OCR captures
+docs/              install and user guides
+```
+
+The zip carries program files and config templates only. Unzipping an update does **not** overwrite
+`config/setup/`, `config/machine/` or `config/artifacts/`.
+
+## Documentation
+
+- [Install guide](v3/docs/INSTALL.md)
+- [User guide](v3/docs/USER_GUIDE.md) · [繁體中文](v3/docs/USER_GUIDE.zh-TW.md)
+- [Calibration guide](v3/docs/CALIBRATION-GUIDE.md) · [繁體中文](v3/docs/CALIBRATION-GUIDE.zh-TW.md)
+- [Architecture and specs](v3/docs/spec/DESIGN.md)
+- [Release records](v3/docs/records/)
+
+The v2 build remains available with its own [docs](v2/docs/) and [README](v2/README.md).
+
+## Build from source
+
+```powershell
+cd v3/core
+.\cargo.cmd test --workspace --offline
+.\cargo.cmd clippy --workspace --all-targets --offline -- -D warnings
+
+cd ..\shell
+pwsh -File tool/check.ps1
+
+cd ..\
+.\publish.ps1 -Release -AcceptDirectMLRedistribution
+```
 
 ## Disclaimer
 
-Automation may violate the game's Terms of Service and can lead to account penalties. Use at your own risk, on your own accounts.
+Automation may violate the game's Terms of Service and can lead to account penalties. Use at your own
+risk, on your own accounts.
