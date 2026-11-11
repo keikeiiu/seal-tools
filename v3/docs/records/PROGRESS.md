@@ -19,6 +19,32 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-11 (59) — v3.0.11 ships the PP-OCRv6 trial and the readable result bar
+
+The v6 path had existed since (55) as a trial, but the release package still carried only v4 models and
+the old 360×96 bar, so a player who selected v6 got `ocr_unavailable` and a Tuner run could not be read
+without expanding the window. This release closes both gaps.
+
+- **v6 is a real shipped option:** the three PP-OCRv6 small files (det, rec and the extracted
+  `PP-OCRv6_small_rec_dict.txt`) are in the release allow-list and a fresh `models/` folder carries both
+  sets. Setup selects `ocr.model_version`; v4 remains the default and a missing set still fails loudly.
+- **Raw-vs-fixed evidence:** `RecognizedLine` keeps the recogniser's `raw_text`, and the Tuner
+  `ocr_log.jsonl` record writes `raw_lines` beside the cleaned `lines`; the live v6 reads showed the
+  differences were row grouping (`GRADE :` + `N`, `所需希幣` + `25000`), not word replacements.
+- **Result bar:** the mini bar grew to 460×168 and was rebuilt as an OCR-first hierarchy (metrics in the
+  footer, one attribute per line, Filter on its own line) with the last OCR facts retained after
+  `tool.finished`. That work landed across `e1ce736` … `a428589`; the release records the final state.
+- **Release packaging:** `publish.ps1` now requires and allow-lists all six model files, so a release
+  cannot be built with the v6 option present but its files missing. `THIRD-PARTY-NOTICES.md` records the
+  PaddleOCR Apache-2.0 attribution for the v6 set.
+
+Verification: Rust workspace **1,366 passed**, 0 failed; shell gate **394/394**, analyze clean, debug
+build green; release stage/app-zip/firmware audits PASS. Artifacts are
+`dist/SealTools-v3.0.11.zip` (72,293,504 bytes, SHA-256
+`DC6DE8255FB9BB6687E3E2B6090E81F66F3202C8F8BA97A2002BA4B2D9D55EA9`) and the unchanged firmware zip.
+Built from `e58cb52`; [release record](RELEASE-v3.0.11.md). The live corpus/A-B verdict on v6 remains
+open — this release makes the trial testable, it does not make v6 the default.
+
 ## 2026-11-10 (58) — the Tuner mini bar reads OCR-first
 
 The three OCR attribute lines are the reason the player checks the collapsed bar between attempts, but
