@@ -1,4 +1,4 @@
-# Seal Tools v3.0.11
+# Seal Tools v3.0.12
 
 Windows automation for Seal Online. A Rust core drives an Arduino Pro Micro as a real USB
 mouse/keyboard; a Flutter shell provides the UI. OCR reads the game screen where needed.
@@ -7,8 +7,8 @@ mouse/keyboard; a Flutter shell provides the UI. OCR reads the game screen where
 
 ## Download
 
-- **[SealTools-v3.0.11.zip](https://github.com/keikeiiu/seal-tools/releases/download/v3.0.11/SealTools-v3.0.11.zip)** — unzip and run `SealTools.exe`.
-- **[SealTools-v3.0.11-firmware.zip](https://github.com/keikeiiu/seal-tools/releases/download/v3.0.11/SealTools-v3.0.11-firmware.zip)** — only for a new board; the firmware is unchanged since v2.15.
+- **[SealTools-v3.0.12.zip](https://github.com/keikeiiu/seal-tools/releases/download/v3.0.12/SealTools-v3.0.12.zip)** — unzip and run `SealTools.exe`.
+- **[SealTools-v3.0.12-firmware.zip](https://github.com/keikeiiu/seal-tools/releases/download/v3.0.12/SealTools-v3.0.12-firmware.zip)** — only for a new board; the firmware is unchanged since v2.15.
 
 No installer, no .NET runtime, no administrator elevation. The app starts `seal-core.exe` itself.
 
@@ -29,7 +29,7 @@ Previous generation: [v2.16](https://github.com/keikeiiu/seal-tools/releases/dow
 2. New board only: flash `seal_mouse/seal_mouse.ino` from the firmware zip.
 3. Open **Setup** and find the game window; choose the client variant and board port.
 4. Open **Calibrate** and save the marks the tools you use need.
-5. Pick the OCR model in **Setup** — v4 is the default; v6 small is an optional trial.
+5. Pick the OCR model in **Setup** — v6 small is the default; v4 remains the fallback.
 6. Start a tool from its card.
 
 Full walkthrough: [Install guide](v3/docs/INSTALL.md).

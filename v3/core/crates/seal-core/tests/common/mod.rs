@@ -31,7 +31,7 @@ hotkeys:
   advance_grade: 71
   pause: 20
 ocr:
-  model_version: v4
+  model_version: v6-small
 quest:
   active: base
 arduino:

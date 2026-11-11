@@ -64,7 +64,7 @@ The optional PP-OCRv6 small detector and recogniser are the official PaddleOCR P
 inference models, redistributed under the **Apache License 2.0**. Attribution: PaddleOCR
 (Apache-2.0). The models are not modified by Seal Tools. `PP-OCRv6_small_rec_dict.txt` is the
 character dictionary extracted from the recogniser's published `inference.yml`, because the ONNX
-graph does not embed it. v4 remains the default; the v6 set is a Setup-selectable trial.
+graph does not embed it. v6 small is the default; v4 remains the Setup-selectable fallback.
 
 ## Flutter and Dart
 

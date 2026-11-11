@@ -289,22 +289,22 @@ class _SetupTabState extends State<SetupTab>
             title: 'OCR model',
             children: [
               const ShellProse(
-                'PP-OCRv4 is the shipped model set. PP-OCRv6 small is the trial set for Traditional '
-                'Chinese and English; selecting it requires the v6 model files in the core\'s models '
-                'folder. If the v6 files are missing, OCR refuses rather than falling back.',
+                'PP-OCRv6 small is the shipped model set, chosen for Traditional Chinese and English. '
+                'PP-OCRv4 remains selectable as the fallback. If the selected model files are missing, '
+                'OCR refuses rather than falling back.',
               ),
               const SizedBox(height: ShellSpace.sm),
               Wrap(
                 spacing: ShellSpace.sm,
                 runSpacing: ShellSpace.sm,
                 children: [
-                  for (final version in const ['v4', 'v6-small'])
+                  for (final version in const ['v6-small', 'v4'])
                     ChoiceChip(
                       key: ValueKey('setup-ocr-model-$version'),
                       label: Text(
-                        version == 'v4'
-                            ? 'PP-OCRv4 (current)'
-                            : 'PP-OCRv6 small (trial)',
+                        version == 'v6-small'
+                            ? 'PP-OCRv6 small (current)'
+                            : 'PP-OCRv4 (fallback)',
                       ),
                       selected: _ocrModelVersion == version,
                       onSelected: (_) =>

@@ -1,4 +1,4 @@
-# Seal Tools v3.0 — User Guide
+# Seal Tools v3.0.12 — User Guide
 
 English · [繁體中文](USER_GUIDE.zh-TW.md)
 
@@ -8,8 +8,8 @@ lives in which file, the specification lives in the **project's repository docs*
 `v3/docs/spec/CALIBRATION.md` and `v3/docs/spec/CONFIG.md`. (This zip ships only this guide, its zh-TW
 twin, `INSTALL.md`, `THIRD-PARTY-NOTICES.md` and `docs/pet-data.csv`; it does not carry the spec tree.)
 
-**Nothing in v3.0 needs a reflash.** The Arduino sketch is unchanged since v2.15 (firmware level 2):
-v3.0 publishes the same `seal_mouse.ino` in `SealTools-v3.0-firmware.zip`, so a board that already
+**Nothing in v3.0.12 needs a reflash.** The Arduino sketch is unchanged since v2.15 (firmware level 2):
+v3.0.12 publishes the same `seal_mouse.ino` in `SealTools-v3.0.12-firmware.zip`, so a board that already
 runs the v2 firmware keeps working. The firmware zip is there for a new board, not for an update.
 
 > **One tool at a time — except the Pet Feeder.** All tools share the single Arduino, so starting one
@@ -217,11 +217,10 @@ the core to:
 Their lines are the core's own, verbatim. Press **Save** when the fields are right; a variant switch is
 resolved, validated, its dictionary loaded, and only then written, so it cannot half-switch.
 
-Setup also has an **OCR model** section: **PP-OCRv4 (current)** or **PP-OCRv6 small (trial)**. The
+Setup also has an **OCR model** section: **PP-OCRv6 small (current)** or **PP-OCRv4 (fallback)**. The
 choice is portable and is written to `setup/common.yaml`; the next OCR read rebuilds the pipeline.
-**Both model sets ship in `models/`**, so the trial needs no manual download. If the selected v6 files
-are deleted, OCR refuses with `ocr_unavailable` rather than falling back to v4. v4 stays the default;
-leave it selected unless you are testing v6.
+**Both model sets ship in `models/`.** If the selected files are deleted, OCR refuses with
+`ocr_unavailable` rather than silently using the other set.
 
 Setup also has an **Appearance** section: **Follow system**, **Light** or **Dark**. It saves immediately
 (the shell and its title bar switch together), and the choice is kept in the portable config. **Dark**
@@ -796,8 +795,14 @@ files.
 ### 7.3 `config/` and `docs/`
 
 - `config/defaults.yaml.example` — the shipped template (portable settings); read as the base.
-- `config/local.yaml` — **your machine's state**: calibration, presets, the portable half's saved
-  values. The core is its only writer; never share it; keep it when you update.
+- `config/setup/` — **portable settings and presets**: window/variant, OCR model, spammer rotations,
+  quest flows, Buy presets and the portable Pet fields. Copy this folder to another PC.
+- `config/machine/` — **this PC's calibration and window geometry** (`tuner`, `gem`, `pet`, `tooltip`,
+  `buy_sell`, `display`, `ui`, `arduino`). Do not copy it to a PC with a different screen.
+- `config/artifacts/` — saved reference crops and calibration images.
+- `config/meta.yaml` — schema/migration markers for the portable tree; the core maintains it.
+- `config/local.yaml` — **legacy only**. A v3.0.12 launch migrates it once into the folders above,
+  keeps a backup, then retires it; once the portable tree exists, edit the owning file instead.
 - `config/attributes.yaml` and `config/attributes.<variant>.yaml` — the OCR dictionaries. The TW one is
   release-maintained and hand-editable; the US one is seeded from `.example` and grown in place.
 - `config/calib_gem_result.png` — the result-gem crop artifact (when saved with an empty box).

@@ -1,4 +1,4 @@
-# Seal Tools v3.0 — Install Guide
+# Seal Tools v3.0.12 — Install Guide
 
 From nothing to a working install: the board, the app and the first calibration. If you already have it
 running and want to know what a button does, that is [USER_GUIDE.md](USER_GUIDE.md). If you are curious
@@ -6,8 +6,8 @@ running and want to know what a button does, that is [USER_GUIDE.md](USER_GUIDE.
 contract. (The zip ships only these guides, `THIRD-PARTY-NOTICES.md` and `docs/pet-data.csv`, not the
 spec tree.)
 
-**Nothing in v3.0 needs a reflash.** The Arduino sketch is unchanged since v2.15 (firmware level **2**):
-v3.0 publishes the same `seal_mouse.ino` in `SealTools-v3.0-firmware.zip`, so a board already flashed for
+**Nothing in v3.0.12 needs a reflash.** The Arduino sketch is unchanged since v2.15 (firmware level **2**):
+v3.0.12 publishes the same `seal_mouse.ino` in `SealTools-v3.0.12-firmware.zip`, so a board already flashed for
 v2.15 or later keeps working. The firmware zip exists for a **new board**, not for an update.
 
 **The calibration is the long part**, and it is the part you cannot skip. Everything before it (flashing
@@ -38,10 +38,10 @@ From the release page, pick the app zip — and the firmware zip **only if your 
 
 | File | What it is | When you want it |
 |---|---|---|
-| `SealTools-v3.0.zip` | The app: shell, core, OCR models, config templates and these docs. | Always. |
-| `SealTools-v3.0-firmware.zip` | The Arduino sketch, `seal_mouse\seal_mouse.ino` (unchanged). | Only to flash a board that is not already running the v2.15+ firmware. |
+| `SealTools-v3.0.12.zip` | The app: shell, core, OCR models, config templates and these docs. | Always. |
+| `SealTools-v3.0.12-firmware.zip` | The Arduino sketch, `seal_mouse\seal_mouse.ino` (unchanged). | Only to flash a board that is not already running the v2.15+ firmware. |
 
-There is no installer and no `-local` zip in v3.0: the app zip carries **program files, templates and the
+There is no installer and no `-local` zip in v3.0.12: the app zip carries **program files, templates and the
 guides only** — never a real `local.yaml`. Your settings live in `config/local.yaml`, a file the zip never
 contains, so unzipping an update cannot cover them.
 
@@ -49,13 +49,13 @@ Unzip the app zip anywhere — Desktop, `C:\Games\SealTools`, a USB stick. There
 and nothing is registered with Windows. One top folder appears:
 
 ```
-SealTools-v3.0\
+SealTools-v3.0.12\
   SealTools.exe                 the window you run
   seal-core.exe                 the background core SealTools.exe starts
   DirectML.dll                  the OCR runtime's GPU-side library
   flutter_windows.dll           the shell's Flutter runtime
   data\                         the shell's Flutter assets
-  models\                       the OCR model sets: v4 (default) and v6 small (trial)
+  models\                       the OCR model sets: v6 small (default) and v4 (fallback)
     ch_PP-OCRv4_det_infer.onnx
     ch_PP-OCRv4_rec_infer.onnx
     ch_ppocr_mobile_v2.0_cls_infer.onnx
@@ -84,7 +84,7 @@ the folder is the usual cause of "the core is not running" or `ocr_unavailable`.
 ## 2. Flash the Arduino (new board only)
 
 Skip this section if your board already runs the v2.15+ firmware; the firmware is unchanged and no
-reflash is needed for v3.0.
+reflash is needed for v3.0.12.
 
 ### 2.1 Install the IDE and board support
 
@@ -226,9 +226,9 @@ Starting a second tool while one runs is refused by design; the Pet Feeder is th
 The values are unchanged: **migration is a copy plus a one-time split, there is no converter.** Keep
 your v2 folder until the v3 side is verified.
 
-1. Unzip v3.0 somewhere and run it once so the folder exists, then close it. (The first run may create
+1. Unzip v3.0.12 somewhere and run it once so the folder exists, then close it. (The first run may create
    a seed `config/local.yaml`; step 2 replaces it.)
-2. Copy into `SealTools-v3.0\config\`:
+2. Copy into `SealTools-v3.0.12\config\`:
    - `local.yaml` - your machine's state: calibration, presets, pet rows, quest flows and so on.
    - `calib_gem_result.png` - **the only calibration image v3 consumes** (the result-gem crop for the
      empty test). Other `calib_*.png` files beside it are v2's drawn-over screenshots: copying them is

@@ -464,7 +464,7 @@ fn ocr_scan(state: &mut CoreState, request: &Request) -> Response {
 /// The OCR geometry the tuner read uses, including the region-relative v2 `grade_area` when it is
 /// present and valid. Public for the committed v2-config replay test; no production caller outside
 /// the core uses it.
-/// The OCR model set named by the merged config. Missing/blank means the shipped v4 default; an
+/// The OCR model set named by the merged config. Missing/blank means the shipped v6-small default; an
 /// explicit unknown value is a named refusal so a typo cannot silently run the wrong model.
 ///
 /// # Errors
@@ -477,7 +477,7 @@ pub fn ocr_model_version(config: &Value) -> Result<seal_ocr::profile::OcrModelVe
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or("v4");
+        .unwrap_or("v6-small");
     seal_ocr::profile::OcrModelVersion::parse(raw)
         .ok_or_else(|| format!("ocr.model_version is {raw:?}; expected \"v4\" or \"v6-small\""))
 }
@@ -2960,7 +2960,7 @@ mod tests {
         state.ocr_build = Some(state.ocr_identity());
         assert!(!state.ocr_is_stale());
         // The Setup OCR-model choice changes the model set.
-        state.config["ocr"] = json!({"model_version": "v6-small"});
+        state.config["ocr"] = json!({"model_version": "v4"});
         assert!(
             state.ocr_is_stale(),
             "an OCR model-set change must rebuild the pipeline"
@@ -2980,10 +2980,10 @@ mod tests {
     }
 
     #[test]
-    fn ocr_model_version_defaults_to_v4_and_refuses_unknown() {
+    fn ocr_model_version_defaults_to_v6_small_and_refuses_unknown() {
         assert_eq!(
-            ocr_model_version(&json!({})).expect("missing means v4"),
-            seal_ocr::profile::OcrModelVersion::V4
+            ocr_model_version(&json!({})).expect("missing means v6-small"),
+            seal_ocr::profile::OcrModelVersion::V6Small
         );
         assert_eq!(
             ocr_model_version(&json!({"ocr": {"model_version": "v6-small"}}))

@@ -477,7 +477,7 @@ class ShellModel extends ChangeNotifier {
     );
     logs.addShellNote(
       'OCR model: '
-      '${asString(asJsonMap(config.config['ocr'])['model_version']) ?? 'v4'}',
+      '${asString(asJsonMap(config.config['ocr'])['model_version']) ?? 'v6-small'}',
     );
     // The shell owns its own placement preference in the portable `settings.ui.quick_dock` block
     // (`placement` + `collapsed`); take it before any compact window is shown.
