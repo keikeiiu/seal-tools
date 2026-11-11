@@ -19,6 +19,27 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-11 (60) — v3.0.12 makes PP-OCRv6 small the default
+
+The v6 trial was clean enough on the live Traditional-Chinese reads (`所需希幣`, attribute spacing, no
+lost line) that the player decision was to stop treating v4 as the default. v4 remains shipped and
+selectable, so this is a default change, not a removal.
+
+- **Default:** `ocr.model_version: v6-small` in the shipped template; missing/blank config resolves to
+  v6. Setup labels v6 **current** and v4 **fallback**, and the shell's fallback display follows.
+- **No silent switch:** a missing selected model set still fails as `ocr_unavailable`.
+- **Docs baseline:** root README, INSTALL, both user guides, CONFIG and the third-party notices now
+  describe v3.0.12 and v6-as-default; the user guides also document the portable
+  `setup/`/`machine/`/`artifacts/` tree and the one-time `local.yaml` migration.
+- **Tests:** the OCR cache-staleness test now flips to v4 (since v6 is the baseline) and the dispatch
+  default test asserts v6-small.
+
+Verification: Rust workspace **1,366 passed**, 0 failed; shell gate **394/394**, analyze clean, debug
+build green; release stage/app-zip/firmware audits PASS. Artifacts are
+`dist/SealTools-v3.0.12.zip` (72,293,217 bytes, SHA-256
+`C1B117300B217CC6038C3994E0D8DC3E299A509FDE706F34BE177FFA3968A162`) and the unchanged firmware zip.
+Built from `34bb730`; [release record](RELEASE-v3.0.12.md).
+
 ## 2026-11-11 (59) — v3.0.11 ships the PP-OCRv6 trial and the readable result bar
 
 The v6 path had existed since (55) as a trial, but the release package still carried only v4 models and

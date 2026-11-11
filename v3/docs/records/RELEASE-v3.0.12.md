@@ -1,6 +1,6 @@
 # Release v3.0.12 - PP-OCRv6 becomes the default
 
-**Date:** 2026-11-11 - **Branch:** `main` - **Built from:** TBD
+**Date:** 2026-11-11 - **Branch:** `main` - **Built from:** `34bb730959098e967218a3b6461fbfb9d0a0b081`
 
 v3.0.12 changes the shipped OCR default from PP-OCRv4 to **PP-OCRv6 small** and brings the project docs
 onto the v3 baseline. v4 remains selectable as the fallback.
@@ -9,8 +9,8 @@ onto the v3 baseline. v4 remains selectable as the fallback.
 
 | artifact | bytes | SHA-256 |
 |---|---|---|
-| `dist/SealTools-v3.0.12.zip` | TBD | TBD |
-| `dist/SealTools-v3.0.12-firmware.zip` | TBD | TBD |
+| `dist/SealTools-v3.0.12.zip` | 72,293,217 | `C1B117300B217CC6038C3994E0D8DC3E299A509FDE706F34BE177FFA3968A162` |
+| `dist/SealTools-v3.0.12-firmware.zip` | 6,574 | `F7BDD22E0395C5EC83FD7842B522C3BFC0F5BF347844032612D7C7EB8C425DD4` |
 
 `dist/SHA256SUMS.txt` carries the lowercase hashes. The stage, app-zip and firmware audits must PASS.
 Signing is NOT performed (SHELL-F9): the payload is unsigned; verify the SHA-256 before running.
@@ -39,10 +39,10 @@ Signing is NOT performed (SHELL-F9): the payload is unsigned; verify the SHA-256
 
 ## Verification
 
-- Rust workspace tests: TBD.
-- Shell gate: TBD.
-- Release pipeline: stage, app-zip and firmware audits TBD.
-- `build-info.json` must record `product_version 3.0.12`, the source commit, branch `main` and
+- Rust workspace tests: **1,366 passed**, 0 failed (the 4 live-only board tests remain ignored by design).
+- Shell gate: format clean, `flutter analyze --fatal-infos` clean, **394/394 tests**, Windows debug build.
+- Release pipeline: stage, app-zip and firmware audits **PASS**.
+- `build-info.json` records `product_version 3.0.12`, `git_commit 34bb730`, branch `main`,
   `git_dirty false`.
 
 ## Upgrade notes
