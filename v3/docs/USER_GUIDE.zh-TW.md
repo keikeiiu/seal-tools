@@ -191,7 +191,6 @@ Setup 也有一個 **OCR model** 區塊：**PP-OCRv6 small（目前）** 或 **P
 Setup 也有一個 **Appearance** 區塊：**Follow system**、**Light**、**Dark**。選擇會立即儲存（整個外殼與
 標題列一起切換），並保存在可攜設定裡。預設是 **Dark**，所以既有安裝會維持目前的外觀，直到你主動更改。
 
-Setup 也有一個 **About** 區塊，顯示殼層/核心版本與 **Check for updates**。它只讀取公開的 GitHub release feed，並提供 **Open vX.Y.Z**；不會自動下載或替換正在執行的程式。更新仍以安裝程式或可攜 zip 為準。
 ### 3.2 校正門檻
 
 工具在它需要的標記完成校正前會拒絕啟動。拒絕訊息會指出要儲存的**標記**與唯一的 **Calibrate** 分頁：

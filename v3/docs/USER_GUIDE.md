@@ -191,9 +191,10 @@ ends and has no protocol event.
 
 ## 3. First run: configure, then calibrate
 
-There is no installer. On its first launch the core copies a seed `config/local.yaml` for you if you had
-none (from `config/local.yaml.example`). That seed contains **placeholder measurements from an old
-setup**, and they will be wrong on your machine. The order is: **Setup → Calibrate → run a tool.**
+The release ships a per-user installer and a portable zip. On its first launch the core copies a seed
+`config/local.yaml` for you if you had none (from `config/local.yaml.example`). That seed contains
+**placeholder measurements from an old setup**, and they will be wrong on your machine. The order is:
+**Setup → Calibrate → run a tool.**
 
 ### 3.1 Setup
 
@@ -230,10 +231,6 @@ choice is portable and is written to `setup/common.yaml`; the next OCR read rebu
 Setup also has an **Appearance** section: **Follow system**, **Light** or **Dark**. It saves immediately
 (the shell and its title bar switch together), and the choice is kept in the portable config. **Dark**
 is the default, so an existing install keeps its current look until you change it.
-
-The **About** section shows the shell/core versions and a **Check for updates** action. It only reads
-the public GitHub release feed and offers **Open vX.Y.Z**; it never downloads or replaces the running
-app. The installer and portable zip remain the explicit update paths.
 
 ### 3.2 The calibration gate
 
@@ -907,8 +904,8 @@ unless the repository says so.
 - **The environment check (Detect) surface** — recalibrate manually after a display change.
 - **A core-held protocol instance lock.** The shell now refuses a second app instance and focuses
   the running one, but starting `seal-core.exe` directly twice is still not guarded.
-- **An installer and auto-update.** v3.0 is a zip; updating replaces program files and keeps your
-  `config/`.
+- **An in-app auto-updater.** The release includes a per-user installer and the portable zip; updating
+  is a manual run of the newer package. There is no silent download or replacement.
 - **v2-only chrome and docs.** v2's WPF screenshots are not used here; the v2 docs remain the record of
   the v2 build, not a description of this window.
 

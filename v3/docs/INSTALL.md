@@ -32,21 +32,24 @@ a new board, unzipping, first launch) is a few minutes.
 
 ---
 
-## 1. Download and unzip
+## 1. Download and install
 
-From the release page, pick the app zip — and the firmware zip **only if your board is new**:
+From the release page, pick the installer (recommended) or the portable zip; take the firmware zip
+**only if your board is new**:
 
 | File | What it is | When you want it |
 |---|---|---|
-| `SealTools-v3.0.13.zip` | The app: shell, core, OCR models, config templates and these docs. | Always. |
+| `SealTools-Setup-v3.0.13-x64.exe` | Per-user installer; `config/` and `logs/` are kept on upgrade and uninstall. | Recommended. |
+| `SealTools-v3.0.13.zip` | The app: shell, core, OCR models, config templates and these docs. Portable, no installation. | If you want a folder you manage yourself. |
 | `SealTools-v3.0.13-firmware.zip` | The Arduino sketch, `seal_mouse\seal_mouse.ino` (unchanged). | Only to flash a board that is not already running the v2.15+ firmware. |
 
-There is no installer and no `-local` zip in v3.0.13: the app zip carries **program files, templates and the
-guides only** — never a real `local.yaml`. Your settings live in `config/local.yaml`, a file the zip never
-contains, so unzipping an update cannot cover them.
+The installer is **per-user** under `%LOCALAPPDATA%\Programs\SealTools`; it needs no administrator
+rights. An upgrade replaces program files only and leaves `config/` and `logs/` untouched; the
+uninstaller also keeps them by default. There is no `-local` zip: both packages carry **program files,
+templates and guides only**, never a real `local.yaml`.
 
-Unzip the app zip anywhere — Desktop, `C:\Games\SealTools`, a USB stick. There is no installation step
-and nothing is registered with Windows. One top folder appears:
+The portable zip has no installation step and registers nothing with Windows. Unzip it anywhere —
+Desktop, `C:\Games\SealTools`, a USB stick. One top folder appears:
 
 ```
 SealTools-v3.0.13\

@@ -10,7 +10,12 @@ monitor's work area.
 | artifact | bytes | SHA-256 |
 |---|---|---|
 | `dist/SealTools-v3.0.13.zip` | 72,293,813 | `400D751A658AAA4E89DC9505DA2421C0224ADC266CCC2851A64016E3A507B436` |
+| `dist/SealTools-Setup-v3.0.13-x64.exe` | 65,252,879 | `F92A4FC3EE71D6B271F7F35D6C302DC9549CD84EA01D3C3A4EBF0A805D78128B` |
 | `dist/SealTools-v3.0.13-firmware.zip` | 6,574 | `F7BDD22E0395C5EC83FD7842B522C3BFC0F5BF347844032612D7C7EB8C425DD4` |
+
+The per-user installer was added to this release after the initial zip-only upload. It packages the same
+audited v3.0.13 payload, installs under `%LOCALAPPDATA%\Programs\SealTools`, and preserves `config/` and
+`logs/` on upgrade and uninstall. The portable zip remains the self-install path.
 
 `dist/SHA256SUMS.txt` carries the lowercase hashes. The stage, app-zip and firmware audits must PASS.
 Signing is NOT performed (SHELL-F9): the payload is unsigned; verify the SHA-256 before running.

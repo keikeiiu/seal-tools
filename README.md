@@ -7,10 +7,13 @@ mouse/keyboard; a Flutter shell provides the UI. OCR reads the game screen where
 
 ## Download
 
-- **[SealTools-v3.0.13.zip](https://github.com/keikeiiu/seal-tools/releases/download/v3.0.13/SealTools-v3.0.13.zip)** — unzip and run `SealTools.exe`.
+- **Recommended:** **[SealTools-Setup-v3.0.13-x64.exe](https://github.com/keikeiiu/seal-tools/releases/download/v3.0.13/SealTools-Setup-v3.0.13-x64.exe)** — per-user installer; keeps `config/` on upgrade and uninstall.
+- **[SealTools-v3.0.13.zip](https://github.com/keikeiiu/seal-tools/releases/download/v3.0.13/SealTools-v3.0.13.zip)** — portable; unzip and run `SealTools.exe`.
 - **[SealTools-v3.0.13-firmware.zip](https://github.com/keikeiiu/seal-tools/releases/download/v3.0.13/SealTools-v3.0.13-firmware.zip)** — only for a new board; the firmware is unchanged since v2.15.
 
-No installer, no .NET runtime, no administrator elevation. The app starts `seal-core.exe` itself.
+The installer is per-user (`%LOCALAPPDATA%\Programs\SealTools`) and needs no administrator rights. The
+portable zip remains the self-install path. No .NET runtime is required; the app starts `seal-core.exe`
+itself.
 
 Previous generation: [v2.16](https://github.com/keikeiiu/seal-tools/releases/download/v2.16/SealTools-v2.16.zip).
 
