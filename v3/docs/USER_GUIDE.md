@@ -231,6 +231,10 @@ Setup also has an **Appearance** section: **Follow system**, **Light** or **Dark
 (the shell and its title bar switch together), and the choice is kept in the portable config. **Dark**
 is the default, so an existing install keeps its current look until you change it.
 
+The **About** section shows the shell/core versions and a **Check for updates** action. It only reads
+the public GitHub release feed and offers **Open vX.Y.Z**; it never downloads or replaces the running
+app. The installer and portable zip remain the explicit update paths.
+
 ### 3.2 The calibration gate
 
 Tools refuse to start until the marks they use are calibrated. The refusal names the **mark** to save

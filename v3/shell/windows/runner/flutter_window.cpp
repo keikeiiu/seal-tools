@@ -101,6 +101,30 @@ std::wstring InstallLogsDirectory() {
   return path + L"logs";
 }
 
+// Open a trusted project page in the default browser. The update checker only needs GitHub release
+// pages, so the runner accepts that exact prefix rather than arbitrary URLs from a protocol log line.
+bool OpenProjectUrl(const flutter::EncodableMap* arguments) {
+  if (arguments == nullptr) {
+    return false;
+  }
+  const auto found = arguments->find(flutter::EncodableValue("url"));
+  if (found == arguments->end()) {
+    return false;
+  }
+  const auto* value = std::get_if<std::string>(&found->second);
+  if (value == nullptr) {
+    return false;
+  }
+  const std::string prefix = "https://github.com/keikeiiu/seal-tools/";
+  if (value->rfind(prefix, 0) != 0) {
+    return false;
+  }
+  const std::wstring url(value->begin(), value->end());
+  const HINSTANCE launched = ::ShellExecuteW(nullptr, L"open", url.c_str(),
+                                             nullptr, nullptr, SW_SHOWNORMAL);
+  return reinterpret_cast<INT_PTR>(launched) > 32;
+}
+
 // Open the install logs folder, selecting the last run's file when it exists. A bare file name only:
 // the shell's value is a label like pet.log, never a path this runner should trust.
 bool OpenLogsFolder(const flutter::EncodableMap* arguments) {
@@ -297,6 +321,15 @@ bool FlutterWindow::OnCreate() {
         } else if (call.method_name() == "isWindowVisible") {
           result->Success(
               flutter::EncodableValue(::IsWindowVisible(GetHandle()) != 0));
+        } else if (call.method_name() == "openUrl") {
+          const auto* arguments =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (!OpenProjectUrl(arguments)) {
+            result->Error("host_unavailable",
+                          "could not open the project URL");
+            return;
+          }
+          result->Success();
         } else if (call.method_name() == "openLogsFolder") {
           const auto* arguments =
               std::get_if<flutter::EncodableMap>(call.arguments());

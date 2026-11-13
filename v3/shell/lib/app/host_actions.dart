@@ -227,6 +227,10 @@ abstract class HostActions {
   /// from its own executable; the shell never invents a path. Hosts without the action are inert.
   Future<void> openLogsFolder({String? highlight}) async {}
 
+  /// Open a trusted web page in the default browser (currently only the project's release pages).
+  /// Hosts without the action are inert.
+  Future<void> openUrl(String url) async {}
+
   /// Rect changes the runner reports, in logical coordinates: one per settled user move/resize (the
   /// runner sends on `WM_EXITSIZEMOVE`), plus maximize/restore. Silent while the window is hidden.
   Stream<WindowRect> get windowMoves;
@@ -341,4 +345,8 @@ class MethodChannelHostActions implements HostActions {
       _channel.invokeMethod<void>('openLogsFolder', {
         if (highlight != null && highlight.isNotEmpty) 'file': highlight,
       });
+
+  @override
+  Future<void> openUrl(String url) =>
+      _channel.invokeMethod<void>('openUrl', {'url': url});
 }

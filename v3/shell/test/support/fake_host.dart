@@ -192,6 +192,14 @@ class FakeHost implements HostActions {
   /// Every `openLogsFolder` call's highlight argument (`null` = folder only).
   final List<String?> openedLogsFolders = <String?>[];
 
+  /// Every `openUrl` call's target.
+  final List<String> openedUrls = <String>[];
+
+  @override
+  Future<void> openUrl(String url) async {
+    openedUrls.add(url);
+  }
+
   @override
   Future<void> openLogsFolder({String? highlight}) async {
     openedLogsFolders.add(highlight);

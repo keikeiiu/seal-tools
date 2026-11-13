@@ -78,6 +78,9 @@ class _FakeHost implements HostActions {
   Future<void> setWindowMinSize(int width, int height) async {}
 
   @override
+  Future<void> openUrl(String url) async {}
+
+  @override
   Future<void> openLogsFolder({String? highlight}) async {}
 
   @override

@@ -296,15 +296,17 @@ function Get-ReleasePaths([string]$version) {
     $stage = Join-Path $DistDir "SealTools-$version"
     $appZip = "$stage.zip"
     $firmwareZip = Join-Path $DistDir "SealTools-$version-firmware.zip"
+    $installerExe = Join-Path $DistDir "SealTools-Setup-$version-x64.exe"
     foreach ($pair in @(
         @{ Label = 'stage directory'; Path = $stage },
         @{ Label = 'app zip'; Path = $appZip },
-        @{ Label = 'firmware zip'; Path = $firmwareZip }
+        @{ Label = 'firmware zip'; Path = $firmwareZip },
+        @{ Label = 'installer'; Path = $installerExe }
     )) {
         $errorLine = Test-DistChild $pair.Path $pair.Label
         if ($errorLine) { return @{ Error = $errorLine } }
     }
-    return @{ Error = $null; Stage = $stage; AppZip = $appZip; FirmwareZip = $firmwareZip }
+    return @{ Error = $null; Stage = $stage; AppZip = $appZip; FirmwareZip = $firmwareZip; InstallerExe = $installerExe }
 }
 
 function Assert-RegularSource([string]$path, [string]$label) {
@@ -1244,8 +1246,9 @@ if ($Verify) {
     Write-Host '  models/<the three PP-OCRv4 .onnx files and the three PP-OCRv6 small files>'
     Write-Host '  config/defaults.yaml.example, local.yaml.example, attributes.yaml, attributes.us.yaml.example'
     Write-Host '  docs/pet-data.csv, USER_GUIDE.md, USER_GUIDE.zh-TW.md, INSTALL.md, THIRD-PARTY-NOTICES.md'
+    Write-Host "Installer -> $($releasePaths.InstallerExe) (per-user NSIS)"
     Write-Host "Firmware -> $FirmwareZip (seal_mouse/ + seal_mouse.ino)"
-    Write-Host "App zip  -> $AppZip"
+    Write-Host "App zip  -> $AppZip (portable self-install)"
     Write-Host ''
     if ($problems.Count -gt 0) {
         Write-Host '[!] Missing release inputs:'
@@ -1286,9 +1289,10 @@ then pass -AcceptDirectMLRedistribution. Refusing to zip a public payload withou
     Write-Host ''
     Write-Host 'Distributables (SHA-256):'
     Write-Hash $AppZip
+    Write-Hash $installerExe
     Write-Hash $FirmwareZip
     $checksumPath = Join-Path $DistDir 'SHA256SUMS.txt'
-    Write-ChecksumFile $checksumPath @($AppZip, $FirmwareZip)
+    Write-ChecksumFile $checksumPath @($AppZip, $installerExe, $FirmwareZip)
     Write-Host ''
     Write-Host "Checksums written to $checksumPath (sha256sum format, lowercase, one line per asset)."
     Get-Content -LiteralPath $checksumPath | ForEach-Object { Write-Host "  $_" }

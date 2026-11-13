@@ -39,6 +39,7 @@ import 'logs.dart';
 import 'pet_preflight.dart';
 import 'theme_preference.dart';
 import 'tools.dart';
+import 'update_check.dart';
 import 'version.dart';
 
 /// Creates the transport for a connection attempt. The real one spawns a core process; tests return
@@ -97,6 +98,19 @@ class ShellModel extends ChangeNotifier {
 
   /// The status surface's ring buffer.
   final LogBuffer logs = LogBuffer();
+
+  UpdateInfo? _availableUpdate;
+  bool _checkingForUpdates = false;
+  String? _updateCheckLine;
+
+  /// The latest GitHub release when it is newer than this build; null otherwise.
+  UpdateInfo? get availableUpdate => _availableUpdate;
+
+  /// True while the update check's HTTP request is in flight.
+  bool get checkingForUpdates => _checkingForUpdates;
+
+  /// The core's last update-check answer, verbatim; null before the first check.
+  String? get updateCheckLine => _updateCheckLine;
 
   ProtocolClient? _client;
   StreamSubscription<ProtocolEvent>? _eventSubscription;
@@ -228,6 +242,51 @@ class ShellModel extends ChangeNotifier {
       await host.openLogsFolder(highlight: lastRunLogFile);
     } catch (error) {
       logs.addShellNote('cannot open the logs folder: $error');
+    }
+  }
+
+  /// Check the public GitHub release feed. This is check-only: it never downloads or replaces the
+  /// running app; the player uses the installer or portable zip they downloaded.
+  Future<void> checkForUpdates() async {
+    if (_checkingForUpdates) {
+      return;
+    }
+    _checkingForUpdates = true;
+    _updateCheckLine = null;
+    _availableUpdate = null;
+    notifyListeners();
+    try {
+      final info = await UpdateChecker().latest(currentVersion: productVersion);
+      if (info != null && UpdateChecker.isNewer(info.version, productVersion)) {
+        _availableUpdate = info;
+        _updateCheckLine =
+            'Seal Tools ${info.version} is available (you have $productVersion).';
+      } else {
+        _updateCheckLine = 'Seal Tools $productVersion is the latest version.';
+      }
+    } catch (error) {
+      _updateCheckLine = 'Could not check for updates: $error';
+    } finally {
+      _checkingForUpdates = false;
+      notifyListeners();
+      final line = _updateCheckLine;
+      if (line != null) {
+        logs.addShellNote(line);
+      }
+    }
+  }
+
+  /// Open the available release page in the default browser. The host only accepts the project's
+  /// GitHub prefix; a failure is a log note, not shell state.
+  Future<void> openUpdatePage() async {
+    final update = _availableUpdate;
+    if (update == null) {
+      return;
+    }
+    try {
+      await host.openUrl(update.releaseUrl);
+    } catch (error) {
+      logs.addShellNote('cannot open the release page: $error');
     }
   }
 

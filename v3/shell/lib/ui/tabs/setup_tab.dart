@@ -596,6 +596,62 @@ class _SetupTabState extends State<SetupTab>
               ),
             ],
           ),
+          EditorSection(
+            title: 'About',
+            children: [
+              Text(
+                'Seal Tools $productVersion · core '
+                '${model.connection.coreVersion ?? 'connecting'}',
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: ShellSpace.sm),
+              Wrap(
+                spacing: ShellSpace.sm,
+                runSpacing: ShellSpace.sm,
+                children: [
+                  OutlinedButton.icon(
+                    key: const ValueKey('setup-check-updates'),
+                    onPressed: model.checkingForUpdates
+                        ? null
+                        : () => unawaited(model.checkForUpdates()),
+                    icon: model.checkingForUpdates
+                        ? const SizedBox.square(
+                            dimension: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh, size: ShellSize.iconMd),
+                    label: Text(
+                      model.checkingForUpdates
+                          ? 'Checking…'
+                          : 'Check for updates',
+                    ),
+                  ),
+                  if (model.availableUpdate != null)
+                    FilledButton.icon(
+                      key: const ValueKey('setup-open-release'),
+                      onPressed: () => unawaited(model.openUpdatePage()),
+                      icon: const Icon(
+                        Icons.open_in_new,
+                        size: ShellSize.iconMd,
+                      ),
+                      label: Text('Open v${model.availableUpdate!.version}'),
+                    ),
+                ],
+              ),
+              if (model.updateCheckLine != null) ...[
+                const SizedBox(height: ShellSpace.xs),
+                Text(
+                  model.updateCheckLine!,
+                  key: const ValueKey('setup-update-line'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: model.availableUpdate != null
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ],
       ),
     );
