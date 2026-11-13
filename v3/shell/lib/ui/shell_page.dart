@@ -296,6 +296,8 @@ class _ShellPageState extends State<ShellPage> {
                                 onClose: _toggleLogs,
                                 onOpenLogsFolder: () =>
                                     unawaited(model.openLogsFolder()),
+                                onExportDiagnostics: () =>
+                                    unawaited(model.exportDiagnostics()),
                                 lastRunLogName: model.lastRunLogFile,
                               ),
                             ),

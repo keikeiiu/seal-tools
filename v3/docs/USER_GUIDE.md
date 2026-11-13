@@ -108,6 +108,11 @@ press either again to close it, or press **Esc**. It shows the `log` lines the c
 worth surfacing, warnings) with a level badge per line and an **All / Errors** filter. `N` is how many
 lines it holds. This is the live view; the durable per-run files are in `<root>/logs/` — see section 7.
 
+**Export diagnostics** in the drawer builds `logs/SealTools-diagnostics-<stamp>.zip` and reveals it in
+the logs folder. The bundle carries the manifest (app/core version, root, OS), shell/core text logs,
+OCR logs and a config-file name list; it deliberately excludes calibration values, reference images
+and screenshots. Attach it to a bug report.
+
 ### 2.2 The Cards screen
 
 The Cards screen opens with a **Run** header (the running count sits on the right) and answers "what

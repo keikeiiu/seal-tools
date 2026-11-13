@@ -18,6 +18,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 
@@ -30,6 +31,7 @@ import 'config_draft.dart';
 import 'config_json.dart';
 import 'connection.dart';
 import 'core_actions.dart';
+import 'diagnostics.dart';
 import 'dock_placement.dart';
 import 'host_actions.dart';
 import 'key_names_result.dart';
@@ -226,6 +228,31 @@ class ShellModel extends ChangeNotifier {
       await host.openLogsFolder(highlight: lastRunLogFile);
     } catch (error) {
       logs.addShellNote('cannot open the logs folder: $error');
+    }
+  }
+
+  /// Build a support zip under `<root>/logs/` and reveal it. The bundle is logs-only by design; the
+  /// exporter never copies personal calibration, config values or captures.
+  Future<void> exportDiagnostics() async {
+    final root = connection.root;
+    if (root == null) {
+      logs.addShellNote('cannot export diagnostics before the core connects');
+      return;
+    }
+    try {
+      final bundle = await DiagnosticsExporter(
+        root: root,
+        appVersion: productVersion,
+        coreVersion: connection.coreVersion,
+      ).export();
+      final name = bundle.zipPath.split(Platform.pathSeparator).last;
+      logs.addShellNote(
+        'diagnostics exported: $name '
+        '(${bundle.logFiles} log file(s), ${bundle.bytes} bytes)',
+      );
+      await host.openLogsFolder(highlight: name);
+    } catch (error) {
+      logs.addShellNote('cannot export diagnostics: $error');
     }
   }
 

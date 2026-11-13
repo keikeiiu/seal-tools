@@ -21,6 +21,7 @@ class LogDrawer extends StatefulWidget {
     required this.entries,
     this.onClose,
     this.onOpenLogsFolder,
+    this.onExportDiagnostics,
     this.lastRunLogName,
   });
 
@@ -30,6 +31,9 @@ class LogDrawer extends StatefulWidget {
   /// Opens the install's `logs/` folder through the host seam. Null disables the action (e.g. a
   /// surface with no host).
   final VoidCallback? onOpenLogsFolder;
+
+  /// Writes a support zip under `logs/` and reveals it. Null disables the action.
+  final VoidCallback? onExportDiagnostics;
 
   /// The last run's `<tool>.log`, shown in the action's label so the player knows what they will
   /// find there; null before any run has finished.
@@ -87,6 +91,13 @@ class _LogDrawerState extends State<LogDrawer> {
                     onTap: () => setState(() => _filter = _LogFilter.errors),
                   ),
                   const Spacer(),
+                  if (widget.onExportDiagnostics != null)
+                    TextButton.icon(
+                      key: const ValueKey('export-diagnostics'),
+                      onPressed: widget.onExportDiagnostics,
+                      icon: const Icon(Icons.save_alt, size: ShellSize.iconSm),
+                      label: const Text('Export diagnostics'),
+                    ),
                   if (widget.onOpenLogsFolder != null)
                     TextButton.icon(
                       key: const ValueKey('open-logs-folder'),

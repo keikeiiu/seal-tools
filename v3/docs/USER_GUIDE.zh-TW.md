@@ -94,6 +94,7 @@ Arduino、Hotkeys、Setup、Calibrate）—— 底部是**狀態列**。核心�
 頂端列的 **Logs (N)**（或 **Ctrl+L**）會在內容底部打開日誌抽屜；再按一次（或再按 Ctrl+L）關閉，也可以按 **Esc**。它顯示
 核心發布的 `log` 行（工具訊息、值得顯示的拒絕、警告），每行有等級徽章，並有 **All / Errors** 篩選。
 `N` 是目前保留的行數。這是即時檢視；持久的分次執行檔案在 `<root>/logs/` —— 見第 7 節。
+**Export diagnostics** 會建立 `logs/SealTools-diagnostics-<stamp>.zip` 並在 logs 資料夾中顯示。內容包含 manifest（App/核心版本、root、OS）、shell/核心文字日誌、OCR 日誌與設定檔名清單；刻意排除校正值、參考圖與截圖。回報問題時附上這個 zip。
 
 ### 2.2 Cards 畫面
 
