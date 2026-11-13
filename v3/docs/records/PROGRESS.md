@@ -19,6 +19,29 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-13 (61) — v3.0.13 guards the launcher and keeps it on screen
+
+The shell had no process guard (USER_GUIDE said so), so a double-click on a desktop shortcut could
+start a second core against the same config root. The initial 1280×720 window also did not account
+for the taskbar or DPI scaling on smaller displays.
+
+- **Single instance:** the Windows runner holds a `Local\SealTools-v3-single-instance` mutex for the
+  process lifetime. A second start polls briefly for the existing `Seal Tools v3` window, restores it
+  if minimized, focuses it and exits `0` before creating another engine or core. `Local\` keeps a
+  second Windows session independent.
+- **On-screen first window:** `Win32Window::Create` clamps the DPI-scaled initial rect into the target
+  monitor's work area; saved placements already clamped on restore.
+- **Boundary:** this is a shell guard, not the protocol's core-held lock. A directly started second
+  `seal-core.exe` remains unsupported and is named in OPEN/DESIGN.
+- **Docs:** INSTALL's two-copies row and both user guides describe the focus-and-exit behaviour.
+
+Verification: Rust workspace **1,366 passed**, 0 failed; shell gate **394/394**, analyze clean, debug
+build green; release stage/app-zip/firmware audits PASS; manual first/second launch check kept exactly
+one `SealTools.exe`, one `seal-core.exe` and one window (second exit `0`). Artifacts are
+`dist/SealTools-v3.0.13.zip` (72,293,813 bytes, SHA-256
+`400D751A658AAA4E89DC9505DA2421C0224ADC266CCC2851A64016E3A507B436`) and the unchanged firmware zip.
+Built from `406fba8`; [release record](RELEASE-v3.0.13.md).
+
 ## 2026-11-11 (60) — v3.0.12 makes PP-OCRv6 small the default
 
 The v6 trial was clean enough on the live Traditional-Chinese reads (`所需希幣`, attribute spacing, no
