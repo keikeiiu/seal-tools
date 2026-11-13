@@ -27,8 +27,9 @@ cut-over steps themselves are [plans/CUTOVER.md](../plans/CUTOVER.md).
   so a running spammer is stopped rather than asked to step aside in place. The deferred start's 45 s
   timeout is a `log` warning because the caller was already answered `Deferred` (this protocol has no
   channel to update it).
-- **Single-instance cross-process lock.** The save gate is in-process; two cores on one root can
-  interleave (PROTOCOL §1's lock is specified, not built).
+- **Core-held single-instance lock.** The shell now refuses a second App instance and focuses the
+  running window, but the protocol's cross-process lock is specified, not built: two directly started
+  cores on one root can still interleave (PROTOCOL §1).
 - **OCR no-retry gap.** v3's pipeline scans ONCE; `tuner.ocr_retries` exists in config but is unused,
   so v2's last-retry forced capture and its `refused:` diagnostics branch are not implemented
   (`ocr_errors.jsonl` records a completed-but-unconfirmed scan instead). The grade colour fallback and

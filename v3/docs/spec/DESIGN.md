@@ -295,8 +295,9 @@ entry there does not exist.
 The port is code-complete; what remains is verification and a short list of named measurements.
 [OPEN.md](../backlog/OPEN.md) is the living list and is not restated here. In kind: live verification
 per tool in the game (the repo's rule: a tool is done when it has run, not when it compiles), the
-global-hotkey measurement (PLAN §6.5 — v3.0 ships without a poller), the single-instance lock, the
-spammer's runner-side stand-down hook, the three session-shaped calibration features (the tuner's
+global-hotkey measurement (PLAN §6.5 — v3.0 ships without a poller), the core-held single-instance
+lock (the shell has its own process guard), the spammer's runner-side stand-down hook, the three
+session-shaped calibration features (the tuner's
 three-box derivation, the tooltip offset/shape, the pet's crop/cell editor) and the sell-slot editor,
 the OCR retry/forced-capture path, and the cut-over packaging/release steps in
 [CUTOVER.md](../plans/CUTOVER.md). [PORT-COVERAGE.md](../records/PORT-COVERAGE.md) is a DATED record of

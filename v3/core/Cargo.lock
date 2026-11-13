@@ -591,7 +591,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "seal-board"
-version = "3.0.12"
+version = "3.0.13"
 dependencies = [
  "seal-domain",
  "serialport",
@@ -599,7 +599,7 @@ dependencies = [
 
 [[package]]
 name = "seal-config"
-version = "3.0.12"
+version = "3.0.13"
 dependencies = [
  "base64",
  "serde",
@@ -609,7 +609,7 @@ dependencies = [
 
 [[package]]
 name = "seal-core"
-version = "3.0.12"
+version = "3.0.13"
 dependencies = [
  "base64",
  "seal-board",
@@ -625,7 +625,7 @@ dependencies = [
 
 [[package]]
 name = "seal-domain"
-version = "3.0.12"
+version = "3.0.13"
 dependencies = [
  "serde",
  "serde_json",
@@ -633,7 +633,7 @@ dependencies = [
 
 [[package]]
 name = "seal-ocr"
-version = "3.0.12"
+version = "3.0.13"
 dependencies = [
  "ort",
  "seal-domain",
@@ -641,7 +641,7 @@ dependencies = [
 
 [[package]]
 name = "seal-proto"
-version = "3.0.12"
+version = "3.0.13"
 dependencies = [
  "serde",
  "serde_json",
@@ -649,7 +649,7 @@ dependencies = [
 
 [[package]]
 name = "seal-tools"
-version = "3.0.12"
+version = "3.0.13"
 dependencies = [
  "seal-domain",
  "serde_json",
@@ -657,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "seal-win"
-version = "3.0.12"
+version = "3.0.13"
 dependencies = [
  "png",
  "seal-domain",

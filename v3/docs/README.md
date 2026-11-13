@@ -11,6 +11,6 @@
 | [diagrams/](diagrams/README.md) | generated run-flow and system pages | v2's eight tool flows + calibration; runtime architecture, lifecycle, start/stop sequence and config dataflow; all Archify-checked |
 | [records/](records/README.md) | dated history | records remember; they do not describe now |
 
-The v3 docs tree is the current shipped baseline (v3.0.12). The v2 docs tree
+The v3 docs tree is the current shipped baseline (v3.0.13). The v2 docs tree
 ([../../v2/docs/](../../v2/docs/)) remains for the previous generation and its fallback release; v3 keeps
 its own fresh tree rather than moving v2's (PLAN-V3-CORE §13.5).

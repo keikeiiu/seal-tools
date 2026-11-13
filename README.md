@@ -1,4 +1,4 @@
-# Seal Tools v3.0.12
+# Seal Tools v3.0.13
 
 Windows automation for Seal Online. A Rust core drives an Arduino Pro Micro as a real USB
 mouse/keyboard; a Flutter shell provides the UI. OCR reads the game screen where needed.
@@ -7,8 +7,8 @@ mouse/keyboard; a Flutter shell provides the UI. OCR reads the game screen where
 
 ## Download
 
-- **[SealTools-v3.0.12.zip](https://github.com/keikeiiu/seal-tools/releases/download/v3.0.12/SealTools-v3.0.12.zip)** — unzip and run `SealTools.exe`.
-- **[SealTools-v3.0.12-firmware.zip](https://github.com/keikeiiu/seal-tools/releases/download/v3.0.12/SealTools-v3.0.12-firmware.zip)** — only for a new board; the firmware is unchanged since v2.15.
+- **[SealTools-v3.0.13.zip](https://github.com/keikeiiu/seal-tools/releases/download/v3.0.13/SealTools-v3.0.13.zip)** — unzip and run `SealTools.exe`.
+- **[SealTools-v3.0.13-firmware.zip](https://github.com/keikeiiu/seal-tools/releases/download/v3.0.13/SealTools-v3.0.13-firmware.zip)** — only for a new board; the firmware is unchanged since v2.15.
 
 No installer, no .NET runtime, no administrator elevation. The app starts `seal-core.exe` itself.
 

@@ -135,10 +135,43 @@ bool Win32Window::Create(const std::wstring& title,
   UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
   double scale_factor = dpi / 96.0;
 
+  int left = Scale(origin.x, scale_factor);
+  int top = Scale(origin.y, scale_factor);
+  int width = Scale(size.width, scale_factor);
+  int height = Scale(size.height, scale_factor);
+
+  // A default 1280x720 window does not fit a 1366x768 display once the taskbar is removed, and a
+  // DPI > 100% display makes it larger still. Clamp the FIRST window to the monitor work area so the
+  // launcher always opens fully on screen; the player can still move/resize it afterwards.
+  MONITORINFO monitor_info{};
+  monitor_info.cbSize = sizeof(monitor_info);
+  if (::GetMonitorInfoW(monitor, &monitor_info)) {
+    const RECT& work = monitor_info.rcWork;
+    const int work_width = work.right - work.left;
+    const int work_height = work.bottom - work.top;
+    if (width > work_width) {
+      width = work_width;
+    }
+    if (height > work_height) {
+      height = work_height;
+    }
+    if (left < work.left) {
+      left = work.left;
+    }
+    if (top < work.top) {
+      top = work.top;
+    }
+    if (left + width > work.right) {
+      left = work.right - width;
+    }
+    if (top + height > work.bottom) {
+      top = work.bottom - height;
+    }
+  }
+
   HWND window = CreateWindow(
       window_class, title.c_str(), WS_OVERLAPPEDWINDOW,
-      Scale(origin.x, scale_factor), Scale(origin.y, scale_factor),
-      Scale(size.width, scale_factor), Scale(size.height, scale_factor),
+      left, top, width, height,
       nullptr, nullptr, GetModuleHandle(nullptr), this);
 
   if (!window) {

@@ -1,4 +1,4 @@
-# Seal Tools v3.0.12 — User Guide
+# Seal Tools v3.0.13 — User Guide
 
 English · [繁體中文](USER_GUIDE.zh-TW.md)
 
@@ -8,8 +8,8 @@ lives in which file, the specification lives in the **project's repository docs*
 `v3/docs/spec/CALIBRATION.md` and `v3/docs/spec/CONFIG.md`. (This zip ships only this guide, its zh-TW
 twin, `INSTALL.md`, `THIRD-PARTY-NOTICES.md` and `docs/pet-data.csv`; it does not carry the spec tree.)
 
-**Nothing in v3.0.12 needs a reflash.** The Arduino sketch is unchanged since v2.15 (firmware level 2):
-v3.0.12 publishes the same `seal_mouse.ino` in `SealTools-v3.0.12-firmware.zip`, so a board that already
+**Nothing in v3.0.13 needs a reflash.** The Arduino sketch is unchanged since v2.15 (firmware level 2):
+v3.0.13 publishes the same `seal_mouse.ino` in `SealTools-v3.0.13-firmware.zip`, so a board that already
 runs the v2 firmware keeps working. The firmware zip is there for a new board, not for an update.
 
 > **One tool at a time — except the Pet Feeder.** All tools share the single Arduino, so starting one
@@ -801,7 +801,7 @@ files.
   `buy_sell`, `display`, `ui`, `arduino`). Do not copy it to a PC with a different screen.
 - `config/artifacts/` — saved reference crops and calibration images.
 - `config/meta.yaml` — schema/migration markers for the portable tree; the core maintains it.
-- `config/local.yaml` — **legacy only**. A v3.0.12 launch migrates it once into the folders above,
+- `config/local.yaml` — **legacy only**. A v3.0.13 launch migrates it once into the folders above,
   keeps a backup, then retires it; once the portable tree exists, edit the owning file instead.
 - `config/attributes.yaml` and `config/attributes.<variant>.yaml` — the OCR dictionaries. The TW one is
   release-maintained and hand-editable; the US one is seeded from `.example` and grown in place.
@@ -855,8 +855,8 @@ the protocol gains the commands that measurement chooses. It is listed in the re
 4. For Buy/Sell use the card's run choice (Buy), or mark the slots in the **Sell** grid and press
    **Start** on the **Sell card** — the selection is for that run and is not saved. Remember: Sell is
    irreversible and capped.
-5. Close Seal Tools when finished — closing the UI stops the tools and the core. One copy at a time
-   (there is no single-instance guard in v3.0).
+5. Close Seal Tools when finished — closing the UI stops the tools and the core. A second launch
+   focuses the running window and exits before starting another core.
 
 **After a display change** (new monitor, Windows scale, game window size, new PC): recalibrate. Stored
 marks are physical client-relative offsets; they do not travel.
@@ -896,8 +896,8 @@ unless the repository says so.
 - **A separate Pet crops/rows calibration session.** The nine Pet marks are calibrated individually in
   the mark editor; the Pet tab edits rows/queue/food cells. There is no second Pet session.
 - **The environment check (Detect) surface** — recalibrate manually after a display change.
-- **A single-instance guard.** The protocol's instance lock is specified but not built: do not run two
-  copies of Seal Tools at once.
+- **A core-held protocol instance lock.** The shell now refuses a second app instance and focuses
+  the running one, but starting `seal-core.exe` directly twice is still not guarded.
 - **An installer and auto-update.** v3.0 is a zip; updating replaces program files and keeps your
   `config/`.
 - **v2-only chrome and docs.** v2's WPF screenshots are not used here; the v2 docs remain the record of

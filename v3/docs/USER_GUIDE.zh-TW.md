@@ -1,4 +1,4 @@
-# Seal Tools v3.0.12 — 使用指南
+# Seal Tools v3.0.13 — 使用指南
 
 [English](USER_GUIDE.md) · 繁體中文
 
@@ -8,7 +8,7 @@ v3 殼層（shell）每一張卡片、每一個分頁與按鈕的功能，以及
 `INSTALL.md`、`THIRD-PARTY-NOTICES.md` 與 `docs/pet-data.csv`，不帶規格樹。）
 
 **v3.0 不需要重新燒錄韌體。** Arduino 韌體自 v2.15 起沒有變更（韌體等級 2）：v3.0 在
-`SealTools-v3.0.12-firmware.zip` 裡提供同一份 `seal_mouse.ino`，所以已經跑 v2 韌體的板子可以直接用。
+`SealTools-v3.0.13-firmware.zip` 裡提供同一份 `seal_mouse.ino`，所以已經跑 v2 韌體的板子可以直接用。
 韌體壓縮檔是給新板子用的，不是更新時要重刷的。
 
 > **一次只能跑一個工具 —— 寵物餵食器例外。** 所有工具共用同一塊 Arduino，所以另一個工具在跑時，
@@ -667,7 +667,7 @@ INSTALL 的 *Migrating from v2*）。要保留設定，複製 `config/setup/` �
   `display`、`ui`、`arduino`）。不要複製到螢幕不同的電腦。
 - `config/artifacts/` —— 已儲存的參考裁切圖與校正圖片。
 - `config/meta.yaml` —— 可攜樹的 schema/遷移標記；由核心維護。
-- `config/local.yaml` —— **僅限舊版**。v3.0.12 啟動時會一次性遷移進上述資料夾、保留備份後退役；可攜樹
+- `config/local.yaml` —— **僅限舊版**。v3.0.13 啟動時會一次性遷移進上述資料夾、保留備份後退役；可攜樹
   存在後請編輯對應的檔案。
 - `config/attributes.yaml` 與 `config/attributes.<variant>.yaml` —— OCR 字典。TW 由發行維護、可手動編輯；
   US 由 `.example` 種下、就地成長。
@@ -716,7 +716,7 @@ INSTALL 的 *Migrating from v2*）。要保留設定，複製 `config/setup/` �
    **Start**。結束時按 **Stop**。
 4. Buy/Sell：Buy 用卡片的執行選擇；Sell 先在 **Sell** 格網標記插槽，再按 **Sell 卡片**上的 **Start** ——
    選擇只供該次執行、不會儲存。並記住：賣出無法復原且有上限。
-5. 結束時關閉 Seal Tools —— 關掉 UI 會停止工具與核心。一次只開一份（v3.0 沒有單一實例防護）。
+5. 結束時關閉 Seal Tools —— 關掉 UI 會停止工具與核心。再次啟動會聚焦已開啟的視窗並結束，不會再開第二個核心。
 
 **顯示環境變更後**（新螢幕、Windows 縮放、遊戲視窗大小、新電腦）：重新校正。已存標記是實體客戶區相對位移，
 不會跟著搬移。
@@ -755,7 +755,8 @@ INSTALL 的 *Migrating from v2*）。要保留設定，複製 `config/setup/` �
 - **獨立的寵物 crops/rows 校正會談。** 九個寵物標記在標記編輯器個別校正；Pet 分頁編輯列/佇列/食物格。
   沒有第二個寵物會談。
 - **環境檢查（Detect）介面** —— 顯示環境變更後請手動重新校正。
-- **單一實例防護。** 協定的實例鎖有規格但未實作：不要同時開兩份 Seal Tools。
+- **核心端的協定實例鎖。** 殼層現在會拒絕第二個 App 實例並聚焦已開啟的視窗，但直接啟動第二次
+  `seal-core.exe` 仍未受保護。
 - **安裝程式與自動更新。** v3.0 是壓縮檔；更新時替換程式檔案並保留你的 `config/`。
 - **v2 專屬的外觀與文件。** 這裡不使用 v2 的 WPF 截圖；v2 文件仍是 v2 版本的紀錄，不是這個視窗的說明。
 
