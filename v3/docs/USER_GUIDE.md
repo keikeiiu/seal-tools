@@ -1,4 +1,4 @@
-# Seal Tools v3.0.13 — User Guide
+# Seal Tools v3.0.14 — User Guide
 
 English · [繁體中文](USER_GUIDE.zh-TW.md)
 
@@ -8,8 +8,8 @@ lives in which file, the specification lives in the **project's repository docs*
 `v3/docs/spec/CALIBRATION.md` and `v3/docs/spec/CONFIG.md`. (This zip ships only this guide, its zh-TW
 twin, `INSTALL.md`, `THIRD-PARTY-NOTICES.md` and `docs/pet-data.csv`; it does not carry the spec tree.)
 
-**Nothing in v3.0.13 needs a reflash.** The Arduino sketch is unchanged since v2.15 (firmware level 2):
-v3.0.13 publishes the same `seal_mouse.ino` in `SealTools-v3.0.13-firmware.zip`, so a board that already
+**Nothing in v3.0.14 needs a reflash.** The Arduino sketch is unchanged since v2.15 (firmware level 2):
+v3.0.14 publishes the same `seal_mouse.ino` in `SealTools-v3.0.14-firmware.zip`, so a board that already
 runs the v2 firmware keeps working. The firmware zip is there for a new board, not for an update.
 
 > **One tool at a time — except the Pet Feeder.** All tools share the single Arduino, so starting one
@@ -196,6 +196,17 @@ The release ships a per-user installer and a portable zip. On its first launch t
 **placeholder measurements from an old setup**, and they will be wrong on your machine. The order is:
 **Setup → Calibrate → run a tool.**
 
+### Installer or portable zip
+
+The release ships both a per-user installer (`SealTools-Setup-vX.Y.Z-x64.exe`) and the portable zip.
+
+- The installer places the app under `%LOCALAPPDATA%\Programs\SealTools`, with no administrator/UAC.
+  `config/` and `logs/` sit beside the app; an **upgrade replaces program files only**, and the
+  uninstaller keeps `config/` and `logs/` by default.
+- The portable zip needs no installation: unzip it anywhere and run `SealTools.exe`. Use it if you
+  want a folder you manage yourself or keep on a USB stick.
+- Both packages contain program files, templates and docs only; neither contains a real `local.yaml`.
+
 ### 3.1 Setup
 
 Open **Setup**. The tab's **Save** writes the client variant; the game window title and the four
@@ -231,6 +242,10 @@ choice is portable and is written to `setup/common.yaml`; the next OCR read rebu
 Setup also has an **Appearance** section: **Follow system**, **Light** or **Dark**. It saves immediately
 (the shell and its title bar switch together), and the choice is kept in the portable config. **Dark**
 is the default, so an existing install keeps its current look until you change it.
+
+The **About** section shows the shell/core versions and **Check for updates**. It reads the public
+GitHub release feed and offers **Open vX.Y.Z**; it never downloads or replaces the running app. The
+installer/portable zip remain the explicit update paths.
 
 ### 3.2 The calibration gate
 
@@ -807,7 +822,7 @@ files.
   `buy_sell`, `display`, `ui`, `arduino`). Do not copy it to a PC with a different screen.
 - `config/artifacts/` — saved reference crops and calibration images.
 - `config/meta.yaml` — schema/migration markers for the portable tree; the core maintains it.
-- `config/local.yaml` — **legacy only**. A v3.0.13 launch migrates it once into the folders above,
+- `config/local.yaml` — **legacy only**. A v3.0.14 launch migrates it once into the folders above,
   keeps a backup, then retires it; once the portable tree exists, edit the owning file instead.
 - `config/attributes.yaml` and `config/attributes.<variant>.yaml` — the OCR dictionaries. The TW one is
   release-maintained and hand-editable; the US one is seeded from `.example` and grown in place.

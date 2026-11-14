@@ -1,4 +1,4 @@
-# Seal Tools v3.0.13 — 使用指南
+# Seal Tools v3.0.14 — 使用指南
 
 [English](USER_GUIDE.md) · 繁體中文
 
@@ -8,7 +8,7 @@ v3 殼層（shell）每一張卡片、每一個分頁與按鈕的功能，以及
 `INSTALL.md`、`THIRD-PARTY-NOTICES.md` 與 `docs/pet-data.csv`，不帶規格樹。）
 
 **v3.0 不需要重新燒錄韌體。** Arduino 韌體自 v2.15 起沒有變更（韌體等級 2）：v3.0 在
-`SealTools-v3.0.13-firmware.zip` 裡提供同一份 `seal_mouse.ino`，所以已經跑 v2 韌體的板子可以直接用。
+`SealTools-v3.0.14-firmware.zip` 裡提供同一份 `seal_mouse.ino`，所以已經跑 v2 韌體的板子可以直接用。
 韌體壓縮檔是給新板子用的，不是更新時要重刷的。
 
 > **一次只能跑一個工具 —— 寵物餵食器例外。** 所有工具共用同一塊 Arduino，所以另一個工具在跑時，
@@ -161,6 +161,14 @@ Hold Space 現在是自己的一張卡片（以前是頂端列的切換鈕），
 `config/local.yaml.example` 複製一份種子檔。那份種子包含**來自舊設定的預留量測值**，在你的機器上一定是
 錯的。順序是：**Setup → 校正 → 執行工具。**
 
+### 安裝程式或可攜 zip
+
+發行版同時提供每位使用者的安裝程式（`SealTools-Setup-vX.Y.Z-x64.exe`）與可攜 zip。
+
+- 安裝程式會裝到 `%LOCALAPPDATA%\Programs\SealTools`，不需要系統管理員/UAC。`config/` 與 `logs/` 就在程式旁；**升級只替換程式檔**，解除安裝預設保留 `config/` 與 `logs/`。
+- 可攜 zip 不需要安裝：解壓到任何位置後執行 `SealTools.exe`。想要自己管理的資料夾或放在 USB 隨身碟時使用。
+- 兩者都只包含程式、範本與文件，不會附帶真正的 `local.yaml`。
+
 ### 3.1 Setup
 
 打開 **Setup**。分頁的 **Save** 會寫入客戶端變體、Arduino ID 與埠；Game window title 是唯讀的，由下面的
@@ -191,6 +199,7 @@ Setup 也有一個 **OCR model** 區塊：**PP-OCRv6 small（目前）** 或 **P
 Setup 也有一個 **Appearance** 區塊：**Follow system**、**Light**、**Dark**。選擇會立即儲存（整個外殼與
 標題列一起切換），並保存在可攜設定裡。預設是 **Dark**，所以既有安裝會維持目前的外觀，直到你主動更改。
 
+**About** 區塊顯示殼層/核心版本與 **Check for updates**。它讀取公開的 GitHub release feed，並提供 **Open vX.Y.Z**；不會自動下載或替換正在執行的程式。更新仍以安裝程式或可攜 zip 為準。
 ### 3.2 校正門檻
 
 工具在它需要的標記完成校正前會拒絕啟動。拒絕訊息會指出要儲存的**標記**與唯一的 **Calibrate** 分頁：
@@ -668,7 +677,7 @@ INSTALL 的 *Migrating from v2*）。要保留設定，複製 `config/setup/` �
   `display`、`ui`、`arduino`）。不要複製到螢幕不同的電腦。
 - `config/artifacts/` —— 已儲存的參考裁切圖與校正圖片。
 - `config/meta.yaml` —— 可攜樹的 schema/遷移標記；由核心維護。
-- `config/local.yaml` —— **僅限舊版**。v3.0.13 啟動時會一次性遷移進上述資料夾、保留備份後退役；可攜樹
+- `config/local.yaml` —— **僅限舊版**。v3.0.14 啟動時會一次性遷移進上述資料夾、保留備份後退役；可攜樹
   存在後請編輯對應的檔案。
 - `config/attributes.yaml` 與 `config/attributes.<variant>.yaml` —— OCR 字典。TW 由發行維護、可手動編輯；
   US 由 `.example` 種下、就地成長。
