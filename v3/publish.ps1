@@ -1271,6 +1271,22 @@ then pass -AcceptDirectMLRedistribution. Refusing to zip a public payload withou
     }
     Invoke-Stage
     Test-StageAudit
+    Write-Host '[release] Building the per-user installer...'
+    $installerExe = $releasePaths.InstallerExe
+    $makensis = if ($env:MAKENSIS) { $env:MAKENSIS } else {
+        @(
+            'C:\Program Files (x86)\NSIS\makensis.exe',
+            'C:\Program Files\NSIS\makensis.exe'
+        ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    }
+    if (-not $makensis) {
+        Fail 'NSIS makensis.exe was not found. Install NSIS 3 or set MAKENSIS, or use -Stage for a payload-only build.'
+    }
+    if (Test-Path -LiteralPath $installerExe) { Remove-Item -LiteralPath $installerExe -Force }
+    & $makensis "/DVERSION=$ProductVersion" "/DPAYLOAD=$StageDir" "/DOUTFILE=$installerExe" (Join-Path $V3 'installer\install.nsi')
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $installerExe)) {
+        Fail 'The NSIS installer build failed; the app zip was not published.'
+    }
     Write-Host '[release] Zipping the app payload (one top folder)...'
     if (-not (Test-Path -LiteralPath $DistDir)) { New-Item -ItemType Directory -Path $DistDir -Force | Out-Null }
     if (Test-Path -LiteralPath $AppZip) { Remove-Item -LiteralPath $AppZip -Force }
