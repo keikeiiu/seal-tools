@@ -6,7 +6,7 @@ publish.workspace = true
 
 [dependencies]
 seal-domain = { path = "../seal-domain" }
-png = "0.17"
+png = "0.18"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52", features = [
