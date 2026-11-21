@@ -19,7 +19,7 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
-## 2026-11-14 (62) — v3.0.14 adds the installer, diagnostics and update check
+## 2026-11-22 (62) — v3.0.14 adds the installer, diagnostics and update check
 
 The release line had been zip-only and support meant "send us your logs folder". This release adds the
 per-user installer the player asked for, a one-click support bundle, and a check-only update entry.

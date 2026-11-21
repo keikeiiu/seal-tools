@@ -1,11 +1,11 @@
 # Release v3.0.14 - installer, diagnostics and update check
 
-**Date:** 2026-11-14 - **Branch:** `main` - **Built from:** `0843276e2508d8aab12b58dab8568bca1fb4b238`
+**Date:** 2026-11-22 - **Branch:** `main` - **Built from:** `0843276e2508d8aab12b58dab8568bca1fb4b238`
 
 v3.0.14 adds the per-user installer, a one-click diagnostics bundle and a check-only update entry. The
 portable zip remains available for local self-install.
 
-## Artifacts (built 2026-11-14, published as GitHub release assets)
+## Artifacts (built 2026-11-22, published as GitHub release assets)
 
 | artifact | bytes | SHA-256 |
 |---|---|---|
