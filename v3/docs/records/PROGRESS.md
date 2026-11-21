@@ -39,11 +39,11 @@ per-user installer the player asked for, a one-click support bundle, and a check
 Verification: Rust workspace **1,366 passed**, 0 failed; shell gate **397/397**, analyze clean, debug
 build green; release stage/app-zip/installer/firmware audits PASS; installer smoke test verified fresh
 layout, upgrade-preserved config, no autostart by default, and config kept after uninstall. Artifacts:
-`dist/SealTools-v3.0.14.zip` (72,421,214 bytes, SHA-256
-`B1BDD7113F982307F3E257A9B14B76B076F4D327364DFBFCF129C47D80080E34`),
-`dist/SealTools-Setup-v3.0.14-x64.exe` (65,351,507 bytes, SHA-256
-`BF13030B4E4DE655DD065C3629F9DB0909767A6B0053085BC2B320CA3ED2AA61`) and the firmware zip. Built
-from `2d1a0a9`; [release record](RELEASE-v3.0.14.md).
+`dist/SealTools-v3.0.14.zip` (72,421,165 bytes, SHA-256
+`BF633B8148D47EC7C22029EE6A770AB87553B5601C06D4E18256BC12D7D7CF79`),
+`dist/SealTools-Setup-v3.0.14-x64.exe` (65,410,435 bytes, SHA-256
+`B65F457C3354A2B3CB7E03554183BB2D3A832BE372D0387A900699E49F38B3F6`) and the firmware zip. Built
+from `0843276`; [release record](RELEASE-v3.0.14.md).
 
 ## 2026-11-13 (61) — v3.0.13 guards the launcher and keeps it on screen
 

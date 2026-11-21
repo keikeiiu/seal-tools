@@ -1,6 +1,6 @@
 # Release v3.0.14 - installer, diagnostics and update check
 
-**Date:** 2026-11-14 - **Branch:** `main` - **Built from:** `2d1a0a95da8d74d841d81f10764c95ddf5cb1215`
+**Date:** 2026-11-14 - **Branch:** `main` - **Built from:** `0843276e2508d8aab12b58dab8568bca1fb4b238`
 
 v3.0.14 adds the per-user installer, a one-click diagnostics bundle and a check-only update entry. The
 portable zip remains available for local self-install.
@@ -9,8 +9,8 @@ portable zip remains available for local self-install.
 
 | artifact | bytes | SHA-256 |
 |---|---|---|
-| `dist/SealTools-v3.0.14.zip` | 72,421,214 | `B1BDD7113F982307F3E257A9B14B76B076F4D327364DFBFCF129C47D80080E34` |
-| `dist/SealTools-Setup-v3.0.14-x64.exe` | 65,351,507 | `BF13030B4E4DE655DD065C3629F9DB0909767A6B0053085BC2B320CA3ED2AA61` |
+| `dist/SealTools-v3.0.14.zip` | 72,421,165 | `BF633B8148D47EC7C22029EE6A770AB87553B5601C06D4E18256BC12D7D7CF79` |
+| `dist/SealTools-Setup-v3.0.14-x64.exe` | 65,410,435 | `B65F457C3354A2B3CB7E03554183BB2D3A832BE372D0387A900699E49F38B3F6` |
 | `dist/SealTools-v3.0.14-firmware.zip` | 6,574 | `F7BDD22E0395C5EC83FD7842B522C3BFC0F5BF347844032612D7C7EB8C425DD4` |
 
 `dist/SHA256SUMS.txt` carries the lowercase hashes. The stage, app-zip, installer and firmware audits
@@ -59,7 +59,7 @@ running.
 - Release pipeline: stage, app-zip, installer and firmware audits **PASS**.
 - Installer smoke test on the final artifact: fresh install layout correct, upgrade preserved a
   `config/` marker, autostart was off by default, uninstall removed program files and kept `config/`.
-- `build-info.json` records `product_version 3.0.14`, `git_commit 2d1a0a9`, branch `main`,
+- `build-info.json` records `product_version 3.0.14`, `git_commit 0843276`, branch `main`,
   `git_dirty false`.
 
 ## Upgrade notes
