@@ -1,17 +1,18 @@
 # Seal Tools v3.0.14 — Install Guide
 
 From nothing to a working install: the board, the app and the first calibration. If you already have it
-running and want to know what a button does, that is [USER_GUIDE.md](USER_GUIDE.md). If you are curious
-*why* calibration is mandatory, the repository's `v3/docs/spec/CALIBRATION.md` explains the coordinate
-contract. (The zip ships only these guides, `THIRD-PARTY-NOTICES.md` and `docs/pet-data.csv`, not the
-spec tree.)
+running and want to know what a button does, read [USER_GUIDE.md](USER_GUIDE.md). For *why* calibration
+is mandatory, the repository's `v3/docs/spec/CALIBRATION.md` explains the coordinate contract.
 
-**Nothing in v3.0.14 needs a reflash.** The Arduino sketch is unchanged since v2.15 (firmware level **2**):
-v3.0.14 publishes the same `seal_mouse.ino` in `SealTools-v3.0.14-firmware.zip`, so a board already flashed for
-v2.15 or later keeps working. The firmware zip exists for a **new board**, not for an update.
+The packages carry only these guides, `THIRD-PARTY-NOTICES.md` and `docs/pet-data.csv`; they do not
+carry the spec tree.
 
-**The calibration is the long part**, and it is the part you cannot skip. Everything before it (flashing
-a new board, unzipping, first launch) is a few minutes.
+**Nothing in v3.0.14 needs a reflash.** The Arduino sketch is unchanged since v2.15 (firmware level
+**2**): v3.0.14 publishes the same `seal_mouse.ino` in `SealTools-v3.0.14-firmware.zip`, so a board
+already flashed for v2.15 or later keeps working. Use the firmware zip only for a **new board**.
+
+**The calibration is the long part**, and you cannot skip it. Installing or unzipping and the first
+launch take only a few minutes.
 
 ---
 
@@ -23,7 +24,7 @@ a new board, unzipping, first launch) is a few minutes.
 | **Board** | An **Arduino Pro Micro (ATmega32U4, 5 V / 16 MHz)** — the only board that works. Uno/Nano/Mega have no native USB HID and cannot present as a mouse. |
 | **Cable** | A USB cable that carries **data**. Charge-only cables are the most common reason a board is never found. |
 | **Game** | Seal Online (TW or US client), running **windowed**. |
-| **Rights** | None special: no installer, no `.NET` runtime, no administrator elevation, and every file the app writes lives inside its folder (`config/` and `logs/`). |
+| **Rights** | A normal user account is enough. The per-user installer needs no administrator elevation, and no `.NET` runtime is required. The app writes only inside its install folder (`config/` and `logs/`). |
 
 > **Why the Pro Micro.** The game's anti-cheat blocks synthetic input from software (`SendInput`, and
 > `SetCursorPos` while the game is focused). The Pro Micro has a native USB controller and enumerates as
@@ -67,7 +68,7 @@ SealTools-v3.0.14\
     PP-OCRv6_small_rec_dict.txt
   config\
     defaults.yaml.example       the shipped template (base config)
-    local.yaml.example          the first-run seed for YOUR file
+    local.yaml.example          the first-run seed; the core migrates it into setup/ + machine/ on first load
     attributes.yaml             the TW OCR dictionary (release-maintained)
     attributes.us.yaml.example  the seed for the US dictionary
   docs\
@@ -91,7 +92,7 @@ reflash is needed for v3.0.14.
 
 ### 2.1 Install the IDE and board support
 
-1. Install the **Arduino IDE** — <https://www.arduino.cc/en/software> (2.x is fine).
+1. Install the [Arduino IDE](https://www.arduino.cc/en/software) (2.x is fine).
 2. The Pro Micro is not in the default board list. The easiest route: `Tools → Board → Arduino AVR
    Boards → **Arduino Leonardo**` (or **Arduino Micro** — same ATmega32U4 chip; most clones ship a
    Leonardo/Micro-compatible bootloader).
@@ -124,25 +125,32 @@ look identical later.
 
 ## 3. First run
 
-Run **`SealTools.exe`**. There is no installer and no administrator requirement, and nothing is written
-outside the folder (its `config/` and `logs/`). The shell starts `seal-core.exe` for you and connects;
-you never start the core by hand.
+Run **`SealTools.exe`** from the installer's shortcut or from the unzipped folder. A normal user account
+is enough. The app writes only inside its install folder (`config/` and `logs/`). The shell starts
+`seal-core.exe` for you and connects; you never start the core by hand.
 
-On first launch the core creates **`config/local.yaml`** by copying `local.yaml.example` (only when the
-file is absent, atomically). That seed contains **placeholder measurements from an old setup**; they
-will be wrong on your machine and the tools will refuse until you calibrate. That is expected — step 5
-replaces them.
+On first launch, the core creates the configuration tree. A fresh install seeds **`config/local.yaml`**
+from `local.yaml.example`, then migrates it into `setup/`, `machine/`, `artifacts/` and `meta.yaml`. The
+seed contains **placeholder measurements from an old setup**; they will be wrong on your machine, and
+the tools will refuse until you calibrate. That is expected — step 5 replaces them.
+
+After migration, a save rewrites the file that owns the changed block under `config/setup/` or
+`config/machine/`; it does not rewrite `local.yaml`.
 
 What the first launch may write, and nothing else:
 
-- `config/local.yaml` — your machine's state (the only file a save rewrites; gitignored, never in the
-  zip, kept on update).
+- `config/local.yaml` — the legacy seed. The first launch migrates it into the portable tree and retires
+  it; the zip never contains a real one, and updates keep it.
+- `config/setup/` and `config/machine/` — the portable settings and this PC's measured calibration.
+- `config/artifacts/` — reference crops and images saved by calibration.
+- `config/meta.yaml` — migration and schema markers.
 - `config/attributes.<variant>.yaml` — seeded from its `.example` when the US variant is first used and
   the file is missing (the TW dictionary ships maintained).
 - `logs/` — created when the first run writes a log.
 
-Nothing else: no registry keys, no services, no tray icon, no update check or network feature, and the
-game is never modified (input comes from the board; reading is screen capture and OCR).
+The app writes nothing else: no services, no tray icon and no background network activity. The optional
+update check contacts GitHub only when you press **Check for updates**. The game is never modified: input
+comes from the board, and reading is screen capture plus OCR.
 
 If the whole window says **"The core is not running"**, the core could not start. The window shows the
 reason and the core's **stderr tail** — the usual causes are a moved/renamed core, a locked antivirus
@@ -260,22 +268,25 @@ your v2 folder until the v3 side is verified.
    `config/artifacts/` if you want the reference crops. **Do not copy `config/machine/` to another PC**;
    recalibrating there is safer than stale coordinates. (On a pre-migration install the single
    `config/local.yaml` plus `calib_*.png` is the equivalent copy.)
-3. Unzip the new release. You can replace the program files in the existing folder or use a fresh
-   folder and copy your `config/setup/` (and `user.yaml`/`artifacts/`) across.
-4. Start it. **The zip never contains `setup/`, `machine/`, `artifacts/`, `user.yaml`, `meta.yaml` or a
-   real `local.yaml`**, so an update cannot overwrite your settings; the only files it replaces are
-   program files and the shipped templates/dictionaries. A release that changes a default updates the
-   template; a value you saved in `setup/` still wins (see `v3/docs/spec/CONFIG.md`).
-5. There is no auto-update and no installer: replacing files is the whole update.
-
+3. Run the new installer (recommended; it replaces program files) or unzip the new release. With the
+   portable zip, you can replace program files in the existing folder or use a fresh folder and copy
+   your `config/setup/` (and `user.yaml`/`artifacts/`) across.
+4. Start it. **Neither package contains `setup/`, `machine/`, `artifacts/`, `user.yaml`, `meta.yaml` or a
+   real `local.yaml`**, so an update cannot overwrite your settings; the packages replace only program
+   files and the shipped templates/dictionaries. A release that changes a default updates the template;
+   a value you saved in `setup/` still wins (see `v3/docs/spec/CONFIG.md`).
+5. Updates are manual: run a newer installer or replace the zip's program files. There is no silent
+   auto-update.
 
 ## Uninstalling
 
-Close Seal Tools and delete its folder. Nothing was installed: no registry keys, no services, no
-Program Files data, no user-profile data outside the folder. The Arduino keeps its firmware - flashing
-is independent of the app. Your player state leaves with the folder, so copy out `config/setup/` and
-`config/user.yaml` first if you want to keep your setup; `config/machine/` and `config/artifacts/` are
-regenerated by calibrating.
+- **Installer:** use **Uninstall Seal Tools** from the Start menu (or Windows Settings → Apps). The
+  uninstaller removes program files and keeps `config/` and `logs/`.
+- **Portable zip:** close Seal Tools and delete its folder. Nothing was registered with Windows.
+
+The Arduino keeps its firmware; flashing is independent of the app. Your player state leaves with the
+folder, so copy out `config/setup/` and `config/user.yaml` first if you want to keep your setup.
+`config/machine/` and `config/artifacts/` are regenerated by calibrating and recapturing.
 
 
 ## Troubleshooting

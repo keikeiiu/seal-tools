@@ -1,6 +1,6 @@
 # Release v3.0.14 - installer, diagnostics and update check
 
-**Date:** 2026-11-14 - **Branch:** `main` - **Built from:** TBD
+**Date:** 2026-11-14 - **Branch:** `main` - **Built from:** `2d1a0a95da8d74d841d81f10764c95ddf5cb1215`
 
 v3.0.14 adds the per-user installer, a one-click diagnostics bundle and a check-only update entry. The
 portable zip remains available for local self-install.
@@ -9,9 +9,9 @@ portable zip remains available for local self-install.
 
 | artifact | bytes | SHA-256 |
 |---|---|---|
-| `dist/SealTools-v3.0.14.zip` | TBD | TBD |
-| `dist/SealTools-Setup-v3.0.14-x64.exe` | TBD | TBD |
-| `dist/SealTools-v3.0.14-firmware.zip` | TBD | TBD |
+| `dist/SealTools-v3.0.14.zip` | 72,421,214 | `B1BDD7113F982307F3E257A9B14B76B076F4D327364DFBFCF129C47D80080E34` |
+| `dist/SealTools-Setup-v3.0.14-x64.exe` | 65,351,507 | `BF13030B4E4DE655DD065C3629F9DB0909767A6B0053085BC2B320CA3ED2AA61` |
+| `dist/SealTools-v3.0.14-firmware.zip` | 6,574 | `F7BDD22E0395C5EC83FD7842B522C3BFC0F5BF347844032612D7C7EB8C425DD4` |
 
 `dist/SHA256SUMS.txt` carries the lowercase hashes. The stage, app-zip, installer and firmware audits
 must PASS. Signing is NOT performed (SHELL-F9): the payload is unsigned; verify the SHA-256 before
@@ -54,12 +54,12 @@ running.
 
 ## Verification
 
-- Rust workspace tests: TBD.
-- Shell gate: TBD.
-- Release pipeline: stage, app-zip, installer and firmware audits TBD.
-- Installer smoke test: fresh layout, silent upgrade preserving `config/`, uninstall keeping `config/`,
-  and no autostart selected by default must be verified on the staged payload.
-- `build-info.json` must record `product_version 3.0.14`, the source commit, branch `main` and
+- Rust workspace tests: **1,366 passed**, 0 failed.
+- Shell gate: format clean, `flutter analyze --fatal-infos` clean, **397/397 tests**, Windows debug build.
+- Release pipeline: stage, app-zip, installer and firmware audits **PASS**.
+- Installer smoke test on the final artifact: fresh install layout correct, upgrade preserved a
+  `config/` marker, autostart was off by default, uninstall removed program files and kept `config/`.
+- `build-info.json` records `product_version 3.0.14`, `git_commit 2d1a0a9`, branch `main`,
   `git_dirty false`.
 
 ## Upgrade notes

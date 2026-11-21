@@ -19,6 +19,32 @@ way, what it cost or taught, and cite the commits. Do not restate what a spec al
 
 ---
 
+## 2026-11-14 (62) — v3.0.14 adds the installer, diagnostics and update check
+
+The release line had been zip-only and support meant "send us your logs folder". This release adds the
+per-user installer the player asked for, a one-click support bundle, and a check-only update entry.
+
+- **Installer:** NSIS per-user install under `%LOCALAPPDATA%\Programs\SealTools`; `config/` and `logs/`
+  stay beside the app and survive both upgrade and uninstall. Optional desktop/start-menu shortcuts;
+  start-with-Windows is opt-in. The portable zip remains the self-install path and both are release
+  assets.
+- **Diagnostics:** Logs → Export diagnostics writes a dependency-free zip with the manifest, shell/core
+  text logs, OCR logs and config file names; personal calibration, reference images, captures and
+  config values are excluded.
+- **Update check:** Setup → About reads the public GitHub release feed and offers the release page. It
+  never downloads or replaces the app; installer/zip stay manual.
+- **Pipeline:** `publish.ps1` finds NSIS, builds the installer from the audited stage, audits the app
+  zip/firmware as before, and puts all three payloads in `SHA256SUMS.txt`.
+
+Verification: Rust workspace **1,366 passed**, 0 failed; shell gate **397/397**, analyze clean, debug
+build green; release stage/app-zip/installer/firmware audits PASS; installer smoke test verified fresh
+layout, upgrade-preserved config, no autostart by default, and config kept after uninstall. Artifacts:
+`dist/SealTools-v3.0.14.zip` (72,421,214 bytes, SHA-256
+`B1BDD7113F982307F3E257A9B14B76B076F4D327364DFBFCF129C47D80080E34`),
+`dist/SealTools-Setup-v3.0.14-x64.exe` (65,351,507 bytes, SHA-256
+`BF13030B4E4DE655DD065C3629F9DB0909767A6B0053085BC2B320CA3ED2AA61`) and the firmware zip. Built
+from `2d1a0a9`; [release record](RELEASE-v3.0.14.md).
+
 ## 2026-11-13 (61) — v3.0.13 guards the launcher and keeps it on screen
 
 The shell had no process guard (USER_GUIDE said so), so a double-click on a desktop shortcut could

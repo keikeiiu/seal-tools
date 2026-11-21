@@ -28,90 +28,89 @@ runs the v2 firmware keeps working. The firmware zip is there for a new board, n
 5. [The tool tabs](#5-the-tool-tabs)
 6. [Calibration: the 17 marks](#6-calibration-the-17-marks)
 7. [Logs and files](#7-logs-and-files)
-8. [Hotkeys in v3.0](#8-hotkeys-in-v30)
+8. [Hotkeys](#8-hotkeys)
 9. [Typical workflows](#9-typical-workflows)
 10. [Troubleshooting](#10-troubleshooting)
-11. [What is not built in v3.0](#11-what-is-not-built-in-v30)
+11. [What is not built yet](#11-what-is-not-built-yet)
 12. [Where the rest is documented](#12-where-the-rest-is-documented)
 
 ---
 
 ## 1. What v3 is
 
-Seal Tools drives the Seal Online client through an **Arduino Pro Micro**: the board presents as a
-real USB mouse and keyboard, so the game accepts its clicks and keypresses where it blocks synthetic
-input from software. OCR reads what the game shows (the tuner's grade and attributes, the gem result
-box, the pet panel and time lines), and the tools decide from that.
+Seal Tools drives the Seal Online client through an **Arduino Pro Micro**. The board presents as a real
+USB mouse and keyboard, so the game accepts its clicks and keypresses where it blocks synthetic input
+from software. OCR (optical character recognition) reads what the game shows: the tuner's grade and
+attributes, the gem result box, the pet panel and time lines. The tools decide from those readings.
 
-v3 is a **new frontend over the same tool behaviour** as v2:
+Seal Tools runs two processes:
 
-- `SealTools.exe` is the window you use. It starts `seal-core.exe`, a background process in the same
-  folder, and talks to it over a local protocol. You never start the core by hand.
-- The tools, their refusal sentences and their written files are v2's behaviour; the **window** is new
-  (a tabbed shell instead of v2's card window with five calibration tabs).
-- The firmware, `config/local.yaml`'s format and the measured coordinates are unchanged. A v2 install
-  becomes a v3 install by copying its `config/local.yaml` and calibration images — see
-  [Migrating from v2](INSTALL.md#migrating-from-v2).
+- `SealTools.exe` is the **shell**. It draws the window and sends commands to the core. You never start
+  the core by hand.
+- `seal-core.exe` is the **core**. It owns game input, OCR and the config/log files. The shell talks to
+  it over a local protocol.
 
-**v3.0 has no global hotkey poller.** Hotkey *names* can be edited and saved (section 8), but nothing
-listens for F12/F11-style keys in game yet. **Stop and every button in the shell always work.** This
-is a deliberate deferral: whether a background process can see keys while the game is focused has to be
-measured first, because the anti-cheat may block it.
+v3 keeps v2's tool behaviour, refusal sentences and file behaviour. The window is new: a tabbed shell
+instead of v2's card window. Config and calibration remain compatible with v2; a v2 install migrates
+automatically. See [Migrating from v2](INSTALL.md#migrating-from-v2).
+
+**This release has no global hotkey poller.** You can edit and save hotkey *names* (section 8), but
+nothing listens for F12/F11-style keys while the game is focused. **Stop and every shell button always
+work.** This is a deliberate deferral: we must first measure whether the game's anti-cheat lets a
+background process read keys.
 
 ---
 
 ## 2. The window
 
-The window opens on the **Cards** screen. A **left rail** holds the navigation in three groups —
-**RUN** (Cards), **TOOLS** (Skill Spammer, Magic Tuner, Gem Composer, Buy, Sell, Quest Hand-in, Pet
-Feeder) and **SYSTEM** (Attributes, Arduino, Hotkeys, Setup, Calibrate) — and the **status strip** runs
-along the bottom. When the core stops or cannot start, the whole page becomes the **crash view**.
+The window opens on the **Cards** screen. A left rail and a top bar frame the content, and a status
+strip runs along the bottom. If the core stops or cannot start, the whole page becomes the **crash
+view**.
 
-- **Top bar:** `Seal Tools`, the **core status line** (`core ready · rev <n> · <window title>`), the
-  **Logs** button, the **always-on-top pin** (`Keep Seal Tools on top`) and the small product version. (The shell↔core
-  protocol client identity is a separate engineering value documented in `PROTOCOL.md`; it does not
-  follow the product version.) There is **no Hold Space toggle any more**: Hold Space is a card on the
-  Cards screen (section 2.3). The leftmost button is the **sidebar toggle** (Ctrl+B).
-- **The rail:** one row per screen, grouped by job, with a badge on **Cards** counting the running
-  tools. The rail replaced the twelve-tab strip; a running tool never moves the rail. The top bar's
-  sidebar button (or Ctrl+B) hides the rail so the content uses the whole width; the rail returns on
-  the next launch (the choice is session-only).
-- **The status strip:** `core <version> · rev <n>` and the **root** folder the core is using on the
-  left, and the `Ctrl+B sidebar · Ctrl+L logs` hints on the right.
+- **Top bar:** the product name, the **core status line** (`core ready · rev <n> · <window title>`),
+  the **Logs** button, the **always-on-top pin** and the product version. The shell's protocol client
+  identity is a separate engineering value and does not follow the product version. Hold Space is a
+  card on the Cards screen (section 2.3), not a top-bar toggle. The leftmost button is the **sidebar
+  toggle** (Ctrl+B).
+- **Rail:** one row per screen, grouped by job. The **Cards** badge counts running tools. The rail
+  replaces v2's twelve-tab strip and never moves when a tool starts. Ctrl+B hides it for the current
+  session.
+- **Status strip:** `core <version> · rev <n>` and the core's **root** folder on the left; the
+  `Ctrl+B sidebar · Ctrl+L logs` hints on the right.
 
+**Always-on-top pin.** A filled pin keeps the window above the game and other windows. Pressing it
+applies immediately and saves the portable setting `settings.ui.always_on_top`. If the save is refused,
+the pin returns to the saved value and the core's line is shown. Check the pin when the window will not
+stay in front.
 
-**The always-on-top pin.** A filled pin keeps the shell window above the game and other windows;
-pressing it applies immediately and saves the portable setting `settings.ui.always_on_top`, so the
-next launch starts in the same state. It is a config preference, not part of the Calibrate hide/show
-path. If the save is refused the pin returns to the saved value and the core's line is shown; check
-the pin when the window will not stay in front.
+**Window placement.** After the handshake, the shell restores the window from the machine `ui` block in
+`config/machine/ui.yaml`: `left`, `top`, `width` and `expanded_height`. These are this PC's geometry,
+not the portable settings. `expanded_height` is the height to restore, not the current height.
 
-**The window remembers its placement and size.** After the core handshake the shell puts the window
-back where it was last left, from the machine `ui` block in `local.yaml` (`left`, `top`, `width`,
-`expanded_height` — this machine's state, not the portable `settings:` half; `expanded_height` is the
-height to restore, not the current height). Moving or resizing saves that placement automatically
-about 0.6 s after it settles, through the normal `ui.window` command, so the core remains the only
-file writer. A saved rectangle that no longer fits any attached monitor is moved into the primary
-monitor's work area (a log line says it was clamped), so the window cannot open off-screen.
-`ui.pinned` is carried through unchanged and is **not** the app-bar pin; that is the portable
-`settings.ui.always_on_top` above.
+Moving or resizing saves the placement about 0.6 seconds after it settles. The save goes through the
+`ui.window` command, so the core remains the only file writer. If the saved rectangle no longer fits an
+attached monitor, the shell moves it into the primary monitor's work area and logs the clamp.
+`ui.pinned` is separate from the app-bar pin; the app-bar pin is `settings.ui.always_on_top`.
 
-Three honest limits: there is no clean-shutdown save hook, so a move made in the last fraction of a
-second before closing can be lost (move or resize, then pause a moment before closing); a maximized
-window reopens at its geometry — the maximized state itself is not remembered; and mixed-DPI
-multi-monitor setups make that clamp approximate.
+**Window limits:**
+
+- A move made just before closing can be lost: there is no clean-shutdown save hook. Move or resize,
+  then pause before closing.
+- A maximized window reopens at its geometry; the maximized state itself is not remembered.
+- Mixed-DPI multi-monitor setups make the clamp approximate.
 
 ### 2.1 The Logs drawer
 
-**Logs (N)** in the top bar (or **Ctrl+L**) opens the logs drawer along the bottom of the content;
-press either again to close it, or press **Esc**. It shows the `log` lines the core publishes (tool messages, refusals
-worth surfacing, warnings) with a level badge per line and an **All / Errors** filter. `N` is how many
-lines it holds. This is the live view; the durable per-run files are in `<root>/logs/` — see section 7.
+**Logs (N)** in the top bar (or **Ctrl+L**) opens the logs drawer along the bottom. Press either again
+to close it, or press **Esc**. The drawer shows the `log` lines the core publishes: tool messages,
+refusals worth surfacing, and warnings. Each line has a level badge; the **All / Errors** filter
+switches the view. `N` is the number of held lines. The drawer is the live view. The durable per-run
+files are in `<root>/logs/`; see section 7.
 
-**Export diagnostics** in the drawer builds `logs/SealTools-diagnostics-<stamp>.zip` and reveals it in
-the logs folder. The bundle carries the manifest (app/core version, root, OS), shell/core text logs,
-OCR logs and a config-file name list; it deliberately excludes calibration values, reference images
-and screenshots. Attach it to a bug report.
+**Export diagnostics** builds `logs/SealTools-diagnostics-<stamp>.zip` and reveals it in the logs
+folder. The bundle contains the manifest (app/core version, root and OS), shell/core text logs, OCR
+logs and a list of config file names. It excludes calibration values, reference images and screenshots.
+Attach it to a bug report.
 
 ### 2.2 The Cards screen
 
@@ -191,18 +190,18 @@ ends and has no protocol event.
 
 ## 3. First run: configure, then calibrate
 
-The release ships a per-user installer and a portable zip. On its first launch the core copies a seed
-`config/local.yaml` for you if you had none (from `config/local.yaml.example`). That seed contains
-**placeholder measurements from an old setup**, and they will be wrong on your machine. The order is:
-**Setup → Calibrate → run a tool.**
+On first launch, the core creates the configuration tree. A fresh install seeds
+`config/local.yaml` from `config/local.yaml.example`, then migrates it into `setup/`, `machine/` and
+`artifacts/`. That seed contains **placeholder measurements from an old setup**, and they will be wrong
+on your machine. The order is: **Setup → Calibrate → run a tool.**
 
 ### Installer or portable zip
 
 The release ships both a per-user installer (`SealTools-Setup-vX.Y.Z-x64.exe`) and the portable zip.
 
-- The installer places the app under `%LOCALAPPDATA%\Programs\SealTools`, with no administrator/UAC.
-  `config/` and `logs/` sit beside the app; an **upgrade replaces program files only**, and the
-  uninstaller keeps `config/` and `logs/` by default.
+- The installer places the app under `%LOCALAPPDATA%\Programs\SealTools`, with no administrator
+  elevation. `config/` and `logs/` sit beside the app. An **upgrade replaces program files only**, and
+  the uninstaller keeps `config/` and `logs/` by default.
 - The portable zip needs no installation: unzip it anywhere and run `SealTools.exe`. Use it if you
   want a folder you manage yourself or keep on a USB stick.
 - Both packages contain program files, templates and docs only; neither contains a real `local.yaml`.
@@ -261,11 +260,11 @@ move mode), turn **off** Windows' *Enhance pointer precision*:
 **Enhance pointer precision**. It changes how far a relative move travels, so the game's cursor lands
 somewhere else as soon as it is on.
 
-### 3.3 Hotkeys (names only in v3.0)
+### 3.3 Hotkeys (names only)
 
 The **Hotkeys** tab edits the four names — Start, Quit, Advance grade, Pause. The core translates the
 name you type to the virtual-key code the config stores and names the code back to you; a typo gets a
-line under the box and the save is refused. **The codes are stored but not polled in v3.0** — see
+line under the box and the save is refused. **The codes are stored but not polled** — see
 section 8.
 
 ---
@@ -300,7 +299,7 @@ foreground tool never ends a four-row feeding schedule. It also persists its own
 (`food_slots_used` and each row's `boarding_running`), so a restart resumes with the cells and boarding
 state it already reached rather than the pre-run values.
 
-**The Buy card's run choice (v3.0).** The Buy card carries **Buy item** (one of `buy_sell.presets`) and
+**The Buy card's run choice.** The Buy card carries **Buy item** (one of `buy_sell.presets`) and
 a **count** stepper. They choose **this run only** — nothing is saved to the config, so the next run
 starts from the preset's configured count again. With no preset configured the card's Start sends the
 plain start and the core's "No buy preset selected." appears under the card; add a preset on the
@@ -357,7 +356,7 @@ The tuner's portable settings; the calibrated geometry block on this tab is **re
   selectors sit directly under the ladder.
 - **Retries and timing** — **Max retries**, **OCR retries**, **Click/enter delay (s)**, **OCR delay
   (s)**, **Save captures** (writes `logs/captures/` PNGs — see section 7). **OCR retries is stored but
-  currently unused:** v3.0's reader scans once; the last-retry forced capture is a named not-built item
+  currently unused:** The reader scans once; the last-retry forced capture is a named not-built item
   in the repository's backlog.
 - **Springs** — **Spring mode** (`hid` places the cursor on the calibrated spring point; `manual` leaves
   it where it is), **Mouse guard** (`off`/`stop`/`recenter`) and its **Guard px** and **Recenter max**.
@@ -476,7 +475,8 @@ does not open the board or read the game.
   an unticked one is ignored) and **Stacks per reload** (the food strip is divided by it). The row's
   marks — start/end button, boarding pet slot, food strip, empty-slot crop and boarding state — are
   read-only here and ride the save verbatim. The row's **Boarding now** tick writes that row's
-  `boarding_running` immediately through the core into `local.yaml` (one field, not part of this tab's
+  `boarding_running` immediately through the core into `config/machine/pet.yaml` (one field, not part of
+this tab's
   Save) and works while a tool runs; it is disabled while any edit here is unsaved (“Save the row
   edits first”, or “Save the edits first” for portable-only edits). A refused tick shows the core's
   line under the rows, and the tick shows the core's current value, so the feeder's own mid-run
@@ -549,10 +549,11 @@ success), so Apply stays disabled. **Capture food icon** remains how the matchin
 
 The calibrated marks/crops in the read-only section come from the **Calibrate** tab or are learned by
 the run; **Food cells used** is the run's own reading and stays display-only. A fresh install has no
-breeding rows and v3.0 cannot add rows or re-capture the row's reference crops yet — migrate your v2
-`config/local.yaml` (which carries them) or hand-edit that block with the repository's
-`v3/docs/spec/CONFIG.md` open; otherwise the feeder refuses with its setup line. The **Calibrate** tab
-still draws the feeder's marks (`pet_*` kinds); the close-X reference crop is learned by the run
+breeding rows and v3.0.14 cannot add rows or re-capture the row's reference crops yet. Migrate your v2
+config (its legacy `config/local.yaml` carries them) or hand-edit `config/machine/pet.yaml` with the
+repository's `v3/docs/spec/CONFIG.md` open; otherwise the feeder refuses with its setup line. The
+**Calibrate** tab still draws the feeder's marks (`pet_*` kinds); the close-X reference crop is learned
+by the run
 itself.
 
 ### 5.7 Attributes
@@ -598,7 +599,7 @@ section 3.1 — the same tab is the first-run configuration surface.
 
 Four key names — **Start**, **Quit**, **Advance grade**, **Pause**. Type a name (`F1–F24`, `Esc`,
 `CapsLock`, `Space`, `Tab`, `Enter`, or one key); the core translates it, names the stored code back,
-and refuses an unparseable box with a line under it. **In v3.0 the stored codes are not polled** — see
+and refuses an unparseable box with a line under it. **The stored codes are not polled** — see
 section 8.
 
 ### 5.11 Calibrate
@@ -726,7 +727,7 @@ Remaining non-mark work:
 - **The sell-slot selection** — not a calibration mark: it is a memory-only bag-cell selection made on
   the **Buy/Sell** tab for the next run (§5.4). It needs the calibrated **Bag grid** to place the
   cells, but has no kind of its own.
-- **The environment check (Detect)** — the comparison rule exists in the core, but v3.0's Setup surfaces
+- **The environment check (Detect)** — the comparison rule exists in the core, but the Setup surfaces
   do not show a "your display moved" result yet. If you change monitor, scale, window size or move to a
   new PC, **recalibrate**; the marks are physical offsets and a proportional transform is deliberately
   not applied (the game UI does not scale linearly).
@@ -834,17 +835,17 @@ The full file split, loading order and fold are in the repository's `v3/docs/spe
 
 ---
 
-## 8. Hotkeys in v3.0
+## 8. Hotkeys
 
-**There is no global hotkey poller in v3.0.** The four hotkeys can be named, translated and saved on
-the Hotkeys tab, and the codes are stored in `local.yaml`, but **nothing watches for those keys while
-you play**, so pressing F12/F11/"the start key" in game does nothing yet.
+**There is no global hotkey poller in v3.0.14.** You can name, translate and save the four hotkeys on
+the Hotkeys tab. Their codes are stored in `config/setup/common.yaml`, but **nothing watches for those
+keys while you play**, so pressing F12/F11/"the start key" in game does nothing yet.
 
 What this means in practice:
 
 - **Stop a run with the card's Stop button** (or the shell's own controls) — they always work.
 - The Pet Feeder is resident; it can be left running and stopped from its card or by closing Seal Tools.
-- Do not rely on a "quit/pause key" in v3.0; those behaviours return only with the poller.
+- Do not rely on a "quit/pause key"; those behaviours return only with the poller.
 
 This is a deliberate deferral, not a regression hidden in the docs: the plan requires a measurement of
 whether a background process can see keys while the game is focused (the anti-cheat may block it), and
@@ -901,13 +902,13 @@ marks are physical client-relative offsets; they do not travel.
 | "{n} slots selected but the per-run cap is {cap}…" | The selection is larger than **Max slots per run (sell cap)**. Raise the cap on purpose or narrow the selection; the core refuses the start before any click and prints the full line, including the count and the cap. |
 | "The active preset … was not found — pick one in the Spammer tab." | Set **Active preset (runs)** on the Spammer tab. |
 | Pet Feeder refuses on start (a mark or a breeding-row line) | The feeder's marks and rows must exist. Calibrate its `pet_*` kinds in the Calibrate mark editor; the Pet tab edits the rows the config carries (enabled/stacks) and the food cells, but a new install has no rows yet — migrate a v2 `local.yaml` or edit the block with the repository's `v3/docs/spec/CONFIG.md` open. |
-| Hotkeys do not fire in game | Expected in v3.0 — there is no poller (section 8). Use Stop in the shell. |
+| Hotkeys do not fire in game | Expected — there is no poller (section 8). Use Stop in the shell. |
 | "The window blinks when I press Capture" | Expected: the shell hides itself for one frame so the capture is of the game, then reopens. v2 blinked ~0.3 s; v3 blinks for a frame plus the round-trip. |
 | Need the last run's detail | Read `<root>/logs/<tool>.log` (status strip prints the root); `error.log` and `ocr_errors.jsonl` are beside it. |
 
 ---
 
-## 11. What is not built in v3.0
+## 11. What is not built yet
 
 Named here so a missing capability is a known boundary, not a mystery. The living list is the
 repository's `v3/docs/backlog/OPEN.md`; every item below is "not in 3.0", not "planned for tomorrow"

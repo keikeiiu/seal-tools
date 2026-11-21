@@ -1,14 +1,19 @@
 # v3 DESIGN — the architecture as built
 
-**Status: current truth, 2026-10-27.** Every crate in the map is built and tested, the board's OS
-serial adapter opens real ports, the OCR pipeline runs in the production reader paths, and every tool
-id has a live loop (eight tools: spammer, holdspace, tuner, quest, sell, buy, gem, pet). What remains
-is live verification and the named measurements/follow-ups in OPEN — not unported code. This document
-is the map: why the shape is what it is and which crate owns what. Siblings own their detail and are linked, never repeated: [PROTOCOL.md](PROTOCOL.md) (the
-seam contract), [CONFIG.md](CONFIG.md) (the files), [CALIBRATION.md](CALIBRATION.md) (coordinates),
-[TOOL-FLOWS.md](TOOL-FLOWS.md) (per-tool decisions), [OPEN.md](../backlog/OPEN.md) (what is not built),
-[PORT-COVERAGE.md](../records/PORT-COVERAGE.md) (the port audit), and v2's
-[DESIGN.md](../../../v2/docs/spec/DESIGN.md), which this supersedes for v3.
+**Status: current as of 2026-11-14.** All eight tools have a live loop: spammer, holdspace, tuner,
+quest, sell, buy, gem and pet. Their crates build and pass their tests. What remains is live
+verification and the named measurements/follow-ups in OPEN, not unported code.
+
+This document is the map: why the shape is what it is and which crate owns what. The sibling documents
+own their detail and are linked, never repeated:
+
+- [PROTOCOL.md](PROTOCOL.md): the seam contract.
+- [CONFIG.md](CONFIG.md): the config files.
+- [CALIBRATION.md](CALIBRATION.md): coordinates.
+- [TOOL-FLOWS.md](TOOL-FLOWS.md): per-tool decisions.
+- [OPEN.md](../backlog/OPEN.md): what is not built.
+- [PORT-COVERAGE.md](../records/PORT-COVERAGE.md): the port audit.
+- v2's [DESIGN.md](../../../v2/docs/spec/DESIGN.md): superseded for v3.
 
 ---
 
@@ -58,18 +63,17 @@ seal-core    the binary: protocol server, dispatcher, supervisor         seal-pr
 ```
 
 Dependency direction is **downward only**. `seal-core` is the only crate that depends on more than the
-domain — today on `seal-proto`, `seal-config`, `seal-domain` and `seal-tools`; `seal-board` is not wired
-into it yet. `seal-tools` and `seal-board` depend only on `seal-domain` (their models are the domain's
-`Decision`, `ToolId`, geometry). `seal-domain`, `seal-config` and `seal-proto` depend on no workspace
-crate at all. The planned `seal-win` and `seal-ocr` sit beside `seal-board` and will follow the same
-rule — types from `seal-domain`, nothing above it; the dependency sets are pinned in each `Cargo.toml`,
-so changing one is a design event, not a convenience.
+domain: it depends on `seal-proto`, `seal-config`, `seal-domain`, `seal-tools`, `seal-board`, `seal-win`
+and `seal-ocr`. The four worker crates (`seal-tools`, `seal-board`, `seal-win`, `seal-ocr`) depend only
+on `seal-domain`, whose types provide their shared model. `seal-domain`, `seal-config` and `seal-proto`
+depend on no workspace crate at all. Each dependency set is pinned in its `Cargo.toml`, so changing one
+is a design event, not a convenience.
 
 | Crate | Owns | Mutable state / files / threads |
 |---|---|---|
 | `seal-proto` | The wire shapes and line framing | none — pure types |
-| `seal-config` | `defaults.yaml.example` base, `local.yaml` overlay + fold, the atomic writer, foreign-block preservation, `attributes.yaml` loading | **files**, one save gate per store; no threads |
-| `seal-domain` | Config model + authoring rules, geometry, `Decision`, OCR pure halves, calibration check, the six tools' + Hold Space's decision halves | none — `#![forbid(unsafe_code)]`, no I/O, no Win32 |
+| `seal-config` | `defaults.yaml.example` base, portable `setup/` + `machine/` load, legacy `local.yaml` migration/fold, the atomic writer, foreign-block preservation, `attributes.yaml` loading | **files**, one save gate per store; no threads |
+| `seal-domain` | Config model + authoring rules, geometry, `Decision`, OCR pure halves, calibration check, the eight tools' decision halves | none — `#![forbid(unsafe_code)]`, no I/O, no Win32 |
 | `seal-tools` | `ToolId`/`ToolPhase`/immutable snapshots, the arbiter, the `runner`, cancellation types, held-input RAII | no OS resources; the runner runs on whichever thread calls it |
 | `seal-board` | Board command grammar, transport seam, `V` firmware detection, closed-loop placement, port choice | pure over a `Transport`; the OS serial adapter is NOT here |
 | `seal-core` | Root discovery, startup, the dispatcher, config revision/save surface, the supervisor thread, the single event writer | owns the process's one writer, config store and supervisor thread |

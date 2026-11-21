@@ -1,7 +1,8 @@
 # Seal Tools v3.0.14
 
 Windows automation for Seal Online. A Rust core drives an Arduino Pro Micro as a real USB
-mouse/keyboard; a Flutter shell provides the UI. OCR reads the game screen where needed.
+mouse/keyboard; a Flutter shell provides the UI. OCR (optical character recognition) reads the game
+screen where needed.
 
 **v3 is the current baseline.** v2 (C#/.NET) is the previous stable fallback; v1 is legacy.
 
@@ -28,7 +29,7 @@ Previous generation: [v2.16](https://github.com/keikeiiu/seal-tools/releases/dow
 
 ## Quick start
 
-1. Unzip the app zip and run `SealTools.exe`.
+1. Install the app: run the installer, or unzip the portable zip and run `SealTools.exe`.
 2. New board only: flash `seal_mouse/seal_mouse.ino` from the firmware zip.
 3. Open **Setup** and find the game window; choose the client variant and board port.
 4. Open **Calibrate** and save the marks the tools you use need.
@@ -65,8 +66,9 @@ logs/              run logs and OCR captures
 docs/              install and user guides
 ```
 
-The zip carries program files and config templates only. Unzipping an update does **not** overwrite
-`config/setup/`, `config/machine/` or `config/artifacts/`.
+Both the installer and the zip carry program files and config templates only. The installer's upgrade
+replaces program files and keeps `config/`; its uninstaller also keeps `config/` and `logs/`. Unzipping a
+zip update does **not** overwrite `config/setup/`, `config/machine/` or `config/artifacts/`.
 
 ## Documentation
 

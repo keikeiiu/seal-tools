@@ -46,10 +46,9 @@ v3 是**同一個工具行為的新前端**：
   協定溝通。你不需要手動啟動核心。
 - 工具、拒絕訊息與寫出的檔案都是 v2 的行為；**視窗**是新的（分頁殼層，而不是 v2 的卡片視窗加五個校正
   分頁）。
-- 韌體、`config/local.yaml` 的格式與量測到的座標都沒有改變。v2 安裝要變成 v3 安裝，只要複製它的
-  `config/local.yaml` 與校正圖片 —— 見 [從 v2 遷移](INSTALL.md#migrating-from-v2)。
+- 韌體與量測到的座標都沒有改變。v2 的設定會自動遷移；見 [從 v2 遷移](INSTALL.md#migrating-from-v2)。
 
-**v3.0 沒有全域熱鍵輪詢器。** 熱鍵的*名稱*可以編輯與儲存（第 8 節），但目前在遊戲中沒有任何東西在監聽
+**v3.0.14 沒有全域熱鍵輪詢器。** 熱鍵的*名稱*可以編輯與儲存（第 8 節），但目前在遊戲中沒有任何東西在監聽
 F12/F11 這類按鍵。**Stop 與殼層裡的每個按鈕永遠有效。** 這是刻意的延後：背景程序能否在遊戲取得焦點時
 讀到按鍵，必須先量測，因為防作弊可能會阻擋。
 
@@ -78,7 +77,7 @@ Arduino、Hotkeys、Setup、Calibrate）—— 底部是**狀態列**。核心�
 隱藏/顯示流程。若儲存被拒絕，釘選會回到已儲存的值，並顯示核心的訊息；視窗不留在最上層時先檢查這個
 釘選鈕。
 
-**視窗會記住位置與大小。** 與核心完成 handshake 後，殼層會把視窗放回上次離開的位置，來源是 `local.yaml`
+**視窗會記住位置與大小。** 與核心完成 handshake 後，殼層會把視窗放回上次離開的位置，來源是 `config/machine/ui.yaml`
 的機器 `ui` 區塊（`left`、`top`、`width`、`expanded_height` —— 這是本機狀態，不是可攜的 `settings:` 半；
 `expanded_height` 是要還原的高度，不是目前高度）。移動或縮放後約 0.6 秒會透過一般的 `ui.window` 指令
 自動儲存，所以核心仍是唯一的檔案寫入者。若儲存的矩形已不符任何已接上的螢幕，會被移到主要螢幕的工作區內
@@ -157,8 +156,7 @@ Hold Space 現在是自己的一張卡片（以前是頂端列的切換鈕），
 
 ## 3. 第一次啟動：先設定，再校正
 
-沒有安裝程式。第一次啟動時，若你原本沒有 `config/local.yaml`，**核心**會為你從
-`config/local.yaml.example` 複製一份種子檔。那份種子包含**來自舊設定的預留量測值**，在你的機器上一定是
+第一次啟動時，**核心**會建立設定樹：先從 `config/local.yaml.example` 產生 `config/local.yaml` 種子檔，再遷移成 `setup/`、`machine/` 與 `artifacts/`。那份種子包含**來自舊設定的預留量測值**，在你的機器上一定是
 錯的。順序是：**Setup → 校正 → 執行工具。**
 
 ### 安裝程式或可攜 zip
@@ -393,7 +391,7 @@ checklists**、成功 Save 或成功勾選會重新讀取。餵食器自己在�
 - **Breeding rows** —— 設定中已存在的每一列：**Row N enabled**（勾選的列會餵食；未勾選的忽略）與
   **Stacks per reload**（餵食條會除以它）。該列的標記 —— start/end 按鈕、boarding pet slot、food strip、
   空格裁切圖與 boarding 狀態 —— 在這裡是唯讀，會原樣帶過儲存。該列的 **Boarding now** 勾選會立即透過核心
-  把該列的 `boarding_running` 寫入 `local.yaml`（單一欄位，不屬於這個分頁的 Save），且工具執行中也能使用；
+  把該列的 `boarding_running` 寫入 `config/machine/pet.yaml`（單一欄位，不屬於這個分頁的 Save），且工具執行中也能使用；
   只要這裡有任何未儲存的編輯就會停用（「Save the row edits first」，若只有可攜編輯則是「Save the edits
   first」）。被拒絕的勾選會在列下方顯示核心的行；勾選顯示的是核心目前的值，所以餵食器自己在執行中的更新
   也會反映在這裡。
@@ -451,7 +449,7 @@ icon**。擷取到的圖示就是 **Scan this page for food** 要比對的參考
 
 唯讀區塊裡的校正標記/裁切圖來自 **Calibrate** 分頁或由執行時學習；**Food cells used** 是執行自己的讀數，
 只顯示。全新安裝沒有繁殖列，而 v3.0 還不能新增列或重新擷取該列的參考裁切圖 —— 請遷移 v2 的
-`config/local.yaml`（裡面有這些資料），或開著倉庫的 `v3/docs/spec/CONFIG.md` 手動編輯該區塊；否則餵食器
+`config/machine/pet.yaml`（裡面有這些資料），或開著倉庫的 `v3/docs/spec/CONFIG.md` 手動編輯該區塊；否則餵食器
 會以設定訊息拒絕。**Calibrate** 分頁仍可繪製餵食器的標記（`pet_*` 種類）；代養視窗的關閉鈕的參考裁切圖
 由執行時自行學習。
 
@@ -691,7 +689,7 @@ INSTALL 的 *Migrating from v2*）。要保留設定，複製 `config/setup/` �
 
 ## 8. v3.0 的熱鍵
 
-**v3.0 沒有全域熱鍵輪詢器。** 四個熱鍵可以在 Hotkeys 分頁命名、翻譯與儲存，鍵碼也會寫進 `local.yaml`，
+**v3.0.14 沒有全域熱鍵輪詢器。** 四個熱鍵可以在 Hotkeys 分頁命名、翻譯與儲存，鍵碼也會寫進 `config/setup/common.yaml`，
 但**你在遊戲中按那些鍵時沒有任何東西在監看**，所以現在按 F12/F11/「開始鍵」都不會有反應。
 
 實際上的意思：
